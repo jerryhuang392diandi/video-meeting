@@ -160,6 +160,13 @@ TRANSLATIONS = {
         "record_password_label": "会议密码",
         "record_direct_mp4": "浏览器已直接生成 MP4 文件",
         "delete_record": "删除记录",
+        "batch_delete": "批量删除",
+        "select_all": "全选",
+        "selected_count": "已选数量",
+        "history_records": "历史会议记录",
+        "active_meetings": "进行中会议",
+        "batch_delete_success": "批量删除完成",
+        "no_meeting_selected": "未选择任何会议记录",
         "joined_meeting": "参与会议",
         "created_meeting": "创建会议",
         "meeting_role": "会议关系",
@@ -280,6 +287,13 @@ TRANSLATIONS = {
         "host_returned_room": "The host has returned. Host privileges have been restored.",
         "you_left_meeting": "You left the meeting",
         "delete_record": "Delete record",
+        "batch_delete": "Batch delete",
+        "select_all": "Select all",
+        "selected_count": "Selected",
+        "history_records": "Meeting history records",
+        "active_meetings": "Active meetings",
+        "batch_delete_success": "Batch delete completed",
+        "no_meeting_selected": "No meeting records selected",
         "joined_meeting": "Joined meeting",
         "created_meeting": "Created meeting",
         "meeting_role": "Relation",
@@ -907,12 +921,21 @@ def admin_dashboard():
     for meeting in Meeting.query.filter_by(status="active").all():
         ensure_meeting_not_expired(meeting)
     users = User.query.order_by(User.created_at.desc()).all()
-    meetings = Meeting.query.order_by(Meeting.created_at.desc()).all()
+    meetings = Meeting.query.order_by(Meeting.created_at.desc(), Meeting.id.desc()).all()
+    active_meetings = [m for m in meetings if m.status == "active"]
+    history_meetings = [m for m in meetings if m.status != "active"]
     online_rooms = [
         {"room_id": rid, "participant_count": len(info["participants"]), "host_name": info["host_name"]}
         for rid, info in rooms.items()
     ]
-    return render_template("admin.html", users=users, meetings=meetings, online_rooms=online_rooms)
+    return render_template(
+        "admin.html",
+        users=users,
+        meetings=meetings,
+        active_meetings=active_meetings,
+        history_meetings=history_meetings,
+        online_rooms=online_rooms,
+    )
 
 
 @app.post("/admin/user/<int:user_id>/disable")
@@ -949,19 +972,49 @@ def admin_end_meeting(meeting_id):
 
 
 
-@app.post("/admin/meeting/<int:meeting_id>/delete")
-@login_required
-@admin_required
-def admin_delete_meeting(meeting_id):
-    meeting = Meeting.query.get_or_404(meeting_id)
+def delete_meeting_record(meeting):
+    if not meeting:
+        return False
     if meeting.status != "ended":
         end_meeting_by_room_id(meeting.room_id, "meeting_closed")
-        meeting = Meeting.query.get_or_404(meeting_id)
+        meeting = Meeting.query.get(meeting.id)
+        if not meeting:
+            return False
     MeetingParticipant.query.filter_by(meeting_id=meeting.id).delete()
     cancel_room_cleanup(meeting.room_id)
     cancel_room_expiry(meeting.room_id)
     rooms.pop(meeting.room_id, None)
     db.session.delete(meeting)
+    return True
+
+
+@app.post("/admin/meeting/<int:meeting_id>/delete")
+@login_required
+@admin_required
+def admin_delete_meeting(meeting_id):
+    meeting = Meeting.query.get_or_404(meeting_id)
+    delete_meeting_record(meeting)
+    db.session.commit()
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.post("/admin/meetings/bulk-delete")
+@login_required
+@admin_required
+def admin_bulk_delete_meetings():
+    raw_ids = request.form.getlist("meeting_ids")
+    meeting_ids = []
+    for item in raw_ids:
+        try:
+            meeting_ids.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    if not meeting_ids:
+        return redirect(url_for("admin_dashboard"))
+
+    meetings = Meeting.query.filter(Meeting.id.in_(meeting_ids)).all()
+    for meeting in meetings:
+        delete_meeting_record(meeting)
     db.session.commit()
     return redirect(url_for("admin_dashboard"))
 
