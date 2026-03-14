@@ -155,8 +155,13 @@ TRANSLATIONS = {
         "host_left_room": "主持人已离开会议，当前会议暂时没有主持人。",
         "host_returned_room": "主持人已返回会议，主持权限已恢复。",
         "you_left_meeting": "你已离开会议",
-        "record_password_label": "会议密码",
-        "record_direct_mp4": "浏览器已直接生成 MP4 文件",
+        "status_active": "进行中",
+        "status_ended": "已结束",
+        "role_host": "我创建的会议",
+        "role_participant": "我参加的会议",
+        "meeting_available": "可重新进入",
+        "meeting_unavailable": "仅保留记录",
+        "ended_label": "已结束",
     },
     "en": {
         "app_name": "Video Meeting System",
@@ -266,6 +271,13 @@ TRANSLATIONS = {
         "host_left_room": "The host has left the meeting. The room currently has no active host.",
         "host_returned_room": "The host has returned. Host privileges have been restored.",
         "you_left_meeting": "You left the meeting",
+        "status_active": "Active",
+        "status_ended": "Ended",
+        "role_host": "Hosted by me",
+        "role_participant": "Joined by me",
+        "meeting_available": "Available to rejoin",
+        "meeting_unavailable": "Record only",
+        "ended_label": "Ended",
     },
 }
 
@@ -605,7 +617,7 @@ def api_join_room():
 @login_required
 def room_page(room_id):
     meeting = Meeting.query.filter_by(room_id=room_id).first()
-    if not meeting:
+    if not meeting or meeting.status == "ended":
         abort(404)
     room_password = request.args.get("pwd", meeting.room_password)
     invite_url = f"{get_base_url()}{url_for('room_page', room_id=room_id)}?pwd={quote(room_password)}"
@@ -622,7 +634,26 @@ def room_page(room_id):
 @app.get("/history")
 @login_required
 def history():
-    meetings = Meeting.query.filter_by(host_user_id=current_user.id).order_by(Meeting.created_at.desc()).all()
+    hosted_meetings = Meeting.query.filter_by(host_user_id=current_user.id).all()
+    participant_meetings = (
+        Meeting.query.join(MeetingParticipant, MeetingParticipant.meeting_id == Meeting.id)
+        .filter(MeetingParticipant.user_id == current_user.id)
+        .all()
+    )
+
+    meeting_map = {}
+    for meeting in hosted_meetings:
+        meeting_map[meeting.id] = {"meeting": meeting, "role": "host"}
+
+    for meeting in participant_meetings:
+        if meeting.id not in meeting_map:
+            meeting_map[meeting.id] = {"meeting": meeting, "role": "participant"}
+
+    meetings = sorted(
+        meeting_map.values(),
+        key=lambda item: item["meeting"].created_at or datetime.min,
+        reverse=True,
+    )
     return render_template("history.html", meetings=meetings)
 
 
@@ -635,65 +666,53 @@ def api_remux_recording():
 
     ffmpeg_path = shutil.which("ffmpeg")
     if not ffmpeg_path:
-        return jsonify({"success": False, "message": "ffmpeg not installed on server"}), 501
+        return jsonify({"success": False, "message": "ffmpeg not installed"}), 501
 
     workdir = tempfile.mkdtemp(prefix="meeting-remux-")
-    input_ext = Path(upload.filename).suffix.lower() or ".webm"
-    input_path = os.path.join(workdir, f"input{input_ext}")
+    input_path = os.path.join(workdir, "input.webm")
     output_path = os.path.join(workdir, "output.mp4")
     upload.save(input_path)
 
-    command_candidates = [
-        [
-            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
-            "-map", "0:v:0", "-map", "0:a?",
-            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-            "-profile:v", "main", "-movflags", "+faststart",
-            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
-            "-shortest", output_path,
-        ],
-        [
-            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
-            "-map", "0:v:0", "-map", "0:a?",
-            "-c:v", "mpeg4", "-q:v", "5", "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
-            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
-            "-shortest", output_path,
-        ],
-        [
-            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
-            "-map", "0:v:0",
-            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-            "-profile:v", "main", "-movflags", "+faststart",
-            output_path,
-        ],
-        [
-            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
-            "-map", "0:v:0",
-            "-c:v", "mpeg4", "-q:v", "5", "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
-            output_path,
-        ],
+    cmd = [
+        ffmpeg_path,
+        "-y",
+        "-fflags",
+        "+genpts",
+        "-i",
+        input_path,
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-profile:v",
+        "main",
+        "-movflags",
+        "+faststart",
+        "-c:a",
+        "aac",
+        "-ar",
+        "48000",
+        "-ac",
+        "2",
+        "-shortest",
+        output_path,
     ]
-
-    errors = []
-    for cmd in command_candidates:
-        try:
-            completed = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        except Exception as exc:
-            errors.append(str(exc))
-            continue
-        if completed.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-            break
-        err = (completed.stderr or completed.stdout or "ffmpeg failed").strip()
-        errors.append(err[-800:])
-        try:
-            os.remove(output_path)
-        except OSError:
-            pass
-    else:
+    try:
+        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    except Exception as exc:
         shutil.rmtree(workdir, ignore_errors=True)
-        return jsonify({"success": False, "message": " | ".join(errors[-3:]) or "ffmpeg failed"}), 500
+        return jsonify({"success": False, "message": str(exc)}), 500
+
+    if completed.returncode != 0 or not os.path.exists(output_path):
+        shutil.rmtree(workdir, ignore_errors=True)
+        err = (completed.stderr or completed.stdout or "ffmpeg failed").strip()
+        return jsonify({"success": False, "message": err[-1200:]}), 500
 
     data = Path(output_path).read_bytes()
 

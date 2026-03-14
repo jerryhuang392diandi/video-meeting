@@ -34,7 +34,7 @@
     <div class="status-grid">
       <div><span>{{ t('admin_role') }}</span><strong>{{ t('yes') if current_user.is_admin else t('no') }}</strong></div>
       <div><span>{{ t('language') }}</span><strong>{{ t('lang_zh') if lang == 'zh' else t('lang_en') }}</strong></div>
-      <div><span>UI</span><strong>V2</strong></div>
+      <div><span>UI</span><strong>V3</strong></div>
       <div><span>Mode</span><strong>Single-device</strong></div>
     </div>
   </div>
@@ -68,27 +68,39 @@
 </section>
 
 <section class="grid three quick-grid">
-  <div class="panel compact-panel">
-    <h3>{{ t('meeting_actions') }}</h3>
-    <div class="chip-row">
-      <span class="feature-chip">{{ t('virtual_bg') }}</span>
+  <div class="panel compact-panel quick-card enhanced-card">
+    <div class="section-head">
+      <h3>{{ t('meeting_actions') }}</h3>
+      <span class="section-tag">Live</span>
+    </div>
+    <p class="muted quick-card-desc">进入会议后可使用摄像头、麦克风、共享屏幕、录屏和离开会议等功能。</p>
+    <div class="feature-list compact-list">
+      <span class="feature-chip">{{ t('camera') }}</span>
+      <span class="feature-chip">{{ t('mic') }}</span>
       <span class="feature-chip">{{ t('share_screen') }}</span>
       <span class="feature-chip">{{ t('recording') }}</span>
-      <span class="feature-chip">{{ t('participants_panel') }}</span>
+      <span class="feature-chip">{{ t('leave') }}</span>
     </div>
   </div>
-  <div class="panel compact-panel">
-    <h3>{{ t('quick_actions') }}</h3>
-    <div class="chip-row">
-      <a class="feature-chip action-chip" href="{{ url_for('history') }}">{{ t('meeting_history') }}</a>
-      {% if current_user.is_admin %}<a class="feature-chip action-chip" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
+  <div class="panel compact-panel quick-card enhanced-card">
+    <div class="section-head">
+      <h3>{{ t('quick_actions') }}</h3>
+      <span class="section-tag">Jump</span>
+    </div>
+    <div class="quick-action-stack">
+      <a class="primary-btn anchor-btn slim-btn quick-action-btn" href="{{ url_for('history') }}">{{ t('meeting_history') }}</a>
+      {% if current_user.is_admin %}<a class="ghost-btn anchor-btn slim-btn quick-action-btn" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
     </div>
   </div>
-  <div class="panel compact-panel">
-    <h3>{{ t('language') }}</h3>
+  <div class="panel compact-panel quick-card enhanced-card">
+    <div class="section-head">
+      <h3>{{ t('language') }}</h3>
+      <span class="section-tag">UI</span>
+    </div>
+    <p class="muted quick-card-desc">首页和会议室都支持中英文切换，按钮状态会同步保持。</p>
     <div class="chip-row">
-      <span class="feature-chip">中文</span>
-      <span class="feature-chip">English</span>
+      <a class="feature-chip action-chip {% if lang == 'zh' %}active-chip{% endif %}" href="{{ url_for('set_language', lang='zh') }}">中文</a>
+      <a class="feature-chip action-chip {% if lang == 'en' %}active-chip{% endif %}" href="{{ url_for('set_language', lang='en') }}">English</a>
     </div>
   </div>
 </section>

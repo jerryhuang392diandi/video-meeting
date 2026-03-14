@@ -5,7 +5,6 @@
   <div>
     <div class="brand">{{ t('meeting_room') }}</div>
     <div class="muted">{{ t('room_id') }}: {{ room_id }}</div>
-    <div class="muted">{{ t('record_password_label') }}: {{ room_password }}</div>
   </div>
   <div class="top-actions">
     <div class="lang-switch">
@@ -73,6 +72,7 @@ const TEXT_NO_VIDEO = {{ ('未开启摄像头' if lang == 'zh' else 'Camera off'
 const TEXT_RECORD_STOP = {{ ('停止录屏' if lang == 'zh' else 'Stop recording')|tojson }};
 const TEXT_RECORD_SAVED = {{ ('录屏文件已保存' if lang == 'zh' else 'Recording saved')|tojson }};
 const TEXT_RECORD_NOT_SUPPORTED = {{ ('当前浏览器不支持录屏' if lang == 'zh' else 'Screen recording is not supported in this browser')|tojson }};
+const TEXT_RECORD_FALLBACK = {{ ('当前浏览器不支持直接导出 MP4，已自动保存为 WebM' if lang == 'zh' else 'This browser cannot export MP4 directly, so the recording will be saved as WebM')|tojson }};
 const TEXT_VIRTUAL_BG_PICK = {{ ('请选择一张背景图片，系统会开始做人像抠图并替换背景' if lang == 'zh' else 'Choose a background image and the app will start person segmentation with background replacement')|tojson }};
 const TEXT_VIRTUAL_BG_LOADING = {{ ('正在加载虚拟背景模型...' if lang == 'zh' else 'Loading virtual background model...')|tojson }};
 const TEXT_VIRTUAL_BG_READY = {{ ('虚拟背景已启用' if lang == 'zh' else 'Virtual background enabled')|tojson }};
@@ -81,7 +81,6 @@ const TEXT_VIRTUAL_BG_OFF = {{ ('虚拟背景已关闭' if lang == 'zh' else 'Vi
 const TEXT_RECORD_CONVERTING = {{ ('正在转换为可拖动的 MP4，请稍候...' if lang == 'zh' else 'Converting to a seekable MP4, please wait...')|tojson }};
 const TEXT_RECORD_MP4_FAILED = {{ ('MP4 转换失败，已回退保存为 WebM' if lang == 'zh' else 'MP4 conversion failed, saved as WebM instead')|tojson }};
 const TEXT_RECORD_MP4_SERVER_ERROR = {{ ('服务器 MP4 转换失败' if lang == 'zh' else 'Server-side MP4 conversion failed')|tojson }};
-const TEXT_RECORD_DIRECT_MP4 = {{ t('record_direct_mp4')|tojson }};
 const TEXT_IMAGE_NOT_SUPPORTED = {{ ('该图片无法作为虚拟背景，请换一张 PNG/JPG 图片' if lang == 'zh' else 'This image cannot be used as a virtual background. Try a PNG or JPG image instead.')|tojson }};
 const TEXT_HOST_END_CONFIRM = {{ ('确定要解散当前会议吗？所有参会者都会被移出。' if lang == 'zh' else 'End this meeting now? All participants will be removed.')|tojson }};
 const TEXT_LEAVE_CONFIRM = {{ ('确定要离开当前会议吗？' if lang == 'zh' else 'Leave this meeting now?')|tojson }};
@@ -337,9 +336,9 @@ async function ensureProcessedCanvasStream() {
   return processedCanvasStream;
 }
 
-async function transcodeRecordingBlob(blob, filename = 'meeting-recording.webm') {
+async function transcodeRecordingBlob(blob) {
   const formData = new FormData();
-  formData.append('recording', blob, filename);
+  formData.append('recording', blob, 'meeting-recording.webm');
   const response = await fetch('/api/remux-recording', { method: 'POST', body: formData, credentials: 'same-origin' });
   if (!response.ok) {
     let message = 'convert failed';
@@ -483,22 +482,11 @@ async function toggleScreenRecording() {
   }
 
   try {
-    try {
-      recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-    } catch (audioErr) {
-      recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-    }
+    recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
     const chunks = [];
 
     let mimeType = '';
-    let outputExt = 'webm';
-    if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E,mp4a.40.2')) {
-      mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
-      outputExt = 'mp4';
-    } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-      mimeType = 'video/mp4';
-      outputExt = 'mp4';
-    } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
+    if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
       mimeType = 'video/webm;codecs=vp9,opus';
     } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
       mimeType = 'video/webm;codecs=vp8,opus';
@@ -516,25 +504,19 @@ async function toggleScreenRecording() {
       if (event.data && event.data.size > 0) chunks.push(event.data);
     };
     activeRecorder.onstop = async () => {
-      const recordedBlob = new Blob(chunks, { type: mimeType || 'video/webm' });
+      const webmBlob = new Blob(chunks, { type: mimeType || 'video/webm' });
       recordingBtn.textContent = {{ t('recording')|tojson }};
       activeRecorder = null;
       recorderStream = null;
 
-      if (outputExt === 'mp4' || (recordedBlob.type || '').includes('mp4')) {
-        downloadBlob(recordedBlob, `meeting-recording-${Date.now()}.mp4`);
-        setStatus(TEXT_RECORD_DIRECT_MP4);
-        return;
-      }
-
       try {
         setStatus(TEXT_RECORD_CONVERTING, 'warning');
-        const mp4Blob = await transcodeRecordingBlob(recordedBlob, 'meeting-recording.webm');
+        const mp4Blob = await transcodeRecordingBlob(webmBlob);
         downloadBlob(mp4Blob, `meeting-recording-${Date.now()}.mp4`);
         setStatus(TEXT_RECORD_SAVED);
       } catch (err) {
         console.error(err);
-        downloadBlob(recordedBlob, `meeting-recording-${Date.now()}.webm`);
+        downloadBlob(webmBlob, `meeting-recording-${Date.now()}.webm`);
         const reason = err?.message ? `${TEXT_RECORD_MP4_SERVER_ERROR}: ${err.message}` : TEXT_RECORD_MP4_FAILED;
         setStatus(reason, 'warning');
       }
