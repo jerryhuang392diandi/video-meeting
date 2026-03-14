@@ -93,7 +93,7 @@
     </div>
   </div>
 </section>
-<section class="grid two">
+<section class="grid one traffic-row">
   <div class="panel compact-panel">
     <div class="section-head">
       <h2>{{ t('traffic_usage') }}</h2>
@@ -104,18 +104,6 @@
       <div><span>{{ t('used_traffic') }}</span><strong id="quotaUsed">{{ traffic.used_traffic_text }}</strong></div>
       <div><span>{{ t('remaining_traffic') }}</span><strong id="quotaRemaining">{{ traffic.remaining_traffic_text }}</strong></div>
       <div><span>{{ t('reset_cycle') }}</span><strong id="quotaReset">{{ traffic.reset_at_text }}</strong></div>
-    </div>
-  </div>
-  <div class="panel compact-panel">
-    <div class="section-head">
-      <h2>{{ t('traffic_guide') }}</h2>
-      <span class="section-tag">TURN</span>
-    </div>
-    <p class="muted">{{ t('traffic_guide_desc') }}</p>
-    <div class="feature-list compact-list">
-      <span class="feature-chip">{{ t('traffic_default_rule') }}</span>
-      <span class="feature-chip">{{ t('traffic_admin_rule') }}</span>
-      <span class="feature-chip">{{ t('traffic_cycle_since_register') }}</span>
     </div>
   </div>
 </section>

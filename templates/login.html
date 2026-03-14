@@ -14,17 +14,65 @@
 </header>
 
 <section class="hero-card auth-card glass-highlight">
-  <div class="hero-copy">
-    <span class="eyebrow">{{ t('app_name') }}</span>
-    <h1>{{ t('login_title') }}</h1>
-    <p>{{ t('hero_desc') }}</p>
-    <div class="feature-list">
-      <span class="feature-chip">{{ t('quick_actions') }}</span>
-      <span class="feature-chip">{{ t('language') }}</span>
-      <span class="feature-chip">Admin</span>
-      <span class="feature-chip">Single-device</span>
+  <div class="hero-copy guide-layout">
+    <div>
+      <span class="eyebrow">{{ t('app_name') }}</span>
+      <h1>{{ t('login_title') }}</h1>
+      <p>{{ t('hero_desc') }}</p>
+      <div class="feature-list">
+        <span class="feature-chip">{{ t('quick_actions') }}</span>
+        <span class="feature-chip">{{ t('language') }}</span>
+        <span class="feature-chip">Admin</span>
+        <span class="feature-chip">Single-device</span>
+      </div>
+      <p class="muted">{{ t('placeholder_login_hint') }}</p>
     </div>
-    <p class="muted">{{ t('placeholder_login_hint') }}</p>
+
+    <div class="support-wrap">
+      <div class="guide-card elevated-card">
+        <div class="section-head">
+          <h3>{{ t('guide_center') }}</h3>
+          <span class="section-tag">Help</span>
+        </div>
+        <div class="directory-row muted">{{ t('guide_directory') }}</div>
+        <details class="guide-item" open>
+          <summary>{{ t('guide_login') }}</summary>
+          <p>{{ t('guide_login_desc') }}</p>
+        </details>
+        <details class="guide-item">
+          <summary>{{ t('guide_register') }}</summary>
+          <p>{{ t('guide_register_desc') }}</p>
+        </details>
+        <details class="guide-item">
+          <summary>{{ t('guide_create_meeting') }}</summary>
+          <p>{{ t('guide_create_meeting_desc') }}</p>
+        </details>
+        <details class="guide-item">
+          <summary>{{ t('guide_join_meeting') }}</summary>
+          <p>{{ t('guide_join_meeting_desc') }}</p>
+        </details>
+        <details class="guide-item">
+          <summary>{{ t('guide_share_screen') }}</summary>
+          <p>{{ t('guide_share_screen_desc') }}</p>
+        </details>
+        <details class="guide-item">
+          <summary>{{ t('guide_traffic_rules') }}</summary>
+          <p>{{ t('guide_traffic_rules_desc') }}</p>
+        </details>
+      </div>
+
+      <div class="guide-card elevated-card support-card">
+        <div class="section-head">
+          <h3>{{ t('support_title') }}</h3>
+          <span class="section-tag">Service</span>
+        </div>
+        <div class="support-grid">
+          <div><span>{{ t('support_phone') }}</span><strong>{{ t('support_phone_value') }}</strong></div>
+          <div><span>{{ t('support_hours') }}</span><strong>{{ t('support_hours_value') }}</strong></div>
+          <div><span>{{ t('support_email') }}</span><strong>{{ t('support_email_value') }}</strong></div>
+        </div>
+      </div>
+    </div>
   </div>
   <form method="post" class="form-card elevated-card">
     {% if request.args.get('kicked') %}

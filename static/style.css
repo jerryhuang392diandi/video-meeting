@@ -509,3 +509,65 @@ video {
     align-items: stretch;
   }
 }
+
+.grid.one {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+.traffic-row { margin-top: 20px; }
+.guide-layout {
+  display: grid;
+  gap: 18px;
+}
+.support-wrap {
+  display: grid;
+  gap: 14px;
+}
+.guide-card {
+  padding: 18px;
+  border-radius: 18px;
+}
+.directory-row {
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.guide-item {
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.04);
+  border-radius: 14px;
+  padding: 0 14px;
+  margin-top: 10px;
+}
+.guide-item summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 14px 0;
+  font-weight: 700;
+}
+.guide-item summary::-webkit-details-marker { display: none; }
+.guide-item p {
+  margin: 0 0 14px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.support-grid {
+  display: grid;
+  gap: 12px;
+}
+.support-grid div {
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--line);
+}
+.support-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.support-grid strong {
+  font-size: 15px;
+  word-break: break-word;
+}
