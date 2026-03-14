@@ -180,9 +180,8 @@ socket.on('connect', async () => {
 
 socket.on('join_ok', async (data) => {
   participantCountEl.textContent = data.participant_count;
-  for (const p of data.participants) {
-    await callPeer(p.sid);
-  }
+  // 新加入的人不要主动给所有旧成员发 offer
+  // 由旧成员在 participant_joined 里主动发起即可
 });
 
 socket.on('participant_joined', async (data) => {
