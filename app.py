@@ -354,10 +354,16 @@ def tf(lang: str, key: str) -> str:
     return TRANSLATIONS.get(lang, TRANSLATIONS["zh"]).get(key, key)
 
 
+def utc_iso(dt):
+    if not dt:
+        return ""
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 @app.context_processor
 def inject_globals():
     lang = session.get("lang", "zh")
-    return {"t": t, "lang": lang, "supported_langs": ["zh", "en"]}
+    return {"t": t, "lang": lang, "supported_langs": ["zh", "en"], "utc_iso": utc_iso}
 
 
 def ensure_user_columns():

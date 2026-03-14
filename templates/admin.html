@@ -40,7 +40,7 @@
     <div class="list-item stacked">
       <div>
         <div class="item-title">{{ m.room_id }} · {{ m.host_name }}</div>
-        <div class="muted">{{ t('created_at') }}: {{ m.created_at }}{% if m.ended_at %} · {{ t('ended_at') }}: {{ m.ended_at }}{% endif %}</div>
+        <div class="muted">{{ t('created_at') }}: <span class="local-datetime" data-utc="{{ utc_iso(m.created_at) }}">{{ m.created_at }}</span>{% if m.ended_at %} · {{ t('ended_at') }}: <span class="local-datetime" data-utc="{{ utc_iso(m.ended_at) }}">{{ m.ended_at }}</span>{% endif %}</div>
         <div class="muted">{{ t('status') }}: {{ t('meeting_active') if m.status == 'active' else t('meeting_ended') }}</div>
       </div>
       <div class="row-compact wrap-actions">
@@ -69,4 +69,11 @@
     <div class="notice">{{ t('no_online_rooms') }}</div>
   {% endfor %}
 </section>
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+  window.renderLocalDateTimes && window.renderLocalDateTimes();
+</script>
 {% endblock %}

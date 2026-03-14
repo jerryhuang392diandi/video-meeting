@@ -22,7 +22,7 @@
         <div class="item-title">{{ t('room_id') }}: {{ m.room_id }}</div>
         <div class="muted">{{ t('host') }}: {{ m.host_name }}</div>
         <div class="muted">{{ t('meeting_role') }}: {{ t('created_meeting') if m.relation == 'created' else t('joined_meeting') }}</div>
-        <div class="muted">{{ t('created_at') }}: {{ m.created_at }}{% if m.ended_at %} · {{ t('ended_at') }}: {{ m.ended_at }}{% endif %}</div>
+        <div class="muted">{{ t('created_at') }}: <span class="local-datetime" data-utc="{{ utc_iso(m.created_at) }}">{{ m.created_at }}</span>{% if m.ended_at %} · {{ t('ended_at') }}: <span class="local-datetime" data-utc="{{ utc_iso(m.ended_at) }}">{{ m.ended_at }}</span>{% endif %}</div>
       </div>
       <div class="history-actions">
         {% if m.can_rejoin %}
@@ -37,4 +37,11 @@
     <div class="notice">{{ t('no_history') }}</div>
   {% endfor %}
 </section>
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+  window.renderLocalDateTimes && window.renderLocalDateTimes();
+</script>
 {% endblock %}
