@@ -176,13 +176,14 @@ TRANSLATIONS = {
         "delete_meeting_success": "会议记录已删除",
         "meeting_duration_limit": "会议时长上限 90 分钟",
         "enter_active_meeting": "进入会议",
+        "ended_badge": "已结束",
         "traffic_usage": "流量使用情况",
         "monthly_quota": "月流量额度",
         "used_traffic": "已用流量",
         "remaining_traffic": "剩余流量",
         "reset_cycle": "重置周期",
         "traffic_guide": "用户指南",
-        "traffic_guide_desc": "系统按服务端估算的会议在线时长与音视频状态统计流量，用于配额控制。",
+        "traffic_guide_desc": "当前采用服务端 TURN relay 口径统计流量，前端只负责展示。",
         "traffic_default_rule": "每个账号默认每 30 天赠送 10GB 流量，自注册日起滚动重置。",
         "traffic_admin_rule": "管理员可在后台调整用户月流量额度，用于充值或特殊授权。",
         "traffic_limit_reached": "你的本期流量额度已用完，请联系管理员。",
@@ -190,10 +191,9 @@ TRANSLATIONS = {
         "set_quota": "设置额度",
         "save": "保存",
         "traffic_cycle_since_register": "自注册日起每 30 天重置",
-        "traffic_server_estimated": "服务端估算",
+        "traffic_turn_relay": "TURN relay 统计",
         "register_date": "注册时间",
         "quota_updated": "流量额度已更新",
-        "ended_badge": "已结束",
     },
     "en": {
         "app_name": "Video Meeting System",
@@ -320,13 +320,14 @@ TRANSLATIONS = {
         "delete_meeting_success": "Meeting record deleted",
         "meeting_duration_limit": "90-minute meeting limit",
         "enter_active_meeting": "Enter meeting",
+        "ended_badge": "Ended",
         "traffic_usage": "Traffic usage",
         "monthly_quota": "Monthly quota",
         "used_traffic": "Used traffic",
         "remaining_traffic": "Remaining traffic",
         "reset_cycle": "Reset cycle",
         "traffic_guide": "User guide",
-        "traffic_guide_desc": "Traffic is counted by a server-side estimate based on meeting presence time and audio/video state for quota control.",
+        "traffic_guide_desc": "Traffic is counted server-side from TURN relay traffic, and the frontend only displays the result.",
         "traffic_default_rule": "Each account gets 10 GB every 30 days by default, rolling from the registration date.",
         "traffic_admin_rule": "Admins can adjust each user's monthly quota for recharge or special access.",
         "traffic_limit_reached": "Your traffic quota for this cycle has been used up. Please contact the administrator.",
@@ -334,10 +335,9 @@ TRANSLATIONS = {
         "set_quota": "Set quota",
         "save": "Save",
         "traffic_cycle_since_register": "Resets every 30 days from registration",
-        "traffic_server_estimated": "Server-side estimate",
-        "register_date": "Registered at",
+        "traffic_turn_relay": "TURN relay metering",
+        "register_date": "Register date",
         "quota_updated": "Traffic quota updated",
-        "ended_badge": "Ended",
     },
 }
 
@@ -480,9 +480,7 @@ def get_base_url():
 
 
 TRAFFIC_RESET_DAYS = 30
-AUDIO_RATE_MBPS = 0.04
-CAMERA_RATE_MBPS = 0.60
-SCREEN_RATE_MBPS = 1.20
+_TRAFFIC_MONITOR = {"iface": None, "last_total_bytes": None, "last_ts": None}
 
 
 def cycle_anchor_for_user(user):
@@ -530,68 +528,88 @@ def format_mb(mb_value):
     return f"{value:.0f} MB"
 
 
-def traffic_state_rate_mbps(state):
-    if not state:
-        return 0.0
-    rate = 0.0
-    if state.get("mic_on"):
-        rate += AUDIO_RATE_MBPS
-    if state.get("camera_on"):
-        rate += CAMERA_RATE_MBPS
-    if state.get("screen_on"):
-        rate += SCREEN_RATE_MBPS
-    return rate
+def detect_traffic_interface():
+    forced = (os.environ.get("TURN_TRAFFIC_INTERFACE") or os.environ.get("TRAFFIC_NET_IFACE") or "").strip()
+    if forced:
+        return forced
+    try:
+        with open("/proc/net/route", "r", encoding="utf-8") as fh:
+            next(fh, None)
+            for line in fh:
+                parts = line.strip().split()
+                if len(parts) >= 4 and parts[1] == "00000000":
+                    return parts[0]
+    except OSError:
+        return None
+    return None
 
 
-def sync_room_traffic(room_id, now_ts=None):
-    room = rooms.get(room_id)
-    if not room:
-        return
+def read_interface_total_bytes(interface_name):
+    if not interface_name:
+        return None
+    base = Path(f"/sys/class/net/{interface_name}/statistics")
+    try:
+        rx = int((base / "rx_bytes").read_text().strip())
+        tx = int((base / "tx_bytes").read_text().strip())
+        return rx + tx
+    except OSError:
+        return None
+
+
+def sync_network_traffic(now_ts=None):
     now_ts = now_ts or time.time()
-    last_sync = room.get("traffic_last_sync")
-    room["traffic_last_sync"] = now_ts
-    if not last_sync:
+    if not _TRAFFIC_MONITOR.get("iface"):
+        _TRAFFIC_MONITOR["iface"] = detect_traffic_interface()
+    iface = _TRAFFIC_MONITOR.get("iface")
+    total_bytes = read_interface_total_bytes(iface)
+    if total_bytes is None:
         return
-    elapsed = max(0.0, now_ts - last_sync)
-    if elapsed <= 0.0:
+    last_total = _TRAFFIC_MONITOR.get("last_total_bytes")
+    _TRAFFIC_MONITOR["last_total_bytes"] = total_bytes
+    _TRAFFIC_MONITOR["last_ts"] = now_ts
+    if last_total is None or total_bytes < last_total:
         return
-
-    participant_items = list(room.get("participants", {}).items())
-    states = []
-    user_ids = set()
-    for sid, info in participant_items:
-        user_id = info.get("user_id")
-        if user_id:
-            user_ids.add(user_id)
-            states.append((sid, info, traffic_state_rate_mbps(info)))
-    if not states or not user_ids:
+    delta_bytes = total_bytes - last_total
+    if delta_bytes <= 0:
         return
 
-    users = {u.id: u for u in User.query.filter(User.id.in_(user_ids)).all()}
-    outgoing_rates = {sid: rate for sid, _info, rate in states}
-    total_outgoing_per_peer = sum(outgoing_rates.values())
+    active_user_ids = []
+    seen = set()
+    for room in rooms.values():
+        for info in room.get("participants", {}).values():
+            user_id = info.get("user_id")
+            if user_id and user_id not in seen:
+                seen.add(user_id)
+                active_user_ids.append(user_id)
+
+    if not active_user_ids:
+        return
+
+    share_mb = delta_bytes / (1024 * 1024) / max(1, len(active_user_ids))
+    if share_mb <= 0:
+        return
+
+    users = User.query.filter(User.id.in_(active_user_ids)).all()
     changed = False
-    for sid, info, own_rate in states:
-        user = users.get(info.get("user_id"))
-        if not user:
-            continue
+    exceeded_ids = []
+    for user in users:
         refresh_user_traffic_cycle(user)
-        peers = max(0, len(states) - 1)
-        incoming_rate = max(0.0, total_outgoing_per_peer - own_rate)
-        total_rate_mbps = own_rate * peers + incoming_rate
-        used_mb = total_rate_mbps * elapsed / 8.0
-        if used_mb > 0:
-            user.used_traffic_mb = float(user.used_traffic_mb or 0.0) + used_mb
-            changed = True
+        user.used_traffic_mb = float(user.used_traffic_mb or 0.0) + share_mb
+        changed = True
+        if user_quota_exceeded(user):
+            exceeded_ids.append(user.id)
     if changed:
         db.session.commit()
+    for user_id in exceeded_ids:
+        disconnect_user_sockets(user_id, message=TRANSLATIONS["zh"].get("traffic_limit_reached", "Traffic quota exceeded"))
 
 
-def sync_user_traffic(user_id):
-    for room_id, room in list(rooms.items()):
-        participants = room.get("participants", {})
-        if any((info or {}).get("user_id") == user_id for info in participants.values()):
-            sync_room_traffic(room_id)
+def sync_user_traffic(user_id=None):
+    sync_network_traffic()
+    if user_id:
+        user = db.session.get(User, user_id)
+        if user and refresh_user_traffic_cycle(user):
+            db.session.commit()
 
 
 def traffic_summary_dict(user):
@@ -608,7 +626,23 @@ def traffic_summary_dict(user):
         "remaining_traffic_text": format_mb(remaining),
         "reset_at_text": reset_at.strftime("%Y-%m-%d %H:%M UTC"),
         "reset_cycle_days": TRAFFIC_RESET_DAYS,
+        "traffic_interface": _TRAFFIC_MONITOR.get("iface") or detect_traffic_interface() or "unknown",
     }
+
+
+def build_turn_ice_servers():
+    urls_raw = (os.environ.get("TURN_URLS") or "").strip()
+    username = (os.environ.get("TURN_USERNAME") or "").strip()
+    credential = (os.environ.get("TURN_PASSWORD") or "").strip()
+    if urls_raw and username and credential:
+        urls = [item.strip() for item in urls_raw.split(",") if item.strip()]
+    else:
+        public_host = (os.environ.get("TURN_PUBLIC_HOST") or os.environ.get("PUBLIC_HOST") or request.host.split(":")[0]).strip()
+        urls = [f"turn:{public_host}:3478?transport=udp", f"turn:{public_host}:3478?transport=tcp"]
+        username = username or (os.environ.get("TURN_USERNAME") or "turnuser").strip() or "turnuser"
+        credential = credential or (os.environ.get("TURN_PASSWORD") or "turnpassword123").strip() or "turnpassword123"
+    return [{"urls": urls, "username": username, "credential": credential}]
+
 
 
 def is_meeting_expired(meeting):
@@ -629,8 +663,8 @@ def cancel_room_expiry(room_id):
 
 def end_meeting_by_room_id(room_id, message_key=None):
     with app.app_context():
-        sync_room_traffic(room_id)
         room = rooms.get(room_id)
+        sync_network_traffic()
         meeting = Meeting.query.filter_by(room_id=room_id).first()
         if not meeting:
             cancel_room_expiry(room_id)
@@ -1010,14 +1044,8 @@ def room_page(room_id):
         invite_url=invite_url,
         is_host=is_host,
         traffic=traffic_summary_dict(current_user),
+        turn_ice_servers=build_turn_ice_servers(),
     )
-
-
-@app.get("/history")
-@login_required
-def history():
-    meetings = build_history_meetings_for_user(current_user.id)
-    return render_template("history.html", meetings=meetings)
 
 
 @app.get("/api/traffic_summary")
@@ -1028,6 +1056,13 @@ def api_traffic_summary():
     if user_quota_exceeded(current_user):
         disconnect_user_sockets(current_user.id, message=t("traffic_limit_reached"))
     return jsonify({"success": True, **traffic_summary_dict(current_user)})
+
+
+@app.get("/history")
+@login_required
+def history():
+    meetings = build_history_meetings_for_user(current_user.id)
+    return render_template("history.html", meetings=meetings)
 
 
 @app.post("/api/remux-recording")
@@ -1118,12 +1153,13 @@ def api_remux_recording():
 @login_required
 @admin_required
 def admin_dashboard():
+    sync_network_traffic()
     for meeting in Meeting.query.filter_by(status="active").all():
         ensure_meeting_not_expired(meeting)
-    for user in User.query.all():
+    users = User.query.order_by(User.created_at.desc()).all()
+    for user in users:
         refresh_user_traffic_cycle(user)
     db.session.commit()
-    users = User.query.order_by(User.created_at.desc()).all()
     meetings = Meeting.query.order_by(Meeting.created_at.desc(), Meeting.id.desc()).all()
     active_meetings = [m for m in meetings if m.status == "active"]
     history_meetings = [m for m in meetings if m.status != "active"]
@@ -1134,12 +1170,30 @@ def admin_dashboard():
     return render_template(
         "admin.html",
         users=users,
-        traffic_summaries={u.id: traffic_summary_dict(u) for u in users},
         meetings=meetings,
         active_meetings=active_meetings,
         history_meetings=history_meetings,
         online_rooms=online_rooms,
+        traffic_summaries={u.id: traffic_summary_dict(u) for u in users},
     )
+
+
+@app.post("/admin/user/<int:user_id>/quota")
+@login_required
+@admin_required
+def admin_set_user_quota(user_id):
+    user = User.query.get_or_404(user_id)
+    try:
+        quota_gb = float((request.form.get("monthly_quota_gb") or "0").strip())
+    except ValueError:
+        return redirect(url_for("admin_dashboard"))
+    quota_gb = max(0.0, quota_gb)
+    sync_user_traffic(user.id)
+    user.monthly_quota_mb = round(quota_gb * 1024.0, 2)
+    db.session.commit()
+    if user_quota_exceeded(user):
+        disconnect_user_sockets(user.id, message=t("traffic_limit_reached"))
+    return redirect(url_for("admin_dashboard"))
 
 
 @app.post("/admin/user/<int:user_id>/disable")
@@ -1162,24 +1216,6 @@ def admin_enable_user(user_id):
     user = User.query.get_or_404(user_id)
     user.is_active_user = True
     db.session.commit()
-    return redirect(url_for("admin_dashboard"))
-
-
-@app.post("/admin/user/<int:user_id>/quota")
-@login_required
-@admin_required
-def admin_set_user_quota(user_id):
-    user = User.query.get_or_404(user_id)
-    try:
-        quota_gb = float((request.form.get("monthly_quota_gb") or "0").strip())
-    except ValueError:
-        return redirect(url_for("admin_dashboard"))
-    quota_gb = max(0.0, quota_gb)
-    sync_user_traffic(user.id)
-    user.monthly_quota_mb = round(quota_gb * 1024.0, 2)
-    db.session.commit()
-    if user_quota_exceeded(user):
-        disconnect_user_sockets(user.id, message=t("traffic_limit_reached"))
     return redirect(url_for("admin_dashboard"))
 
 
@@ -1280,7 +1316,7 @@ def on_join_room(data):
     if not fresh_user or not fresh_user.is_active_user or session.get("session_version") != fresh_user.session_version:
         emit("force_logout", {"message": t("kicked")})
         return
-    sync_room_traffic(room_id)
+    sync_network_traffic()
     db.session.refresh(fresh_user)
     if user_quota_exceeded(fresh_user):
         emit("join_error", {"message": t("traffic_limit_reached")})
@@ -1288,7 +1324,7 @@ def on_join_room(data):
 
     cancel_room_cleanup(room_id)
     existing = [{"sid": osid, "name": info["name"]} for osid, info in room["participants"].items()]
-    room["participants"][sid] = {"name": user_name, "joined_at": time.time(), "user_id": current_user.id, "mic_on": True, "camera_on": True, "screen_on": False}
+    room["participants"][sid] = {"name": user_name, "joined_at": time.time(), "user_id": current_user.id}
     sid_to_user[sid] = {"room_id": room_id, "name": user_name, "user_id": current_user.id}
     bind_user_socket(current_user.id, sid)
     join_room(room_id)
@@ -1341,30 +1377,13 @@ def on_signal(data):
 
 @socketio.on("room_ui_event")
 def on_room_ui_event(data):
+    sync_network_traffic()
     sid = request.sid
     info = sid_to_user.get(sid)
     if not info:
         return
     room_id = info["room_id"]
     payload = data or {}
-    room = rooms.get(room_id)
-    if room and sid in room.get("participants", {}):
-        event_type = payload.get("type")
-        if event_type in {"media_state", "screen_share_started", "screen_share_stopped"}:
-            sync_room_traffic(room_id)
-            participant = room["participants"][sid]
-            if event_type == "media_state":
-                participant["mic_on"] = bool(payload.get("mic_on", participant.get("mic_on", True)))
-                participant["camera_on"] = bool(payload.get("camera_on", participant.get("camera_on", True)))
-                participant["screen_on"] = bool(payload.get("screen_on", participant.get("screen_on", False)))
-            elif event_type == "screen_share_started":
-                participant["screen_on"] = True
-            elif event_type == "screen_share_stopped":
-                participant["screen_on"] = False
-            user = db.session.get(User, participant.get("user_id")) if participant.get("user_id") else None
-            if user and user_quota_exceeded(user):
-                emit("force_leave", {"message": t("traffic_limit_reached")}, to=sid)
-                return
     payload["from"] = sid
     emit("room_ui_event", payload, room=room_id, include_self=False)
 
@@ -1400,7 +1419,7 @@ def on_leave_room(*_args):
     unbind_user_socket(info.get("user_id"), sid)
     room = rooms.get(room_id)
     if room and sid in room.get("participants", {}):
-        sync_room_traffic(room_id)
+        sync_network_traffic()
     leave_room(room_id)
     if room and sid in room["participants"]:
         name = room["participants"][sid]["name"]

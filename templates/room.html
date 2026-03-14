@@ -34,19 +34,19 @@
     <input id="virtualBgInput" type="file" accept="image/*" class="hidden" />
     <div id="statusBox" class="notice">{{ t('room_ready') }}</div>
     <div class="mini-panel">
-      <div class="muted">{{ t('traffic_usage') }} · {{ t('traffic_server_estimated') }}</div>
+      <div class="muted">{{ t('invite_link') }}</div>
+      <div class="row-compact">
+        <input id="inviteInput" readonly value="{{ invite_url }}" />
+        <button class="ghost-btn" id="copyInviteBtn">{{ t('copy') }}</button>
+      </div>
+    </div>
+    <div class="mini-panel">
+      <div class="muted">{{ t('traffic_usage') }} · {{ t('traffic_turn_relay') }}</div>
       <div class="status-grid">
         <div><span>{{ t('monthly_quota') }}</span><strong id="trafficQuotaTotal">{{ traffic.monthly_quota_text }}</strong></div>
         <div><span>{{ t('used_traffic') }}</span><strong id="trafficQuotaUsed">{{ traffic.used_traffic_text }}</strong></div>
         <div><span>{{ t('remaining_traffic') }}</span><strong id="trafficQuotaRemaining">{{ traffic.remaining_traffic_text }}</strong></div>
         <div><span>{{ t('reset_cycle') }}</span><strong id="trafficQuotaReset">{{ traffic.reset_at_text }}</strong></div>
-      </div>
-    </div>
-    <div class="mini-panel">
-      <div class="muted">{{ t('invite_link') }}</div>
-      <div class="row-compact">
-        <input id="inviteInput" readonly value="{{ invite_url }}" />
-        <button class="ghost-btn" id="copyInviteBtn">{{ t('copy') }}</button>
       </div>
     </div>
   </aside>
@@ -100,7 +100,7 @@ const TEXT_HOST_RETURNED_ROOM = {{ t('host_returned_room')|tojson }};
 const TEXT_TRAFFIC_LIMIT_REACHED = {{ t('traffic_limit_reached')|tojson }};
 
 const socket = io();
-const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const rtcConfig = { iceServers: {{ turn_ice_servers|tojson }}, iceTransportPolicy: 'relay' };
 
 let localStream = null;
 let rawCameraStream = null;
@@ -386,7 +386,6 @@ async function requestMedia(forceFacingMode = null) {
       }
     } else {
       setStatus(TEXT_PERMISSION_READY);
-      broadcastMediaState();
     }
   } catch (err) {
     console.error(err);
@@ -710,38 +709,6 @@ function broadcastUiEvent(payload) {
   socket.emit('room_ui_event', payload);
 }
 
-
-
-function broadcastMediaState() {
-  const micTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
-  const videoTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
-  socket.emit('room_ui_event', {
-    type: 'media_state',
-    mic_on: !!micTrack && micTrack.enabled !== false,
-    camera_on: !!videoTrack && videoTrack.enabled !== false,
-    screen_on: !!isSharingScreen,
-  });
-}
-
-async function refreshTrafficPanel() {
-  try {
-    const res = await fetch('/api/traffic_summary');
-    const data = await res.json();
-    if (!data.success) return;
-    const total = document.getElementById('trafficQuotaTotal');
-    const used = document.getElementById('trafficQuotaUsed');
-    const remaining = document.getElementById('trafficQuotaRemaining');
-    const reset = document.getElementById('trafficQuotaReset');
-    if (total) total.textContent = data.monthly_quota_text;
-    if (used) used.textContent = data.used_traffic_text;
-    if (remaining) remaining.textContent = data.remaining_traffic_text;
-    if (reset) reset.textContent = data.reset_at_text;
-    if ((data.remaining_traffic_mb || 0) <= 0) {
-      leaveMeetingAndExit(TEXT_TRAFFIC_LIMIT_REACHED);
-    }
-  } catch (_) {}
-}
-
 function cleanupMeetingSession() {
   if (hasLeftMeeting) return;
   hasLeftMeeting = true;
@@ -773,15 +740,12 @@ socket.on('connect', async () => {
   renderLayout();
   if (!rawCameraStream && !localStream) await requestMedia(currentFacingMode);
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
-  refreshTrafficPanel();
 });
 
 socket.on('join_ok', async (data) => {
   participantCountEl.textContent = data.participant_count;
   for (const p of data.participants) addRemoteParticipant(p.sid, p.name);
   focusParticipant('local');
-  broadcastMediaState();
-  refreshTrafficPanel();
   if (data && data.host_present === false && {{ 'true' if is_host else 'false' }}) {
     setStatus(TEXT_HOST_RETURNED_ROOM);
   } else if (data && data.host_present === false) {
@@ -871,7 +835,6 @@ document.getElementById('toggleMicBtn').onclick = () => {
   const localTrack = localStream?.getAudioTracks?.()[0];
   if (localTrack && localTrack !== rawTrack) localTrack.enabled = rawTrack.enabled;
   setStatus(rawTrack.enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
-  broadcastMediaState();
 };
 document.getElementById('toggleCameraBtn').onclick = () => {
   const rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
@@ -882,7 +845,6 @@ document.getElementById('toggleCameraBtn').onclick = () => {
   if (outputVideoTrack && outputVideoTrack !== rawTrack) outputVideoTrack.enabled = rawTrack.enabled;
   updatePlaceholder(localCard, rawTrack.enabled);
   setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
-  broadcastMediaState();
 };
 document.getElementById('shareScreenBtn').onclick = async () => {
   try {
@@ -899,7 +861,6 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     focusParticipant('local', { hideSidebar: false, screenShare: true });
     setStatus(TEXT_SCREEN_SHARE_MODE);
     broadcastUiEvent({ type: 'screen_share_started', hideSidebar: false });
-    broadcastMediaState();
 
     screenTrack.onended = async () => {
       isSharingScreen = false;
@@ -915,7 +876,6 @@ document.getElementById('shareScreenBtn').onclick = async () => {
       focusedSid = 'local';
       renderLayout();
       broadcastUiEvent({ type: 'screen_share_stopped' });
-      broadcastMediaState();
       setStatus(TEXT_SCREEN_SHARE_STOPPED);
     };
   } catch (err) {
@@ -957,8 +917,6 @@ virtualBgInput.onchange = async (event) => {
   }
 };
 recordingBtn.onclick = () => toggleScreenRecording();
-setInterval(refreshTrafficPanel, 20000);
-
 document.getElementById('leaveMeetingBtn').onclick = () => {
   if (confirm(TEXT_LEAVE_CONFIRM)) {
     leaveMeetingAndExit(TEXT_YOU_LEFT_MEETING);
@@ -985,5 +943,27 @@ window.addEventListener('beforeunload', () => {
 
 ensureCard('local', getDisplayName('local'), true);
 renderLayout();
+
+async function refreshTrafficPanel() {
+  try {
+    const res = await fetch('/api/traffic_summary');
+    if (!res.ok) return;
+    const data = await res.json();
+    const total = document.getElementById('trafficQuotaTotal');
+    const used = document.getElementById('trafficQuotaUsed');
+    const remaining = document.getElementById('trafficQuotaRemaining');
+    const reset = document.getElementById('trafficQuotaReset');
+    if (total) total.textContent = data.monthly_quota_text;
+    if (used) used.textContent = data.used_traffic_text;
+    if (remaining) remaining.textContent = data.remaining_traffic_text;
+    if (reset) reset.textContent = data.reset_at_text;
+    if ((data.remaining_traffic_mb || 0) <= 0) {
+      leaveMeetingAndExit(TEXT_TRAFFIC_LIMIT_REACHED);
+    }
+  } catch (_) {}
+}
+
+refreshTrafficPanel();
+setInterval(refreshTrafficPanel, 20000);
 </script>
 {% endblock %}

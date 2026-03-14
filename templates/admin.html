@@ -18,7 +18,7 @@
 <section class="grid two">
   <div class="panel panel-glow">
     <h2>{{ t('users') }}</h2>
-    <div class="muted" style="margin-bottom: 12px;">{{ t('traffic_management') }} · {{ t('traffic_server_estimated') }}</div>
+    <div class="muted" style="margin-bottom: 12px;">{{ t('traffic_management') }} · {{ t('traffic_turn_relay') }}</div>
     {% for u in users %}
     <div class="list-item stacked">
       <div>
@@ -34,8 +34,7 @@
         {% endif %}
         <form method="post" action="{{ url_for('admin_set_user_quota', user_id=u.id) }}" class="row-compact">
           <input type="number" name="monthly_quota_gb" min="0" step="0.5" value="{{ '%.2f'|format((u.monthly_quota_mb or 0) / 1024) }}" style="max-width: 110px;" />
-          <span class="muted">GB</span>
-          <button class="ghost-btn" type="submit">{{ t('save') }}</button>
+          <button class="ghost-btn" type="submit">{{ t('set_quota') }}</button>
         </form>
       </div>
     </div>
