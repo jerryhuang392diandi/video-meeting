@@ -155,6 +155,8 @@ TRANSLATIONS = {
         "host_left_room": "主持人已离开会议，当前会议暂时没有主持人。",
         "host_returned_room": "主持人已返回会议，主持权限已恢复。",
         "you_left_meeting": "你已离开会议",
+        "record_password_label": "会议密码",
+        "record_direct_mp4": "浏览器已直接生成 MP4 文件",
     },
     "en": {
         "app_name": "Video Meeting System",
@@ -633,53 +635,65 @@ def api_remux_recording():
 
     ffmpeg_path = shutil.which("ffmpeg")
     if not ffmpeg_path:
-        return jsonify({"success": False, "message": "ffmpeg not installed"}), 501
+        return jsonify({"success": False, "message": "ffmpeg not installed on server"}), 501
 
     workdir = tempfile.mkdtemp(prefix="meeting-remux-")
-    input_path = os.path.join(workdir, "input.webm")
+    input_ext = Path(upload.filename).suffix.lower() or ".webm"
+    input_path = os.path.join(workdir, f"input{input_ext}")
     output_path = os.path.join(workdir, "output.mp4")
     upload.save(input_path)
 
-    cmd = [
-        ffmpeg_path,
-        "-y",
-        "-fflags",
-        "+genpts",
-        "-i",
-        input_path,
-        "-map",
-        "0:v:0",
-        "-map",
-        "0:a?",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-pix_fmt",
-        "yuv420p",
-        "-profile:v",
-        "main",
-        "-movflags",
-        "+faststart",
-        "-c:a",
-        "aac",
-        "-ar",
-        "48000",
-        "-ac",
-        "2",
-        "-shortest",
-        output_path,
+    command_candidates = [
+        [
+            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
+            "-map", "0:v:0", "-map", "0:a?",
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-profile:v", "main", "-movflags", "+faststart",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+            "-shortest", output_path,
+        ],
+        [
+            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
+            "-map", "0:v:0", "-map", "0:a?",
+            "-c:v", "mpeg4", "-q:v", "5", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+            "-shortest", output_path,
+        ],
+        [
+            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
+            "-map", "0:v:0",
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-profile:v", "main", "-movflags", "+faststart",
+            output_path,
+        ],
+        [
+            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
+            "-map", "0:v:0",
+            "-c:v", "mpeg4", "-q:v", "5", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            output_path,
+        ],
     ]
-    try:
-        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-    except Exception as exc:
-        shutil.rmtree(workdir, ignore_errors=True)
-        return jsonify({"success": False, "message": str(exc)}), 500
 
-    if completed.returncode != 0 or not os.path.exists(output_path):
-        shutil.rmtree(workdir, ignore_errors=True)
+    errors = []
+    for cmd in command_candidates:
+        try:
+            completed = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        except Exception as exc:
+            errors.append(str(exc))
+            continue
+        if completed.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            break
         err = (completed.stderr or completed.stdout or "ffmpeg failed").strip()
-        return jsonify({"success": False, "message": err[-1200:]}), 500
+        errors.append(err[-800:])
+        try:
+            os.remove(output_path)
+        except OSError:
+            pass
+    else:
+        shutil.rmtree(workdir, ignore_errors=True)
+        return jsonify({"success": False, "message": " | ".join(errors[-3:]) or "ffmpeg failed"}), 500
 
     data = Path(output_path).read_bytes()
 
