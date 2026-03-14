@@ -509,8 +509,3 @@ video {
     align-items: stretch;
   }
 }
-
-.traffic-grid { margin-top: 10px; }
-.guide-list { display: grid; gap: 10px; margin-top: 14px; }
-.guide-item { padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,0.04); line-height: 1.65; }
-.quota-form input { margin: 0; }

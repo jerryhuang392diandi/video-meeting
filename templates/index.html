@@ -43,39 +43,6 @@
 <section class="grid two">
   <div class="panel panel-glow">
     <div class="section-head">
-      <h2>{{ t('traffic_usage') }}</h2>
-      <span class="section-tag">{{ t('free_quota_default') }}</span>
-    </div>
-    <div class="status-grid traffic-grid">
-      <div><span>{{ t('used_traffic') }}</span><strong>{{ traffic.used_mb }} MB</strong></div>
-      <div><span>{{ t('monthly_quota') }}</span><strong>{{ traffic.total_mb }} MB</strong></div>
-      <div><span>{{ t('remaining_traffic') }}</span><strong>{{ traffic.remaining_mb }} MB</strong></div>
-      <div><span>{{ t('next_reset') }}</span><strong class="local-datetime" data-utc="{{ utc_iso(traffic.next_reset_at) }}">{{ traffic.next_reset_at }}</strong></div>
-    </div>
-    <div class="notice {% if traffic.status == 'exceeded' %}error{% elif traffic.status == 'low' %}warning{% endif %}">
-      {% if traffic.status == 'exceeded' %}{{ t('quota_exceeded') }}{% elif traffic.status == 'low' %}{{ t('quota_warning') }}{% else %}{{ t('quota_status_ok') }}{% endif %}
-    </div>
-  </div>
-
-  <div class="panel panel-glow">
-    <div class="section-head">
-      <h2>{{ t('traffic_guide') }}</h2>
-      <span class="section-tag">{{ t('traffic_reset_rule') }}</span>
-    </div>
-    <div class="muted" style="line-height:1.75;">{{ t('traffic_guide_desc') }}</div>
-    <div class="guide-list">
-      <div class="guide-item">1. {{ t('guide_tip_1') }}</div>
-      <div class="guide-item">2. {{ t('guide_tip_2') }}</div>
-      <div class="guide-item">3. {{ t('guide_tip_3') }}</div>
-      <div class="guide-item">4. {{ t('guide_tip_4') }}</div>
-    </div>
-    <div class="notice">{{ t('traffic_reset_example') }}</div>
-  </div>
-</section>
-
-<section class="grid two">
-  <div class="panel panel-glow">
-    <div class="section-head">
       <h2>{{ t('create_room') }}</h2>
       <span class="section-tag">Host</span>
     </div>
@@ -97,6 +64,34 @@
     <label>{{ t('room_password') }}</label>
     <input id="joinPassword" maxlength="16" />
     <button class="primary-btn" id="joinBtn">{{ t('join_now') }}</button>
+  </div>
+</section>
+
+<section class="grid two">
+  <div class="panel panel-glow">
+    <div class="section-head">
+      <h2>{{ t('traffic_usage') }}</h2>
+      <span class="section-tag">{{ t('traffic_server_estimated') }}</span>
+    </div>
+    <div class="status-grid">
+      <div><span>{{ t('monthly_quota') }}</span><strong id="quotaTotal">{{ traffic.monthly_quota_text }}</strong></div>
+      <div><span>{{ t('used_traffic') }}</span><strong id="quotaUsed">{{ traffic.used_traffic_text }}</strong></div>
+      <div><span>{{ t('remaining_traffic') }}</span><strong id="quotaRemaining">{{ traffic.remaining_traffic_text }}</strong></div>
+      <div><span>{{ t('reset_cycle') }}</span><strong id="quotaReset">{{ traffic.reset_at_text }}</strong></div>
+    </div>
+  </div>
+
+  <div class="panel panel-glow">
+    <div class="section-head">
+      <h2>{{ t('traffic_guide') }}</h2>
+      <span class="section-tag">10GB</span>
+    </div>
+    <p class="muted">{{ t('traffic_guide_desc') }}</p>
+    <div class="feature-list compact-list">
+      <span class="feature-chip">{{ t('traffic_default_rule') }}</span>
+      <span class="feature-chip">{{ t('traffic_admin_rule') }}</span>
+      <span class="feature-chip">{{ t('traffic_cycle_since_register') }}</span>
+    </div>
   </div>
 </section>
 
@@ -133,6 +128,22 @@
 const TEXT_COPY = {{ t('copy')|tojson }};
 const TEXT_COPIED = {{ t('copied')|tojson }};
 const TEXT_FAILED = {{ t('failed')|tojson }};
+
+async function refreshTrafficSummary() {
+  try {
+    const res = await fetch('/api/traffic_summary');
+    const data = await res.json();
+    if (!data.success) return;
+    const total = document.getElementById('quotaTotal');
+    const used = document.getElementById('quotaUsed');
+    const remaining = document.getElementById('quotaRemaining');
+    const reset = document.getElementById('quotaReset');
+    if (total) total.textContent = data.monthly_quota_text;
+    if (used) used.textContent = data.used_traffic_text;
+    if (remaining) remaining.textContent = data.remaining_traffic_text;
+    if (reset) reset.textContent = data.reset_at_text;
+  } catch (_) {}
+}
 
 const copyText = async (text) => {
   await navigator.clipboard.writeText(text);
@@ -179,6 +190,9 @@ document.getElementById('createBtn').addEventListener('click', async () => {
     alert(TEXT_COPIED);
   };
 });
+
+refreshTrafficSummary();
+setInterval(refreshTrafficSummary, 20000);
 
 document.getElementById('joinBtn').addEventListener('click', async () => {
   saveDisplayName();

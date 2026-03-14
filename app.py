@@ -10,7 +10,6 @@ import threading
 import time
 from urllib.parse import quote
 from datetime import datetime, timedelta
-import math
 from pathlib import Path
 from functools import wraps
 
@@ -177,34 +176,24 @@ TRANSLATIONS = {
         "delete_meeting_success": "会议记录已删除",
         "meeting_duration_limit": "会议时长上限 90 分钟",
         "enter_active_meeting": "进入会议",
-        "ended_badge": "已结束",
-        "traffic_management": "流量管理",
-        "monthly_quota": "每月额度",
+        "traffic_usage": "流量使用情况",
+        "monthly_quota": "月流量额度",
         "used_traffic": "已用流量",
         "remaining_traffic": "剩余流量",
         "reset_cycle": "重置周期",
-        "next_reset": "下次重置",
-        "quota_adjust": "调整额度",
-        "save_quota": "保存额度",
-        "free_quota_default": "默认每月免费 10GB",
         "traffic_guide": "用户指南",
-        "traffic_guide_title": "流量与配额说明",
-        "traffic_guide_desc": "每个用户默认每月 10GB 免费流量，自注册日起按月重置；管理员可在后台按充值情况调整额度。",
-        "traffic_usage": "流量使用情况",
-        "quota_exceeded": "本月流量已用完，请联系管理员充值。",
-        "quota_warning": "流量不足，建议尽快联系管理员。",
-        "traffic_last_reset": "上次重置",
-        "traffic_reset_rule": "按注册日起每月重置",
-        "traffic_reset_example": "例如 3 月 15 日注册，则 4 月 15 日、5 月 15 日自动重置。",
-        "quota_saved": "流量额度已更新",
-        "traffic_mb": "MB",
-        "guide_tip_1": "默认配额：每位用户每月 10GB 免费流量。",
-        "guide_tip_2": "统计范围：视频、音频、屏幕共享等实际收发流量。",
-        "guide_tip_3": "重置规则：从注册日起按月滚动重置。",
-        "guide_tip_4": "超额后将无法创建或加入新会议，请联系管理员充值。",
-        "quota_status_ok": "配额正常",
-        "quota_status_exceeded": "配额已用尽",
-        "quota_status_low": "剩余不足",
+        "traffic_guide_desc": "系统按服务端估算的会议在线时长与音视频状态统计流量，用于配额控制。",
+        "traffic_default_rule": "每个账号默认每 30 天赠送 10GB 流量，自注册日起滚动重置。",
+        "traffic_admin_rule": "管理员可在后台调整用户月流量额度，用于充值或特殊授权。",
+        "traffic_limit_reached": "你的本期流量额度已用完，请联系管理员。",
+        "traffic_management": "流量管理",
+        "set_quota": "设置额度",
+        "save": "保存",
+        "traffic_cycle_since_register": "自注册日起每 30 天重置",
+        "traffic_server_estimated": "服务端估算",
+        "register_date": "注册时间",
+        "quota_updated": "流量额度已更新",
+        "ended_badge": "已结束",
     },
     "en": {
         "app_name": "Video Meeting System",
@@ -331,34 +320,24 @@ TRANSLATIONS = {
         "delete_meeting_success": "Meeting record deleted",
         "meeting_duration_limit": "90-minute meeting limit",
         "enter_active_meeting": "Enter meeting",
-        "ended_badge": "Ended",
-        "traffic_management": "Traffic Management",
+        "traffic_usage": "Traffic usage",
         "monthly_quota": "Monthly quota",
         "used_traffic": "Used traffic",
         "remaining_traffic": "Remaining traffic",
         "reset_cycle": "Reset cycle",
-        "next_reset": "Next reset",
-        "quota_adjust": "Adjust quota",
-        "save_quota": "Save quota",
-        "free_quota_default": "Default 10GB free traffic per month",
-        "traffic_guide": "User Guide",
-        "traffic_guide_title": "Traffic and quota policy",
-        "traffic_guide_desc": "Each user gets 10GB free traffic every month by default. The cycle resets monthly from the registration date, and admins can adjust the quota after payment recharge.",
-        "traffic_usage": "Traffic usage",
-        "quota_exceeded": "Your monthly traffic quota has been used up. Please contact the administrator to recharge.",
-        "quota_warning": "Traffic is running low. Please contact the administrator soon.",
-        "traffic_last_reset": "Last reset",
-        "traffic_reset_rule": "Monthly reset based on registration date",
-        "traffic_reset_example": "Example: if registered on March 15, the quota resets on April 15, May 15, and so on.",
-        "quota_saved": "Traffic quota updated",
-        "traffic_mb": "MB",
-        "guide_tip_1": "Default quota: 10GB free traffic per user each month.",
-        "guide_tip_2": "Counted traffic: actual inbound and outbound video, audio, and screen-sharing traffic.",
-        "guide_tip_3": "Reset rule: rolling monthly reset anchored to the registration date.",
-        "guide_tip_4": "After the quota is exhausted, creating or joining new meetings is blocked until an admin recharges the account.",
-        "quota_status_ok": "Quota OK",
-        "quota_status_exceeded": "Quota exhausted",
-        "quota_status_low": "Low remaining quota",
+        "traffic_guide": "User guide",
+        "traffic_guide_desc": "Traffic is counted by a server-side estimate based on meeting presence time and audio/video state for quota control.",
+        "traffic_default_rule": "Each account gets 10 GB every 30 days by default, rolling from the registration date.",
+        "traffic_admin_rule": "Admins can adjust each user's monthly quota for recharge or special access.",
+        "traffic_limit_reached": "Your traffic quota for this cycle has been used up. Please contact the administrator.",
+        "traffic_management": "Traffic management",
+        "set_quota": "Set quota",
+        "save": "Save",
+        "traffic_cycle_since_register": "Resets every 30 days from registration",
+        "traffic_server_estimated": "Server-side estimate",
+        "register_date": "Registered at",
+        "quota_updated": "Traffic quota updated",
+        "ended_badge": "Ended",
     },
 }
 
@@ -373,9 +352,9 @@ class User(UserMixin, db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     is_active_user = db.Column(db.Boolean, default=True)
     session_version = db.Column(db.Integer, default=0)
-    monthly_quota_mb = db.Column(db.Integer, default=10240)
-    used_traffic_mb = db.Column(db.Float, default=0)
-    last_quota_reset_at = db.Column(db.DateTime, nullable=True)
+    monthly_quota_mb = db.Column(db.Float, default=10240.0)
+    used_traffic_mb = db.Column(db.Float, default=0.0)
+    traffic_cycle_start_at = db.Column(db.DateTime, nullable=True)
 
     meetings = db.relationship("Meeting", backref="host", lazy=True)
 
@@ -453,11 +432,11 @@ def ensure_user_columns():
     if "session_version" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN session_version INTEGER DEFAULT 0")
     if "monthly_quota_mb" not in cols:
-        cur.execute("ALTER TABLE users ADD COLUMN monthly_quota_mb INTEGER DEFAULT 10240")
+        cur.execute("ALTER TABLE users ADD COLUMN monthly_quota_mb FLOAT DEFAULT 10240")
     if "used_traffic_mb" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN used_traffic_mb FLOAT DEFAULT 0")
-    if "last_quota_reset_at" not in cols:
-        cur.execute("ALTER TABLE users ADD COLUMN last_quota_reset_at DATETIME")
+    if "traffic_cycle_start_at" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN traffic_cycle_start_at DATETIME")
     conn.commit()
     conn.close()
 
@@ -467,7 +446,7 @@ def ensure_admin():
     admin_password = (os.environ.get("ADMIN_PASSWORD") or "Huang040726").strip() or "Huang040726"
     user = User.query.filter_by(username=admin_username).first()
     if not user:
-        user = User(username=admin_username, is_admin=True, is_active_user=True, session_version=0, monthly_quota_mb=10240, used_traffic_mb=0, last_quota_reset_at=datetime.utcnow())
+        user = User(username=admin_username, is_admin=True, is_active_user=True, session_version=0)
         user.set_password(admin_password)
         db.session.add(user)
     else:
@@ -475,110 +454,7 @@ def ensure_admin():
         user.is_active_user = True
         if not user.password_hash:
             user.set_password(admin_password)
-        if user.monthly_quota_mb is None or user.monthly_quota_mb <= 0:
-            user.monthly_quota_mb = 10240
-        if user.used_traffic_mb is None:
-            user.used_traffic_mb = 0
-        if user.last_quota_reset_at is None:
-            user.last_quota_reset_at = user.created_at or datetime.utcnow()
     db.session.commit()
-
-
-def bytes_to_mb(num_bytes):
-    try:
-        value = float(num_bytes or 0)
-    except (TypeError, ValueError):
-        value = 0
-    return max(0.0, value / (1024 * 1024))
-
-
-def format_mb(value):
-    try:
-        value = float(value or 0)
-    except (TypeError, ValueError):
-        value = 0
-    return round(value, 2)
-
-
-def quota_window_end(anchor, now=None):
-    now = now or datetime.utcnow()
-    if not anchor:
-        return now + timedelta(days=30)
-    cursor = anchor
-    while cursor + timedelta(days=30) <= now:
-        cursor += timedelta(days=30)
-    return cursor + timedelta(days=30)
-
-
-def reset_user_quota_if_needed(user, commit=False):
-    if not user:
-        return False
-    anchor = user.last_quota_reset_at or user.created_at or datetime.utcnow()
-    changed = False
-    while anchor + timedelta(days=30) <= datetime.utcnow():
-        anchor += timedelta(days=30)
-        user.used_traffic_mb = 0
-        user.last_quota_reset_at = anchor
-        changed = True
-    if user.last_quota_reset_at is None:
-        user.last_quota_reset_at = user.created_at or datetime.utcnow()
-        changed = True
-    if user.monthly_quota_mb is None or user.monthly_quota_mb <= 0:
-        user.monthly_quota_mb = 10240
-        changed = True
-    if user.used_traffic_mb is None:
-        user.used_traffic_mb = 0
-        changed = True
-    if changed and commit:
-        db.session.commit()
-    return changed
-
-
-def user_remaining_quota_mb(user):
-    reset_user_quota_if_needed(user)
-    return max(0.0, float(user.monthly_quota_mb or 0) - float(user.used_traffic_mb or 0))
-
-
-def user_quota_exceeded(user):
-    return user_remaining_quota_mb(user) <= 0
-
-
-def user_quota_status(user):
-    remaining = user_remaining_quota_mb(user)
-    total = float(user.monthly_quota_mb or 0)
-    if remaining <= 0:
-        return "exceeded"
-    if total > 0 and remaining / total <= 0.15:
-        return "low"
-    return "ok"
-
-
-def traffic_summary_for_user(user):
-    reset_user_quota_if_needed(user)
-    total = float(user.monthly_quota_mb or 0)
-    used = float(user.used_traffic_mb or 0)
-    remaining = max(0.0, total - used)
-    next_reset = quota_window_end(user.last_quota_reset_at or user.created_at or datetime.utcnow())
-    return {
-        "total_mb": format_mb(total),
-        "used_mb": format_mb(used),
-        "remaining_mb": format_mb(remaining),
-        "status": user_quota_status(user),
-        "next_reset_at": next_reset,
-        "last_reset_at": user.last_quota_reset_at or user.created_at,
-    }
-
-
-def add_user_traffic(user, bytes_delta):
-    if not user:
-        return False
-    reset_user_quota_if_needed(user)
-    delta_mb = bytes_to_mb(bytes_delta)
-    if delta_mb <= 0:
-        return False
-    user.used_traffic_mb = float(user.used_traffic_mb or 0) + delta_mb
-    db.session.commit()
-    return True
 
 
 def normalize_password(pwd: str) -> str:
@@ -603,6 +479,137 @@ def get_base_url():
     return f"{scheme}://{host}"
 
 
+TRAFFIC_RESET_DAYS = 30
+AUDIO_RATE_MBPS = 0.04
+CAMERA_RATE_MBPS = 0.60
+SCREEN_RATE_MBPS = 1.20
+
+
+def cycle_anchor_for_user(user):
+    anchor = getattr(user, "traffic_cycle_start_at", None)
+    if anchor:
+        return anchor
+    anchor = getattr(user, "created_at", None) or datetime.utcnow()
+    user.traffic_cycle_start_at = anchor
+    return anchor
+
+
+def refresh_user_traffic_cycle(user, now=None):
+    now = now or datetime.utcnow()
+    anchor = cycle_anchor_for_user(user)
+    changed = False
+    while anchor + timedelta(days=TRAFFIC_RESET_DAYS) <= now:
+        anchor = anchor + timedelta(days=TRAFFIC_RESET_DAYS)
+        user.used_traffic_mb = 0.0
+        changed = True
+    if user.traffic_cycle_start_at != anchor:
+        user.traffic_cycle_start_at = anchor
+        changed = True
+    if user.monthly_quota_mb is None:
+        user.monthly_quota_mb = 10240.0
+        changed = True
+    if user.used_traffic_mb is None:
+        user.used_traffic_mb = 0.0
+        changed = True
+    return changed
+
+
+def user_remaining_quota_mb(user):
+    refresh_user_traffic_cycle(user)
+    return max(0.0, float(user.monthly_quota_mb or 0.0) - float(user.used_traffic_mb or 0.0))
+
+
+def user_quota_exceeded(user):
+    return user_remaining_quota_mb(user) <= 0.0001
+
+
+def format_mb(mb_value):
+    value = float(mb_value or 0.0)
+    if value >= 1024:
+        return f"{value / 1024:.2f} GB"
+    return f"{value:.0f} MB"
+
+
+def traffic_state_rate_mbps(state):
+    if not state:
+        return 0.0
+    rate = 0.0
+    if state.get("mic_on"):
+        rate += AUDIO_RATE_MBPS
+    if state.get("camera_on"):
+        rate += CAMERA_RATE_MBPS
+    if state.get("screen_on"):
+        rate += SCREEN_RATE_MBPS
+    return rate
+
+
+def sync_room_traffic(room_id, now_ts=None):
+    room = rooms.get(room_id)
+    if not room:
+        return
+    now_ts = now_ts or time.time()
+    last_sync = room.get("traffic_last_sync")
+    room["traffic_last_sync"] = now_ts
+    if not last_sync:
+        return
+    elapsed = max(0.0, now_ts - last_sync)
+    if elapsed <= 0.0:
+        return
+
+    participant_items = list(room.get("participants", {}).items())
+    states = []
+    user_ids = set()
+    for sid, info in participant_items:
+        user_id = info.get("user_id")
+        if user_id:
+            user_ids.add(user_id)
+            states.append((sid, info, traffic_state_rate_mbps(info)))
+    if not states or not user_ids:
+        return
+
+    users = {u.id: u for u in User.query.filter(User.id.in_(user_ids)).all()}
+    outgoing_rates = {sid: rate for sid, _info, rate in states}
+    total_outgoing_per_peer = sum(outgoing_rates.values())
+    changed = False
+    for sid, info, own_rate in states:
+        user = users.get(info.get("user_id"))
+        if not user:
+            continue
+        refresh_user_traffic_cycle(user)
+        peers = max(0, len(states) - 1)
+        incoming_rate = max(0.0, total_outgoing_per_peer - own_rate)
+        total_rate_mbps = own_rate * peers + incoming_rate
+        used_mb = total_rate_mbps * elapsed / 8.0
+        if used_mb > 0:
+            user.used_traffic_mb = float(user.used_traffic_mb or 0.0) + used_mb
+            changed = True
+    if changed:
+        db.session.commit()
+
+
+def sync_user_traffic(user_id):
+    for room_id, room in list(rooms.items()):
+        participants = room.get("participants", {})
+        if any((info or {}).get("user_id") == user_id for info in participants.values()):
+            sync_room_traffic(room_id)
+
+
+def traffic_summary_dict(user):
+    refresh_user_traffic_cycle(user)
+    remaining = user_remaining_quota_mb(user)
+    anchor = cycle_anchor_for_user(user)
+    reset_at = anchor + timedelta(days=TRAFFIC_RESET_DAYS)
+    return {
+        "monthly_quota_mb": round(float(user.monthly_quota_mb or 0.0), 2),
+        "used_traffic_mb": round(float(user.used_traffic_mb or 0.0), 2),
+        "remaining_traffic_mb": round(float(remaining), 2),
+        "monthly_quota_text": format_mb(user.monthly_quota_mb),
+        "used_traffic_text": format_mb(user.used_traffic_mb),
+        "remaining_traffic_text": format_mb(remaining),
+        "reset_at_text": reset_at.strftime("%Y-%m-%d %H:%M UTC"),
+        "reset_cycle_days": TRAFFIC_RESET_DAYS,
+    }
+
 
 def is_meeting_expired(meeting):
     if not meeting or not meeting.created_at:
@@ -622,6 +629,7 @@ def cancel_room_expiry(room_id):
 
 def end_meeting_by_room_id(room_id, message_key=None):
     with app.app_context():
+        sync_room_traffic(room_id)
         room = rooms.get(room_id)
         meeting = Meeting.query.filter_by(room_id=room_id).first()
         if not meeting:
@@ -686,6 +694,7 @@ def ensure_runtime_room(meeting):
         "empty_since": None,
         "expiry_timer": None,
         "lang": session.get("lang", "zh"),
+        "traffic_last_sync": time.time(),
     }
     schedule_room_expiry(meeting.room_id, meeting.created_at.timestamp())
     return room
@@ -845,8 +854,6 @@ def enforce_single_session():
         logout_user()
         session.clear()
         return redirect(url_for("login", kicked=1))
-    if reset_user_quota_if_needed(fresh_user, commit=True):
-        db.session.refresh(fresh_user)
 
 
 @app.route("/set-language/<lang>")
@@ -860,7 +867,9 @@ def set_language(lang):
 def index():
     if not current_user.is_authenticated:
         return redirect(url_for("login"))
-    return render_template("index.html", traffic=traffic_summary_for_user(current_user))
+    sync_user_traffic(current_user.id)
+    db.session.refresh(current_user)
+    return render_template("index.html", traffic=traffic_summary_dict(current_user))
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -876,7 +885,7 @@ def register():
     if User.query.filter_by(username=username).first():
         return render_template("register.html", error=t("username_exists"))
 
-    user = User(username=username, is_active_user=True, session_version=0, monthly_quota_mb=10240, used_traffic_mb=0, last_quota_reset_at=datetime.utcnow())
+    user = User(username=username, is_active_user=True, session_version=0, monthly_quota_mb=10240.0, used_traffic_mb=0.0, traffic_cycle_start_at=datetime.utcnow())
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
@@ -923,8 +932,10 @@ def logout():
 @app.post("/api/create_room")
 @login_required
 def api_create_room():
+    sync_user_traffic(current_user.id)
+    db.session.refresh(current_user)
     if user_quota_exceeded(current_user):
-        return jsonify({"success": False, "message": t("quota_exceeded")}), 403
+        return jsonify({"success": False, "message": t("traffic_limit_reached")}), 403
     data = request.get_json(silent=True) or {}
     host_name = (data.get("host_name") or current_user.username).strip()[:32] or current_user.username
     room_id = generate_room_id()
@@ -952,6 +963,7 @@ def api_create_room():
         "empty_since": None,
         "expiry_timer": None,
         "lang": session.get("lang", "zh"),
+        "traffic_last_sync": time.time(),
     }
     schedule_room_expiry(room_id, meeting.created_at.timestamp())
 
@@ -962,8 +974,10 @@ def api_create_room():
 @app.post("/api/join_room")
 @login_required
 def api_join_room():
+    sync_user_traffic(current_user.id)
+    db.session.refresh(current_user)
     if user_quota_exceeded(current_user):
-        return jsonify({"success": False, "message": t("quota_exceeded")}), 403
+        return jsonify({"success": False, "message": t("traffic_limit_reached")}), 403
     data = request.get_json(silent=True) or {}
     room_id = (data.get("room_id") or "").strip()
     password = normalize_password(data.get("password") or "")
@@ -981,20 +995,21 @@ def api_join_room():
 @app.get("/room/<room_id>")
 @login_required
 def room_page(room_id):
-    if user_quota_exceeded(current_user):
-        return redirect(url_for("index"))
     meeting = Meeting.query.filter_by(room_id=room_id).first()
     if not ensure_meeting_not_expired(meeting):
         abort(404)
     room_password = request.args.get("pwd", meeting.room_password)
     invite_url = f"{get_base_url()}{url_for('room_page', room_id=room_id)}?pwd={quote(room_password)}"
     is_host = current_user.is_authenticated and current_user.id == meeting.host_user_id
+    sync_user_traffic(current_user.id)
+    db.session.refresh(current_user)
     return render_template(
         "room.html",
         room_id=room_id,
         room_password=room_password,
         invite_url=invite_url,
         is_host=is_host,
+        traffic=traffic_summary_dict(current_user),
     )
 
 
@@ -1003,6 +1018,16 @@ def room_page(room_id):
 def history():
     meetings = build_history_meetings_for_user(current_user.id)
     return render_template("history.html", meetings=meetings)
+
+
+@app.get("/api/traffic_summary")
+@login_required
+def api_traffic_summary():
+    sync_user_traffic(current_user.id)
+    db.session.refresh(current_user)
+    if user_quota_exceeded(current_user):
+        disconnect_user_sockets(current_user.id, message=t("traffic_limit_reached"))
+    return jsonify({"success": True, **traffic_summary_dict(current_user)})
 
 
 @app.post("/api/remux-recording")
@@ -1095,6 +1120,9 @@ def api_remux_recording():
 def admin_dashboard():
     for meeting in Meeting.query.filter_by(status="active").all():
         ensure_meeting_not_expired(meeting)
+    for user in User.query.all():
+        refresh_user_traffic_cycle(user)
+    db.session.commit()
     users = User.query.order_by(User.created_at.desc()).all()
     meetings = Meeting.query.order_by(Meeting.created_at.desc(), Meeting.id.desc()).all()
     active_meetings = [m for m in meetings if m.status == "active"]
@@ -1103,15 +1131,14 @@ def admin_dashboard():
         {"room_id": rid, "participant_count": len(info["participants"]), "host_name": info["host_name"]}
         for rid, info in rooms.items()
     ]
-    traffic_rows = {u.id: traffic_summary_for_user(u) for u in users}
     return render_template(
         "admin.html",
         users=users,
+        traffic_summaries={u.id: traffic_summary_dict(u) for u in users},
         meetings=meetings,
         active_meetings=active_meetings,
         history_meetings=history_meetings,
         online_rooms=online_rooms,
-        traffic_rows=traffic_rows,
     )
 
 
@@ -1141,41 +1168,19 @@ def admin_enable_user(user_id):
 @app.post("/admin/user/<int:user_id>/quota")
 @login_required
 @admin_required
-def admin_update_user_quota(user_id):
+def admin_set_user_quota(user_id):
     user = User.query.get_or_404(user_id)
-    quota_mb = request.form.get("monthly_quota_mb", type=int)
-    if quota_mb is None or quota_mb <= 0:
+    try:
+        quota_gb = float((request.form.get("monthly_quota_gb") or "0").strip())
+    except ValueError:
         return redirect(url_for("admin_dashboard"))
-    user.monthly_quota_mb = quota_mb
-    reset_user_quota_if_needed(user)
+    quota_gb = max(0.0, quota_gb)
+    sync_user_traffic(user.id)
+    user.monthly_quota_mb = round(quota_gb * 1024.0, 2)
     db.session.commit()
+    if user_quota_exceeded(user):
+        disconnect_user_sockets(user.id, message=t("traffic_limit_reached"))
     return redirect(url_for("admin_dashboard"))
-
-
-@app.post("/api/traffic/report")
-@login_required
-def api_traffic_report():
-    fresh_user = db.session.get(User, current_user.id)
-    if not fresh_user or not fresh_user.is_active_user:
-        return jsonify({"success": False, "message": t("account_disabled")}), 403
-    reset_user_quota_if_needed(fresh_user, commit=True)
-    if user_quota_exceeded(fresh_user):
-        disconnect_user_sockets(fresh_user.id, message=t("quota_exceeded"))
-        return jsonify({"success": False, "message": t("quota_exceeded"), "quota_exceeded": True}), 403
-
-    bytes_delta = (request.get_json(silent=True) or {}).get("bytes_delta", 0)
-    add_user_traffic(fresh_user, bytes_delta)
-    summary = traffic_summary_for_user(fresh_user)
-    if summary["status"] == "exceeded":
-        disconnect_user_sockets(fresh_user.id, message=t("quota_exceeded"))
-    return jsonify({
-        "success": True,
-        "quota_exceeded": summary["status"] == "exceeded",
-        "used_mb": summary["used_mb"],
-        "remaining_mb": summary["remaining_mb"],
-        "total_mb": summary["total_mb"],
-        "status": summary["status"],
-    })
 
 
 @app.post("/admin/meeting/<int:meeting_id>/end")
@@ -1275,14 +1280,15 @@ def on_join_room(data):
     if not fresh_user or not fresh_user.is_active_user or session.get("session_version") != fresh_user.session_version:
         emit("force_logout", {"message": t("kicked")})
         return
-    reset_user_quota_if_needed(fresh_user, commit=True)
+    sync_room_traffic(room_id)
+    db.session.refresh(fresh_user)
     if user_quota_exceeded(fresh_user):
-        emit("join_error", {"message": t("quota_exceeded")})
+        emit("join_error", {"message": t("traffic_limit_reached")})
         return
 
     cancel_room_cleanup(room_id)
     existing = [{"sid": osid, "name": info["name"]} for osid, info in room["participants"].items()]
-    room["participants"][sid] = {"name": user_name, "joined_at": time.time()}
+    room["participants"][sid] = {"name": user_name, "joined_at": time.time(), "user_id": current_user.id, "mic_on": True, "camera_on": True, "screen_on": False}
     sid_to_user[sid] = {"room_id": room_id, "name": user_name, "user_id": current_user.id}
     bind_user_socket(current_user.id, sid)
     join_room(room_id)
@@ -1341,6 +1347,24 @@ def on_room_ui_event(data):
         return
     room_id = info["room_id"]
     payload = data or {}
+    room = rooms.get(room_id)
+    if room and sid in room.get("participants", {}):
+        event_type = payload.get("type")
+        if event_type in {"media_state", "screen_share_started", "screen_share_stopped"}:
+            sync_room_traffic(room_id)
+            participant = room["participants"][sid]
+            if event_type == "media_state":
+                participant["mic_on"] = bool(payload.get("mic_on", participant.get("mic_on", True)))
+                participant["camera_on"] = bool(payload.get("camera_on", participant.get("camera_on", True)))
+                participant["screen_on"] = bool(payload.get("screen_on", participant.get("screen_on", False)))
+            elif event_type == "screen_share_started":
+                participant["screen_on"] = True
+            elif event_type == "screen_share_stopped":
+                participant["screen_on"] = False
+            user = db.session.get(User, participant.get("user_id")) if participant.get("user_id") else None
+            if user and user_quota_exceeded(user):
+                emit("force_leave", {"message": t("traffic_limit_reached")}, to=sid)
+                return
     payload["from"] = sid
     emit("room_ui_event", payload, room=room_id, include_self=False)
 
@@ -1375,6 +1399,8 @@ def on_leave_room(*_args):
     room_id = info["room_id"]
     unbind_user_socket(info.get("user_id"), sid)
     room = rooms.get(room_id)
+    if room and sid in room.get("participants", {}):
+        sync_room_traffic(room_id)
     leave_room(room_id)
     if room and sid in room["participants"]:
         name = room["participants"][sid]["name"]
