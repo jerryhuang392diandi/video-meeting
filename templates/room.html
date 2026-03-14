@@ -1,67 +1,78 @@
-<!DOCTYPE html>
-<html lang="{{ lang }}">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{{ t('meeting_room') }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
-</head>
-<body>
-  <div class="shell room-shell">
-    <header class="topbar compact">
-      <div>
-        <div class="brand">{{ t('meeting_room') }}</div>
-        <div class="muted">{{ t('room_id') }}: {{ room_id }}</div>
-      </div>
-      <div class="top-actions">
-        <span class="user-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
-        <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
-      </div>
-    </header>
-
-    <section class="grid room-grid-layout">
-      <aside class="panel side-panel">
-        <h2>{{ t('permissions') }}</h2>
-        <div class="stack-controls">
-          <button class="primary-btn" id="requestMediaBtn">{{ t('request_media') }}</button>
-          <button class="ghost-btn" id="switchCameraBtn">{{ t('switch_camera') }}</button>
-          <button class="ghost-btn" id="shareScreenBtn">{{ t('share_screen') }}</button>
-          <button class="ghost-btn" id="virtualBgBtn">{{ t('virtual_bg') }}</button>
-          <button class="ghost-btn" id="toggleMicBtn">{{ t('mic') }}</button>
-          <button class="ghost-btn" id="toggleCameraBtn">{{ t('camera') }}</button>
-          <button class="ghost-btn danger" id="leaveBtn">{{ t('leave') }}</button>
-        </div>
-        <div id="statusBox" class="notice">Ready.</div>
-        <div class="mini-panel">
-          <div class="muted">{{ t('invite_link') }}</div>
-          <div class="row-compact">
-            <input id="inviteInput" readonly value="{{ request.url }}" />
-            <button class="ghost-btn" id="copyInviteBtn">{{ t('copy') }}</button>
-          </div>
-        </div>
-      </aside>
-
-      <main class="panel video-panel">
-        <div id="videoGrid" class="video-grid">
-          <div class="video-card">
-            <video id="localVideo" autoplay muted playsinline></video>
-            <div class="video-label">You</div>
-          </div>
-        </div>
-      </main>
-    </section>
+{% extends 'base.html' %}
+{% block title %}{{ t('meeting_room') }}{% endblock %}
+{% block content %}
+<header class="topbar compact">
+  <div>
+    <div class="brand">{{ t('meeting_room') }}</div>
+    <div class="muted">{{ t('room_id') }}: {{ room_id }}</div>
   </div>
+  <div class="top-actions">
+    <div class="lang-switch">
+      <a class="chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}">{{ t('lang_zh') }}</a>
+      <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
+    </div>
+    <span class="user-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
+    <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
+  </div>
+</header>
 
+<section class="grid room-grid-layout">
+  <aside class="panel side-panel panel-glow">
+    <h2>{{ t('permissions') }}</h2>
+    <div class="stack-controls button-grid-2">
+      <button class="primary-btn slim-btn" id="requestMediaBtn">{{ t('request_media') }}</button>
+      <button class="ghost-btn" id="switchCameraBtn">{{ t('switch_camera') }}</button>
+      <button class="ghost-btn" id="shareScreenBtn">{{ t('share_screen') }}</button>
+      <button class="ghost-btn" id="virtualBgBtn">{{ t('virtual_bg') }}</button>
+      <button class="ghost-btn" id="blurBgBtn">{{ t('blur_bg') }}</button>
+      <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
+      <button class="ghost-btn" id="participantsBtn">{{ t('participants_panel') }}</button>
+      <button class="ghost-btn" id="layoutBtn">{{ t('layout_switch') }}</button>
+      <button class="ghost-btn" id="toggleMicBtn">{{ t('mic') }}</button>
+      <button class="ghost-btn" id="toggleCameraBtn">{{ t('camera') }}</button>
+      <button class="ghost-btn danger full-span" id="leaveBtn">{{ t('leave') }}</button>
+    </div>
+    <div id="statusBox" class="notice">{{ t('room_ready') }}</div>
+    <div class="mini-panel">
+      <div class="muted">{{ t('invite_link') }}</div>
+      <div class="row-compact">
+        <input id="inviteInput" readonly value="{{ request.url }}" />
+        <button class="ghost-btn" id="copyInviteBtn">{{ t('copy') }}</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="panel video-panel panel-glow">
+    <div id="videoGrid" class="video-grid">
+      <div class="video-card self-card">
+        <video id="localVideo" autoplay muted playsinline></video>
+        <div class="video-label">{{ t('local_you') }}</div>
+      </div>
+    </div>
+  </main>
+</section>
+{% endblock %}
+
+{% block scripts %}
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
 const ROOM_ID = {{ room_id|tojson }};
 const ROOM_PASSWORD = {{ room_password|tojson }};
-const USER_NAME = {{ current_user.username|tojson }};
+const DEFAULT_USER_NAME = {{ current_user.username|tojson }};
+const USER_NAME = (localStorage.getItem('meeting_display_name') || DEFAULT_USER_NAME).trim() || DEFAULT_USER_NAME;
 const TEXT_PERMISSION_READY = {{ t('permission_ready')|tojson }};
 const TEXT_PERMISSION_FAILED = {{ t('permission_failed')|tojson }};
 const TEXT_VIRTUAL_BG = {{ t('virtual_bg_tip')|tojson }};
+const TEXT_BLUR_BG = {{ t('blur_bg_tip')|tojson }};
+const TEXT_RECORDING = {{ t('recording_tip')|tojson }};
+const TEXT_PARTICIPANTS = {{ t('participants_tip')|tojson }};
+const TEXT_LAYOUT = {{ t('layout_tip')|tojson }};
 const TEXT_MEETING_CLOSED = {{ t('meeting_closed')|tojson }};
-const TEXT_KICKED = {{ t('kicked')|tojson }};
+const TEXT_COPIED = {{ t('copied')|tojson }};
+const TEXT_MIC_ON = {{ t('mic_on')|tojson }};
+const TEXT_MIC_OFF = {{ t('mic_off')|tojson }};
+const TEXT_CAMERA_ON = {{ t('camera_on')|tojson }};
+const TEXT_CAMERA_OFF = {{ t('camera_off')|tojson }};
 
 const socket = io();
 let localStream = null;
@@ -222,13 +233,13 @@ document.getElementById('toggleMicBtn').onclick = () => {
   const track = localStream?.getAudioTracks?.()[0];
   if (!track) return;
   track.enabled = !track.enabled;
-  setStatus('Mic: ' + (track.enabled ? 'on' : 'off'));
+  setStatus(track.enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
 };
 document.getElementById('toggleCameraBtn').onclick = () => {
   const track = localStream?.getVideoTracks?.()[0];
   if (!track) return;
   track.enabled = !track.enabled;
-  setStatus('Camera: ' + (track.enabled ? 'on' : 'off'));
+  setStatus(track.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 };
 document.getElementById('shareScreenBtn').onclick = async () => {
   try {
@@ -246,15 +257,18 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     setStatus(err.message, 'error');
   }
 };
-document.getElementById('virtualBgBtn').onclick = () => alert(TEXT_VIRTUAL_BG);
+document.getElementById('virtualBgBtn').onclick = () => setStatus(TEXT_VIRTUAL_BG, 'warning');
+document.getElementById('blurBgBtn').onclick = () => setStatus(TEXT_BLUR_BG, 'warning');
+document.getElementById('recordingBtn').onclick = () => setStatus(TEXT_RECORDING, 'warning');
+document.getElementById('participantsBtn').onclick = () => setStatus(TEXT_PARTICIPANTS, 'warning');
+document.getElementById('layoutBtn').onclick = () => setStatus(TEXT_LAYOUT, 'warning');
 document.getElementById('leaveBtn').onclick = () => {
   socket.emit('leave_room');
   window.location.href = '/';
 };
 document.getElementById('copyInviteBtn').onclick = async () => {
   await navigator.clipboard.writeText(document.getElementById('inviteInput').value);
-  setStatus('Copied');
+  setStatus(TEXT_COPIED);
 };
 </script>
-</body>
-</html>
+{% endblock %}

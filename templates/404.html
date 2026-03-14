@@ -1,18 +1,10 @@
-<!DOCTYPE html>
-<html lang="{{ lang }}">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>404</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
-</head>
-<body>
-  <div class="shell">
-    <section class="panel centered">
-      <h1>404</h1>
-      <p>{{ t('page_not_found') }}</p>
-      <a class="primary-btn anchor-btn" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
-    </section>
-  </div>
-</body>
-</html>
+{% extends 'base.html' %}
+{% block title %}{{ error_title or '404' }}{% endblock %}
+{% block content %}
+<section class="panel centered narrow-panel panel-glow">
+  <div class="eyebrow">{{ error_title or '404' }}</div>
+  <h1>{{ error_message or t('page_not_found') }}</h1>
+  <p class="muted">{{ t('subtitle') }}</p>
+  <a class="primary-btn anchor-btn" href="{{ url_for('index') }}">{{ t('back_home') }}</a>
+</section>
+{% endblock %}

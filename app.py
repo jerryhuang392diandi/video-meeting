@@ -6,16 +6,7 @@ import time
 from datetime import datetime
 from functools import wraps
 
-from flask import (
-    Flask,
-    jsonify,
-    redirect,
-    render_template,
-    request,
-    session,
-    url_for,
-    abort,
-)
+from flask import Flask, abort, jsonify, redirect, render_template, request, session, url_for
 from flask_login import (
     LoginManager,
     UserMixin,
@@ -29,8 +20,9 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_PATH = os.path.join(BASE_DIR, "instance", "app.db")
-os.makedirs(os.path.join(BASE_DIR, "instance"), exist_ok=True)
+INSTANCE_DIR = os.path.join(BASE_DIR, "instance")
+DB_PATH = os.path.join(INSTANCE_DIR, "app.db")
+os.makedirs(INSTANCE_DIR, exist_ok=True)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_hex(16))
@@ -49,7 +41,7 @@ sid_to_user = {}
 TRANSLATIONS = {
     "zh": {
         "app_name": "视频会议系统",
-        "subtitle": "简洁、双语、支持管理后台与单设备登录",
+        "subtitle": "双语视频会议平台｜单设备登录｜管理员后台",
         "nav_home": "首页",
         "nav_history": "历史会议",
         "nav_admin": "管理员后台",
@@ -67,14 +59,22 @@ TRANSLATIONS = {
         "join_now": "立即加入",
         "invite_link": "邀请链接",
         "copy": "复制",
-        "copied": "已复制",
+        "copied": "已复制到剪贴板",
         "quick_actions": "快速操作",
-        "permissions": "权限与设备",
+        "permissions": "设备与会议控制",
         "request_media": "申请摄像头/麦克风权限",
-        "switch_camera": "切换前后摄像头",
+        "switch_camera": "切换摄像头",
         "share_screen": "共享屏幕",
         "virtual_bg": "虚拟背景",
-        "virtual_bg_tip": "虚拟背景按钮已预留，当前为占位版本",
+        "blur_bg": "背景虚化",
+        "recording": "录制",
+        "participants_panel": "参会者面板",
+        "layout_switch": "切换布局",
+        "virtual_bg_tip": "虚拟背景功能按钮已预留，当前为占位版本。",
+        "blur_bg_tip": "背景虚化功能按钮已预留，当前为占位版本。",
+        "recording_tip": "录制功能按钮已预留，当前为占位版本。",
+        "participants_tip": "参会者面板功能按钮已预留，当前为占位版本。",
+        "layout_tip": "布局切换功能按钮已预留，当前为占位版本。",
         "mic": "麦克风",
         "camera": "摄像头",
         "leave": "离开会议",
@@ -91,6 +91,7 @@ TRANSLATIONS = {
         "admin_dashboard": "管理员后台",
         "users": "用户列表",
         "meetings": "会议列表",
+        "online_rooms": "在线房间",
         "status": "状态",
         "enabled": "启用",
         "disabled": "禁用",
@@ -106,15 +107,44 @@ TRANSLATIONS = {
         "meeting_closed": "会议已被管理员结束。",
         "page_not_found": "页面不存在",
         "hero_title": "更清晰的会议入口",
-        "hero_desc": "支持中文/英文界面、管理员后台、历史记录、单设备登录。",
+        "hero_desc": "支持中英切换、管理员后台、历史记录、单设备登录，以及更现代化的会议 UI。",
         "placeholder_login_hint": "支持 root 管理员登录",
         "device_panel": "设备控制",
         "enter_room": "进入会议",
         "meeting_room": "会议室",
+        "dashboard_title": "快速创建与加入会议",
+        "dashboard_desc": "首页支持会议创建、加入、邀请链接复制和常用会议入口。",
+        "meeting_actions": "会议操作",
+        "admin_note": "管理员账号默认支持 root 登录",
+        "system_status": "系统状态",
+        "room_ready": "会议室已准备就绪",
+        "mic_on": "麦克风：开启",
+        "mic_off": "麦克风：关闭",
+        "camera_on": "摄像头：开启",
+        "camera_off": "摄像头：关闭",
+        "join_failed": "加入会议失败",
+        "meeting_not_found": "未找到会议",
+        "wrong_password": "会议密码错误",
+        "room_full": "会议室已满",
+        "failed": "操作失败",
+        "invalid_login": "用户名或密码错误",
+        "account_disabled": "账号已被禁用",
+        "username_password_required": "请输入用户名和密码",
+        "username_exists": "用户名已存在",
+        "back_home": "返回首页",
+        "local_you": "你",
+        "created_at": "创建时间",
+        "ended_at": "结束时间",
+        "host": "主持人",
+        "admin_role": "管理员",
+        "yes": "是",
+        "no": "否",
+        "no_online_rooms": "暂无在线房间",
+        "no_meetings": "暂无会议记录",
     },
     "en": {
         "app_name": "Video Meeting System",
-        "subtitle": "Clean bilingual UI with admin console and single-device login",
+        "subtitle": "Bilingual meeting platform | single-device login | admin console",
         "nav_home": "Home",
         "nav_history": "History",
         "nav_admin": "Admin",
@@ -132,14 +162,22 @@ TRANSLATIONS = {
         "join_now": "Join now",
         "invite_link": "Invite link",
         "copy": "Copy",
-        "copied": "Copied",
+        "copied": "Copied to clipboard",
         "quick_actions": "Quick actions",
-        "permissions": "Permissions & devices",
+        "permissions": "Device & meeting controls",
         "request_media": "Request camera/microphone access",
-        "switch_camera": "Switch front/back camera",
+        "switch_camera": "Switch camera",
         "share_screen": "Share screen",
         "virtual_bg": "Virtual background",
-        "virtual_bg_tip": "Virtual background button is reserved; current build is placeholder only",
+        "blur_bg": "Background blur",
+        "recording": "Recording",
+        "participants_panel": "Participants panel",
+        "layout_switch": "Switch layout",
+        "virtual_bg_tip": "Virtual background button is ready as a placeholder for now.",
+        "blur_bg_tip": "Background blur button is ready as a placeholder for now.",
+        "recording_tip": "Recording button is ready as a placeholder for now.",
+        "participants_tip": "Participants panel button is ready as a placeholder for now.",
+        "layout_tip": "Layout switch button is ready as a placeholder for now.",
         "mic": "Microphone",
         "camera": "Camera",
         "leave": "Leave meeting",
@@ -156,6 +194,7 @@ TRANSLATIONS = {
         "admin_dashboard": "Admin Dashboard",
         "users": "Users",
         "meetings": "Meetings",
+        "online_rooms": "Online rooms",
         "status": "Status",
         "enabled": "Enabled",
         "disabled": "Disabled",
@@ -171,11 +210,40 @@ TRANSLATIONS = {
         "meeting_closed": "The meeting has been ended by admin.",
         "page_not_found": "Page not found",
         "hero_title": "A cleaner meeting experience",
-        "hero_desc": "Bilingual interface, admin console, meeting history, and single-device login.",
+        "hero_desc": "Bilingual interface, admin console, meeting history, single-device login, and a more polished meeting UI.",
         "placeholder_login_hint": "Root admin login supported",
         "device_panel": "Device controls",
         "enter_room": "Enter room",
         "meeting_room": "Meeting room",
+        "dashboard_title": "Create and join meetings quickly",
+        "dashboard_desc": "The home page now supports meeting creation, joining, invite link copy, and common meeting entry actions.",
+        "meeting_actions": "Meeting actions",
+        "admin_note": "The default admin account supports root login",
+        "system_status": "System status",
+        "room_ready": "Room is ready",
+        "mic_on": "Microphone: on",
+        "mic_off": "Microphone: off",
+        "camera_on": "Camera: on",
+        "camera_off": "Camera: off",
+        "join_failed": "Failed to join meeting",
+        "meeting_not_found": "Meeting not found",
+        "wrong_password": "Wrong meeting password",
+        "room_full": "Room is full",
+        "failed": "Operation failed",
+        "invalid_login": "Invalid username or password",
+        "account_disabled": "Account disabled",
+        "username_password_required": "Username and password required",
+        "username_exists": "Username already exists",
+        "back_home": "Back to home",
+        "local_you": "You",
+        "created_at": "Created at",
+        "ended_at": "Ended at",
+        "host": "Host",
+        "admin_role": "Admin",
+        "yes": "Yes",
+        "no": "No",
+        "no_online_rooms": "No online rooms",
+        "no_meetings": "No meeting records",
     },
 }
 
@@ -220,7 +288,7 @@ class MeetingParticipant(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     meeting_id = db.Column(db.Integer, db.ForeignKey("meetings.id"), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     display_name = db.Column(db.String(32), nullable=False)
     sid = db.Column(db.String(128), nullable=True)
     joined_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -237,17 +305,19 @@ def t(key: str) -> str:
     return TRANSLATIONS.get(lang, TRANSLATIONS["zh"]).get(key, key)
 
 
+def tf(lang: str, key: str) -> str:
+    return TRANSLATIONS.get(lang, TRANSLATIONS["zh"]).get(key, key)
+
+
 @app.context_processor
 def inject_globals():
     lang = session.get("lang", "zh")
-    return {
-        "t": t,
-        "lang": lang,
-        "supported_langs": ["zh", "en"],
-    }
+    return {"t": t, "lang": lang, "supported_langs": ["zh", "en"]}
 
 
 def ensure_user_columns():
+    if not os.path.exists(DB_PATH):
+        return
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("PRAGMA table_info(users)")
@@ -263,10 +333,8 @@ def ensure_user_columns():
 
 
 def ensure_admin():
-    admin_username = os.environ.get("ADMIN_USERNAME", "root").strip()
-    admin_password = os.environ.get("ADMIN_PASSWORD", "").strip()
-    if not admin_password:
-        return
+    admin_username = (os.environ.get("ADMIN_USERNAME") or "root").strip() or "root"
+    admin_password = (os.environ.get("ADMIN_PASSWORD") or "Huang040726").strip() or "Huang040726"
     user = User.query.filter_by(username=admin_username).first()
     if not user:
         user = User(username=admin_username, is_admin=True, is_active_user=True, session_version=0)
@@ -275,6 +343,8 @@ def ensure_admin():
     else:
         user.is_admin = True
         user.is_active_user = True
+        if not user.password_hash:
+            user.set_password(admin_password)
     db.session.commit()
 
 
@@ -295,8 +365,8 @@ def generate_password(length=6):
 
 
 def get_base_url():
-    scheme = os.environ.get("PUBLIC_SCHEME", request.headers.get("X-Forwarded-Proto", request.scheme)).strip() or "http"
-    host = os.environ.get("PUBLIC_HOST", request.host).strip() or request.host
+    scheme = (os.environ.get("PUBLIC_SCHEME") or request.headers.get("X-Forwarded-Proto", request.scheme) or "http").strip()
+    host = (os.environ.get("PUBLIC_HOST") or request.host or "").strip()
     return f"{scheme}://{host}"
 
 
@@ -313,15 +383,24 @@ def admin_required(func):
 
 
 @app.before_request
+def ensure_default_lang():
+    session.setdefault("lang", "zh")
+
+
+@app.before_request
 def enforce_single_session():
     if not current_user.is_authenticated:
         return
-    db.session.refresh(current_user)
-    if not current_user.is_active_user:
+    fresh_user = db.session.get(User, current_user.id)
+    if not fresh_user:
+        logout_user()
+        session.clear()
+        return redirect(url_for("login"))
+    if not fresh_user.is_active_user:
         logout_user()
         session.clear()
         return redirect(url_for("login", kicked=1))
-    if session.get("session_version") != current_user.session_version:
+    if session.get("session_version") != fresh_user.session_version:
         logout_user()
         session.clear()
         return redirect(url_for("login", kicked=1))
@@ -350,16 +429,16 @@ def register():
     password = (request.form.get("password") or "").strip()
 
     if not username or not password:
-        return render_template("register.html", error="Username and password required")
+        return render_template("register.html", error=t("username_password_required"))
     if User.query.filter_by(username=username).first():
-        return render_template("register.html", error="Username already exists")
+        return render_template("register.html", error=t("username_exists"))
 
     user = User(username=username, is_active_user=True, session_version=0)
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
 
-    user.session_version += 1
+    user.session_version = (user.session_version or 0) + 1
     db.session.commit()
     login_user(user)
     session["session_version"] = user.session_version
@@ -376,9 +455,9 @@ def login():
 
     user = User.query.filter_by(username=username).first()
     if not user or not user.check_password(password):
-        return render_template("login.html", error="Invalid username or password")
+        return render_template("login.html", error=t("invalid_login"))
     if not user.is_active_user:
-        return render_template("login.html", error="Account disabled")
+        return render_template("login.html", error=t("account_disabled"))
 
     user.session_version = (user.session_version or 0) + 1
     db.session.commit()
@@ -434,9 +513,9 @@ def api_join_room():
 
     meeting = Meeting.query.filter_by(room_id=room_id).first()
     if not meeting or meeting.status == "ended":
-        return jsonify({"success": False, "message": "Meeting not found"}), 404
+        return jsonify({"success": False, "message": t("meeting_not_found")}), 404
     if normalize_password(meeting.room_password) != password:
-        return jsonify({"success": False, "message": "Wrong password"}), 403
+        return jsonify({"success": False, "message": t("wrong_password")}), 403
 
     if room_id not in rooms:
         rooms[room_id] = {
@@ -513,14 +592,20 @@ def admin_end_meeting(meeting_id):
 
     room = rooms.pop(meeting.room_id, None)
     if room:
+        lang = session.get("lang", "zh")
         for sid in list(room["participants"].keys()):
-            socketio.emit("force_leave", {"message": t("meeting_closed")}, to=sid)
+            socketio.emit("force_leave", {"message": tf(lang, "meeting_closed")}, to=sid)
     return redirect(url_for("admin_dashboard"))
 
 
 @app.errorhandler(404)
 def not_found(_):
     return render_template("404.html"), 404
+
+
+@app.errorhandler(403)
+def forbidden(_):
+    return render_template("404.html", error_title="403", error_message="Forbidden"), 403
 
 
 @socketio.on("join_room")
@@ -533,7 +618,7 @@ def on_join_room(data):
     if not room:
         meeting = Meeting.query.filter_by(room_id=room_id).first()
         if not meeting or meeting.status == "ended":
-            emit("join_error", {"message": "Meeting not found"})
+            emit("join_error", {"message": t("meeting_not_found")})
             return
         room = rooms[room_id] = {
             "password": meeting.room_password,
@@ -544,12 +629,12 @@ def on_join_room(data):
         }
 
     if normalize_password(room["password"]) != password:
-        emit("join_error", {"message": "Wrong password"})
+        emit("join_error", {"message": t("wrong_password")})
         return
 
     sid = request.sid
     if len(room["participants"]) >= MAX_PARTICIPANTS and sid not in room["participants"]:
-        emit("join_error", {"message": f"Room full ({MAX_PARTICIPANTS})"})
+        emit("join_error", {"message": f"{t('room_full')} ({MAX_PARTICIPANTS})"})
         return
 
     existing = [{"sid": osid, "name": info["name"]} for osid, info in room["participants"].items()]
@@ -566,17 +651,21 @@ def on_join_room(data):
     db.session.add(participant)
     db.session.commit()
 
-    emit("join_ok", {
-        "room_id": room_id,
-        "participants": existing,
-        "self_sid": sid,
-        "participant_count": len(room["participants"]),
-    })
-    emit("participant_joined", {
-        "sid": sid,
-        "name": user_name,
-        "participant_count": len(room["participants"]),
-    }, room=room_id, include_self=False)
+    emit(
+        "join_ok",
+        {
+            "room_id": room_id,
+            "participants": existing,
+            "self_sid": sid,
+            "participant_count": len(room["participants"]),
+        },
+    )
+    emit(
+        "participant_joined",
+        {"sid": sid, "name": user_name, "participant_count": len(room["participants"])},
+        room=room_id,
+        include_self=False,
+    )
 
 
 @socketio.on("signal")
@@ -602,11 +691,11 @@ def on_leave_room(*_args):
         if participant and not participant.left_at:
             participant.left_at = datetime.utcnow()
             db.session.commit()
-        emit("participant_left", {
-            "sid": sid,
-            "name": name,
-            "participant_count": len(room["participants"]),
-        }, room=room_id)
+        emit(
+            "participant_left",
+            {"sid": sid, "name": name, "participant_count": len(room["participants"])},
+            room=room_id,
+        )
         if not room["participants"]:
             meeting = Meeting.query.get(room["meeting_db_id"])
             if meeting and meeting.status != "ended":
@@ -628,4 +717,4 @@ with app.app_context():
 
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
+    socketio.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False, allow_unsafe_werkzeug=True)
