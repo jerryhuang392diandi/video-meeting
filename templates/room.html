@@ -354,7 +354,6 @@ socket.on('join_ok', async (data) => {
   participantCountEl.textContent = data.participant_count;
   for (const p of data.participants) {
     addRemoteParticipant(p.sid, p.name);
-    await callPeer(p.sid);
   }
   focusParticipant('local');
 });
