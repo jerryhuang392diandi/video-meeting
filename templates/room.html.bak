@@ -27,7 +27,6 @@
       <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
       <button class="ghost-btn" id="toggleMicBtn">{{ t('mic') }}</button>
       <button class="ghost-btn" id="toggleCameraBtn">{{ t('camera') }}</button>
-      <button class="ghost-btn" id="leaveMeetingBtn">{{ t('leave') }}</button>
       {% if is_host %}<button class="ghost-btn danger-btn" id="hostEndMeetingBtn">{{ t('host_end_meeting') }}</button>{% endif %}
     </div>
     <input id="virtualBgInput" type="file" accept="image/*" class="hidden" />
@@ -82,9 +81,6 @@ const TEXT_RECORD_CONVERTING = {{ ('正在转换为可拖动的 MP4，请稍候.
 const TEXT_RECORD_MP4_FAILED = {{ ('MP4 转换失败，已回退保存为 WebM' if lang == 'zh' else 'MP4 conversion failed, saved as WebM instead')|tojson }};
 const TEXT_IMAGE_NOT_SUPPORTED = {{ ('该图片无法作为虚拟背景，请换一张 PNG/JPG 图片' if lang == 'zh' else 'This image cannot be used as a virtual background. Try a PNG or JPG image instead.')|tojson }};
 const TEXT_HOST_END_CONFIRM = {{ ('确定要解散当前会议吗？所有参会者都会被移出。' if lang == 'zh' else 'End this meeting now? All participants will be removed.')|tojson }};
-const TEXT_LEAVE_CONFIRM = {{ ('确定要离开当前会议吗？' if lang == 'zh' else 'Leave this meeting now?')|tojson }};
-const TEXT_HOST_LEFT_NOTICE = {{ t('host_left_notice')|tojson }};
-const TEXT_HOST_RETURNED_NOTICE = {{ t('host_returned_notice')|tojson }};
 
 const socket = io();
 const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
@@ -100,8 +96,6 @@ let currentSharerSid = null;
 let isSharingScreen = false;
 let activeRecorder = null;
 let recorderStream = null;
-let isActiveHost = false;
-let hostPresent = false;
 let virtualBgEnabled = false;
 let virtualBgImageDataUrl = null;
 let virtualBgImageEl = new Image();
@@ -143,30 +137,11 @@ const statusBox = document.getElementById('statusBox');
 const recordingBtn = document.getElementById('recordingBtn');
 const virtualBgInput = document.getElementById('virtualBgInput');
 const hostEndMeetingBtn = document.getElementById('hostEndMeetingBtn');
-const leaveMeetingBtn = document.getElementById('leaveMeetingBtn');
 
 function setStatus(msg, cls='') {
   if (!statusBox) return;
   statusBox.className = 'notice ' + cls;
   statusBox.textContent = msg;
-}
-
-
-function updateHostControls() {
-  if (!hostEndMeetingBtn) return;
-  hostEndMeetingBtn.disabled = !isActiveHost;
-  hostEndMeetingBtn.title = isActiveHost ? '' : {{ t('host_only_action')|tojson }};
-}
-
-function applyHostState(data = {}) {
-  const previous = hostPresent;
-  if (typeof data.host_present === 'boolean') hostPresent = data.host_present;
-  if (typeof data.is_active_host === 'boolean') isActiveHost = data.is_active_host;
-  updateHostControls();
-  if (previous !== hostPresent) {
-    if (!hostPresent) setStatus(TEXT_HOST_LEFT_NOTICE, 'warning');
-    else if (!isActiveHost) setStatus(TEXT_HOST_RETURNED_NOTICE);
-  }
 }
 
 function getDisplayName(sid) {
@@ -382,7 +357,17 @@ async function requestMedia(forceFacingMode = null) {
     await rawPreviewVideo.play().catch(() => {});
 
     useLocalOutputStream(rawCameraStream);
-    setStatus(TEXT_PERMISSION_READY);
+
+    if (virtualBgImageDataUrl) {
+      try {
+        await activateVirtualBackground();
+      } catch (vbgErr) {
+        console.error(vbgErr);
+        fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (vbgErr.message || 'unknown error'));
+      }
+    } else {
+      setStatus(TEXT_PERMISSION_READY);
+    }
   } catch (err) {
     console.error(err);
     setStatus(TEXT_PERMISSION_FAILED + ': ' + err.message, 'error');
@@ -479,6 +464,7 @@ function downloadBlob(blob, filename) {
 async function toggleScreenRecording() {
   if (activeRecorder) {
     activeRecorder.stop();
+    recorderStream?.getTracks().forEach(track => track.stop());
     return;
   }
 
@@ -488,10 +474,7 @@ async function toggleScreenRecording() {
   }
 
   try {
-    recorderStream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: 15, width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: true,
-    });
+    recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
     const chunks = [];
 
     let mimeType = '';
@@ -512,17 +495,11 @@ async function toggleScreenRecording() {
     activeRecorder.ondataavailable = (event) => {
       if (event.data && event.data.size > 0) chunks.push(event.data);
     };
-    activeRecorder.onerror = (event) => {
-      console.error(event);
-      setStatus(TEXT_RECORD_MP4_FAILED, 'warning');
-    };
     activeRecorder.onstop = async () => {
       const webmBlob = new Blob(chunks, { type: mimeType || 'video/webm' });
       recordingBtn.textContent = {{ t('recording')|tojson }};
-      const currentStream = recorderStream;
       activeRecorder = null;
       recorderStream = null;
-      currentStream?.getTracks().forEach(track => track.stop());
 
       try {
         setStatus(TEXT_RECORD_CONVERTING, 'warning');
@@ -532,15 +509,12 @@ async function toggleScreenRecording() {
       } catch (err) {
         console.error(err);
         downloadBlob(webmBlob, `meeting-recording-${Date.now()}.webm`);
-        setStatus((err?.message ? err.message + ' · ' : '') + TEXT_RECORD_MP4_FAILED, 'warning');
+        setStatus(TEXT_RECORD_MP4_FAILED, 'warning');
       }
     };
-    const screenTrack = recorderStream.getVideoTracks()[0];
-    if (screenTrack) {
-      screenTrack.onended = () => {
-        if (activeRecorder && activeRecorder.state !== 'inactive') activeRecorder.stop();
-      };
-    }
+    recorderStream.getVideoTracks()[0].onended = () => {
+      if (activeRecorder && activeRecorder.state !== 'inactive') activeRecorder.stop();
+    };
     activeRecorder.start(1000);
     recordingBtn.textContent = TEXT_RECORD_STOP;
     setStatus(TEXT_RECORD_STOP);
@@ -652,6 +626,7 @@ async function activateVirtualBackground() {
     const startCount = processedFrameCount;
 
     virtualBgImageEl = bgImage;
+    virtualBgEnabled = true;
     await startSegmentationLoop();
 
     const deadline = Date.now() + 3000;
@@ -677,7 +652,6 @@ async function activateVirtualBackground() {
     cleanupProcessedVideoStream();
     processedVideoStream = nextOutputStream;
     activeVirtualBgToken = activationToken;
-    virtualBgEnabled = true;
     useLocalOutputStream(processedVideoStream);
     setStatus(TEXT_VIRTUAL_BG_READY);
     return true;
@@ -707,7 +681,6 @@ socket.on('connect', async () => {
 
 socket.on('join_ok', async (data) => {
   participantCountEl.textContent = data.participant_count;
-  applyHostState(data);
   for (const p of data.participants) addRemoteParticipant(p.sid, p.name);
   focusParticipant('local');
 });
@@ -715,23 +688,17 @@ socket.on('join_ok', async (data) => {
 socket.on('participant_joined', async (data) => {
   addRemoteParticipant(data.sid, data.name);
   participantCountEl.textContent = data.participant_count;
-  applyHostState(data);
   await callPeer(data.sid);
 });
 
 socket.on('participant_left', (data) => {
   participantCountEl.textContent = data.participant_count;
-  applyHostState(data);
   removeRemoteVideo(data.sid);
 });
 
 socket.on('join_error', (data) => {
   alert(data.message || 'Join failed');
   window.location.href = '/';
-});
-
-socket.on('host_status_changed', (data) => {
-  applyHostState(data);
 });
 
 socket.on('force_leave', (data) => {
@@ -816,8 +783,10 @@ document.getElementById('shareScreenBtn').onclick = async () => {
 
     screenTrack.onended = async () => {
       isSharingScreen = false;
-      if (rawCameraStream) {
-        fallbackToRawCamera(TEXT_SCREEN_SHARE_STOPPED);
+      if (virtualBgImageDataUrl) {
+        await activateVirtualBackground();
+      } else if (rawCameraStream) {
+        fallbackToRawCamera();
       } else {
         await requestMedia(currentFacingMode);
       }
@@ -833,7 +802,7 @@ document.getElementById('shareScreenBtn').onclick = async () => {
   }
 };
 document.getElementById('virtualBgBtn').onclick = async () => {
-  if (virtualBgEnabled || virtualBgImageDataUrl) {
+  if (virtualBgEnabled) {
     deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF);
     return;
   }
@@ -867,13 +836,6 @@ virtualBgInput.onchange = async (event) => {
   }
 };
 recordingBtn.onclick = () => toggleScreenRecording();
-if (leaveMeetingBtn) {
-  leaveMeetingBtn.onclick = () => {
-    if (!confirm(TEXT_LEAVE_CONFIRM)) return;
-    try { socket.emit('leave_room', { room_id: ROOM_ID }); } catch (err) { console.error(err); }
-    window.location.href = {{ url_for('index')|tojson }};
-  };
-}
 if (hostEndMeetingBtn) {
   hostEndMeetingBtn.onclick = () => {
     if (confirm(TEXT_HOST_END_CONFIRM)) {
@@ -888,7 +850,6 @@ document.getElementById('copyInviteBtn').onclick = async () => {
 };
 
 ensureCard('local', getDisplayName('local'), true);
-updateHostControls();
 renderLayout();
 </script>
 {% endblock %}
