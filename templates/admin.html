@@ -1,80 +1,69 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="{{ lang }}">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>管理员后台</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ t('admin_dashboard') }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
-<div class="page">
-  <div class="card">
-    <div class="row between wrap">
+  <div class="shell">
+    <header class="topbar compact">
       <div>
-        <h1>管理员后台</h1>
-        <div class="muted">当前管理员：{{ current_user.username }}</div>
+        <div class="brand">{{ t('admin_dashboard') }}</div>
+        <div class="muted">root / admin console</div>
       </div>
-      <div class="row gap wrap">
-        <a class="btn secondary" href="{{ url_for('index') }}">返回首页</a>
-        <a class="btn danger" href="{{ url_for('logout') }}">退出登录</a>
+      <div class="top-actions">
+        <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
       </div>
-    </div>
-  </div>
+    </header>
 
-  <div class="grid two">
-    <section class="card">
-      <h2>当前在线会议</h2>
-      <div class="stack">
-        {% for r in active_rooms %}
-        <div class="card subcard">
-          <div><strong>会议号：</strong>{{ r.room_id }}</div>
-          <div><strong>主持人：</strong>{{ r.host_name }}</div>
-          <div><strong>在线人数：</strong>{{ r.participant_count }}</div>
-        </div>
-        {% else %}
-        <div class="muted">当前无在线会议</div>
-        {% endfor %}
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>用户列表</h2>
-      <div class="stack scroll-area">
+    <section class="grid two">
+      <div class="panel">
+        <h2>{{ t('users') }}</h2>
         {% for u in users %}
-        <div class="card subcard">
-          <div><strong>{{ u.username }}</strong>{% if u.is_admin %}（管理员）{% endif %}</div>
-          <div class="muted small">状态：{{ '启用' if u.is_active_user else '禁用' }}</div>
-          <div class="muted small">创建时间：{{ u.created_at }}</div>
+        <div class="list-item stacked">
+          <div>
+            <div class="item-title">{{ u.username }}</div>
+            <div class="muted">ID {{ u.id }} · admin: {{ 'yes' if u.is_admin else 'no' }} · {{ t('status') }}: {{ t('enabled') if u.is_active_user else t('disabled') }}</div>
+          </div>
           {% if not u.is_admin %}
-          <div class="row gap wrap top-space">
-            <form method="post" action="{{ url_for('admin_disable_user', user_id=u.id) }}"><button class="danger" type="submit">禁用</button></form>
-            <form method="post" action="{{ url_for('admin_enable_user', user_id=u.id) }}"><button class="secondary" type="submit">启用</button></form>
+          <div class="row-compact">
+            <form method="post" action="{{ url_for('admin_disable_user', user_id=u.id) }}"><button class="ghost-btn" type="submit">{{ t('disable') }}</button></form>
+            <form method="post" action="{{ url_for('admin_enable_user', user_id=u.id) }}"><button class="ghost-btn" type="submit">{{ t('enable') }}</button></form>
           </div>
           {% endif %}
         </div>
         {% endfor %}
       </div>
+
+      <div class="panel">
+        <h2>{{ t('meetings') }}</h2>
+        {% for m in meetings %}
+        <div class="list-item stacked">
+          <div>
+            <div class="item-title">{{ m.room_id }} · {{ m.host_name }}</div>
+            <div class="muted">{{ m.created_at }} · {{ t('status') }}: {{ m.status }}</div>
+          </div>
+          <form method="post" action="{{ url_for('admin_end_meeting', meeting_id=m.id) }}"><button class="ghost-btn danger" type="submit">{{ t('end_meeting') }}</button></form>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Online rooms</h2>
+      {% for r in online_rooms %}
+        <div class="list-item">
+          <div>
+            <div class="item-title">{{ r.room_id }}</div>
+            <div class="muted">{{ r.host_name }} · participants: {{ r.participant_count }}</div>
+          </div>
+        </div>
+      {% else %}
+        <div class="notice">No online rooms.</div>
+      {% endfor %}
     </section>
   </div>
-
-  <div class="card">
-    <h2>会议记录</h2>
-    <div class="stack scroll-area">
-      {% for m in meetings %}
-      <div class="card subcard">
-        <div><strong>会议号：</strong>{{ m.room_id }}</div>
-        <div><strong>主持人：</strong>{{ m.host_name }}</div>
-        <div><strong>状态：</strong>{{ m.status }}</div>
-        <div><strong>创建时间：</strong>{{ m.created_at }}</div>
-        <form method="post" action="{{ url_for('admin_end_meeting', meeting_id=m.id) }}" class="top-space">
-          <button class="danger" type="submit">结束会议</button>
-        </form>
-      </div>
-      {% else %}
-      <div class="muted">暂无会议记录</div>
-      {% endfor %}
-    </div>
-  </div>
-</div>
 </body>
 </html>

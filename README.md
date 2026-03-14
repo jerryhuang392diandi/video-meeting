@@ -1,17 +1,26 @@
-# Stable video meeting bundle
+# Video Meeting UI Upgrade
 
-这版优先保证稳定启动：
-- Flask-SocketIO 使用 threading 模式，不依赖 eventlet
-- 自动补齐旧 SQLite 数据库缺失字段
-- 单账号单设备登录，后登录会踢掉前设备
-- 管理员后台 /admin
-- 邀请链接统一由 PUBLIC_HOST + PUBLIC_SCHEME 生成
+Features:
+- bilingual Chinese/English UI
+- single-device login
+- admin dashboard
+- HTTPS invite links via PUBLIC_HOST/PUBLIC_SCHEME
+- explicit media permission button
+- camera switch button
+- screen share button
+- virtual background placeholder button
 
-## 建议的 systemd 环境变量
-PUBLIC_HOST=peoplelovesai.xyz
-PUBLIC_SCHEME=https
-ADMIN_USERNAME=root
-ADMIN_PASSWORD=你的管理员密码
+Run locally:
 
-## 安装
+```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
+python app.py
+```
+
+Systemd env vars example:
+- PUBLIC_HOST=peoplelovesai.xyz
+- PUBLIC_SCHEME=https
+- ADMIN_USERNAME=root
+- ADMIN_PASSWORD=your-password

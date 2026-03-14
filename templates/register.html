@@ -1,25 +1,41 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="{{ lang }}">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>注册</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ t('register_title') }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
-<div class="page narrow">
-  <div class="card">
-    <h1>注册</h1>
-    {% if error %}<div class="status error">{{ error }}</div>{% endif %}
-    <form method="post" class="stack">
-      <label>用户名</label>
-      <input name="username" maxlength="32" required>
-      <label>密码</label>
-      <input name="password" type="password" required>
-      <button type="submit">注册</button>
-    </form>
-    <div class="muted small top-space">已有账号？<a href="{{ url_for('login') }}">去登录</a></div>
+  <div class="shell auth-shell">
+    <header class="topbar compact">
+      <div>
+        <div class="brand">{{ t('app_name') }}</div>
+        <div class="muted">{{ t('subtitle') }}</div>
+      </div>
+      <div class="lang-switch">
+        <a class="chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}">{{ t('lang_zh') }}</a>
+        <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
+      </div>
+    </header>
+
+    <section class="hero-card auth-card">
+      <div class="hero-copy">
+        <h1>{{ t('register_title') }}</h1>
+        <p>{{ t('hero_desc') }}</p>
+      </div>
+      <form method="post" class="form-card">
+        {% if error %}
+          <div class="notice error">{{ error }}</div>
+        {% endif %}
+        <label>{{ t('username') }}</label>
+        <input name="username" maxlength="32" required />
+        <label>{{ t('password') }}</label>
+        <input name="password" type="password" required />
+        <button class="primary-btn" type="submit">{{ t('submit_register') }}</button>
+        <a class="text-link" href="{{ url_for('login') }}">{{ t('nav_login') }}</a>
+      </form>
+    </section>
   </div>
-</div>
 </body>
 </html>

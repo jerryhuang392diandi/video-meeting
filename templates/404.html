@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>404</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="shell">
+    <section class="panel centered">
+      <h1>404</h1>
+      <p>{{ t('page_not_found') }}</p>
+      <a class="primary-btn anchor-btn" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
+    </section>
+  </div>
+</body>
+</html>

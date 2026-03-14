@@ -1,33 +1,33 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="{{ lang }}">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>历史会议</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ t('meeting_history') }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
-<div class="page">
-  <div class="card">
-    <div class="row between wrap">
-      <h1>历史会议</h1>
-      <a class="btn secondary" href="{{ url_for('index') }}">返回首页</a>
-    </div>
-    <div class="stack top-space">
-      {% for m in meetings %}
-      <div class="card subcard">
-        <div><strong>会议号：</strong>{{ m.room_id }}</div>
-        <div><strong>密码：</strong>{{ m.room_password }}</div>
-        <div><strong>主持人：</strong>{{ m.host_name }}</div>
-        <div><strong>状态：</strong>{{ m.status }}</div>
-        <div><strong>创建时间：</strong>{{ m.created_at }}</div>
-        <div class="top-space"><a class="btn" href="{{ url_for('room_page', room_id=m.room_id) }}?pwd={{ m.room_password }}">重新进入</a></div>
+  <div class="shell">
+    <header class="topbar compact">
+      <div class="brand">{{ t('meeting_history') }}</div>
+      <div class="top-actions">
+        <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
       </div>
+    </header>
+
+    <section class="panel list-panel">
+      {% for m in meetings %}
+        <div class="list-item">
+          <div>
+            <div class="item-title">{{ t('room_id') }}: {{ m.room_id }}</div>
+            <div class="muted">{{ m.created_at }} · {{ t('status') }}: {{ m.status }}</div>
+          </div>
+          <a class="primary-btn anchor-btn" href="{{ url_for('room_page', room_id=m.room_id) }}?pwd={{ m.room_password }}">{{ t('rejoin') }}</a>
+        </div>
       {% else %}
-      <div class="muted">暂无历史会议</div>
+        <div class="notice">{{ t('no_history') }}</div>
       {% endfor %}
-    </div>
+    </section>
   </div>
-</div>
 </body>
 </html>
