@@ -1,59 +1,48 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>视频会议系统</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>视频会议系统</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
 <div class="page">
-    <div class="card">
-        <div class="row between wrap gap">
-            <div>
-                <div class="badge">已登录</div>
-                <h1>视频会议系统</h1>
-                <p class="muted">支持注册登录、历史会议、邀请链接、多人音视频、切换摄像头、共享屏幕、断线后重新进入。</p>
-            </div>
-            <div class="row gap wrap">
-                <a href="{{ url_for('history') }}"><button class="secondary">历史会议</button></a>
-                <a href="{{ url_for('logout') }}"><button class="danger">退出登录</button></a>
-            </div>
-        </div>
-        <div class="status">当前用户：{{ current_user.username }}</div>
+  <div class="card">
+    <div class="row between wrap">
+      <div>
+        <h1>视频会议系统</h1>
+        <div class="muted">当前用户：{{ current_user.username }}</div>
+      </div>
+      <div class="row gap wrap">
+        <a class="btn secondary" href="{{ url_for('history') }}">历史会议</a>
+        {% if current_user.is_admin %}<a class="btn secondary" href="{{ url_for('admin_dashboard') }}">管理员后台</a>{% endif %}
+        <a class="btn danger" href="{{ url_for('logout') }}">退出登录</a>
+      </div>
     </div>
+  </div>
 
-    <div class="grid two">
-        <section class="card">
-            <h2>创建会议</h2>
-            <label>你的会议昵称</label>
-            <input id="createName" placeholder="例如 Jerry" maxlength="32" value="{{ current_user.username }}" />
-            <button id="createBtn">创建会议</button>
-            <div id="createResult" class="result hidden"></div>
-        </section>
-
-        <section class="card">
-            <h2>加入会议</h2>
-            <label>你的昵称</label>
-            <input id="joinName" placeholder="例如 PhoneUser" maxlength="32" value="{{ current_user.username }}" />
-            <label>会议号</label>
-            <input id="joinRoomId" placeholder="6位会议号" inputmode="numeric" maxlength="6" />
-            <label>密码</label>
-            <input id="joinPassword" placeholder="6位密码" maxlength="6" />
-            <button id="joinBtn">进入会议</button>
-            <div id="joinMsg" class="status"></div>
-        </section>
-    </div>
+  <div class="grid two">
+    <section class="card">
+      <h2>创建会议</h2>
+      <label>你的昵称</label>
+      <input id="createName" placeholder="例如 Jerry" maxlength="32" value="{{ current_user.username }}" />
+      <button id="createBtn">创建会议</button>
+      <div id="createResult" class="result hidden"></div>
+    </section>
 
     <section class="card">
-        <h2>这版已经做了什么</h2>
-        <ul class="compact">
-            <li>浏览器会在你检测设备或进入会议时申请摄像头和麦克风权限。</li>
-            <li>邀请链接统一由后端生成，优先走你配置的 HTTPS 域名。</li>
-            <li>支持屏幕共享、前后摄像头切换、历史会议、重新进入。</li>
-            <li>真正的 AI 虚拟背景这版还没有接入；这个功能需要额外前端模型库。</li>
-        </ul>
+      <h2>加入会议</h2>
+      <label>昵称</label>
+      <input id="joinName" placeholder="例如 PhoneUser" maxlength="32" value="{{ current_user.username }}" />
+      <label>会议号</label>
+      <input id="joinRoomId" placeholder="6位会议号" inputmode="numeric" maxlength="6" />
+      <label>密码</label>
+      <input id="joinPassword" placeholder="6位密码" maxlength="6" />
+      <button id="joinBtn">进入会议</button>
+      <div id="joinMsg" class="status"></div>
     </section>
+  </div>
 </div>
 
 <script>
@@ -61,89 +50,76 @@ const createBtn = document.getElementById('createBtn');
 const joinBtn = document.getElementById('joinBtn');
 
 createBtn.addEventListener('click', async () => {
-    const hostName = document.getElementById('createName').value.trim() || 'Host';
-    const box = document.getElementById('createResult');
-    box.classList.remove('hidden');
-    box.textContent = '正在创建会议...';
+  const hostName = document.getElementById('createName').value.trim() || 'Host';
+  const box = document.getElementById('createResult');
+  box.classList.remove('hidden');
+  box.textContent = '正在创建会议...';
 
-    try {
-        const res = await fetch('/api/create_room', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({host_name: hostName})
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.message || '创建失败');
+  try {
+    const res = await fetch('/api/create_room', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({host_name: hostName})
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || '创建失败');
 
-        box.innerHTML = `
-            <div><strong>会议号：</strong>${data.room_id}</div>
-            <div><strong>密码：</strong>${data.password}</div>
-            <div class="mt12"><strong>邀请链接：</strong></div>
-            <div class="link-block">${escapeHtml(data.join_url)}</div>
-            <div class="row gap wrap mt12">
-                <button type="button" id="copyCreatedLinkBtn" class="secondary">复制邀请链接</button>
-                <button type="button" id="openCreatedRoomBtn">立即进入</button>
-            </div>
-        `;
+    box.innerHTML = `
+      <div><strong>会议号：</strong>${data.room_id}</div>
+      <div><strong>密码：</strong>${data.password}</div>
+      <div><strong>邀请链接：</strong></div>
+      <div class="link-block">${data.join_url}</div>
+      <div class="row gap wrap top-space">
+        <button class="secondary" onclick="copyInvite('${data.join_url.replace(/'/g, "\\'")}')">复制邀请链接</button>
+        <button onclick="location.href='${data.join_url}'">立即进入</button>
+      </div>`;
 
-        document.getElementById('joinRoomId').value = data.room_id;
-        document.getElementById('joinPassword').value = data.password;
-
-        document.getElementById('copyCreatedLinkBtn').onclick = async () => {
-            await navigator.clipboard.writeText(data.join_url);
-            box.insertAdjacentHTML('beforeend', '<div class="status mt12">邀请链接已复制。</div>');
-        };
-
-        document.getElementById('openCreatedRoomBtn').onclick = () => {
-            const next = new URL(`/room/${data.room_id}`, window.location.origin);
-            next.searchParams.set('pwd', data.password);
-            next.searchParams.set('name', hostName);
-            window.location.href = next.toString();
-        };
-    } catch (err) {
-        box.textContent = '创建失败：' + err.message;
-    }
+    document.getElementById('joinRoomId').value = data.room_id;
+    document.getElementById('joinPassword').value = data.password;
+  } catch (err) {
+    box.textContent = '创建失败：' + err.message;
+  }
 });
+
+async function copyInvite(url) {
+  try {
+    await navigator.clipboard.writeText(url);
+    alert('邀请链接已复制');
+  } catch {
+    alert('复制失败，请手动复制');
+  }
+}
 
 joinBtn.addEventListener('click', async () => {
-    const userName = document.getElementById('joinName').value.trim() || 'Guest';
-    const roomId = document.getElementById('joinRoomId').value.trim();
-    const password = document.getElementById('joinPassword').value.trim().toUpperCase();
-    const msg = document.getElementById('joinMsg');
+  const userName = document.getElementById('joinName').value.trim() || 'Guest';
+  const roomId = document.getElementById('joinRoomId').value.trim();
+  const password = document.getElementById('joinPassword').value.trim().toUpperCase();
+  const msg = document.getElementById('joinMsg');
 
-    if (!roomId || !password) {
-        msg.textContent = '请填写会议号和密码。';
-        return;
-    }
+  if (!roomId || !password) {
+    msg.textContent = '请填写会议号和密码。';
+    return;
+  }
 
-    msg.textContent = '正在验证...';
+  msg.textContent = '正在验证...';
 
-    try {
-        const res = await fetch('/api/join_room', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({room_id: roomId, password})
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.message || '验证失败');
+  try {
+    const res = await fetch('/api/join_room', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({room_id: roomId, password})
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || '验证失败');
 
-        const next = new URL(`/room/${roomId}`, window.location.origin);
-        next.searchParams.set('pwd', password);
-        next.searchParams.set('name', userName);
-        window.location.href = next.toString();
-    } catch (err) {
-        msg.textContent = '进入失败：' + err.message;
-    }
+    const next = new URL(`/room/${roomId}`, window.location.origin);
+    next.searchParams.set('pwd', password);
+    next.searchParams.set('name', userName);
+    window.location.href = next.toString();
+  } catch (err) {
+    msg.textContent = '进入失败：' + err.message;
+  }
 });
-
-function escapeHtml(str) {
-    return String(str)
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
-}
 </script>
 </body>
 </html>

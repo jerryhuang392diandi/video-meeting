@@ -1,31 +1,27 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>登录 - 视频会议系统</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-<div class="page auth-page">
-    <div class="card auth-card">
-        <div class="badge">Video Meeting</div>
-        <h1>登录</h1>
-        <p class="muted">先登录，再创建会议、加入会议、查看历史记录。</p>
-        {% if error %}<div class="status error">{{ error }}</div>{% endif %}
-        <form method="post" class="stack-lg">
-            <div>
-                <label>用户名</label>
-                <input name="username" maxlength="32" placeholder="请输入用户名" required />
-            </div>
-            <div>
-                <label>密码</label>
-                <input name="password" type="password" minlength="6" placeholder="请输入密码" required />
-            </div>
-            <button type="submit">登录</button>
-        </form>
-        <div class="muted center mt16">还没有账号？<a href="{{ url_for('register') }}">立即注册</a></div>
-    </div>
+<div class="page narrow">
+  <div class="card">
+    <h1>登录</h1>
+    {% if request.args.get('registered') %}<div class="status ok">注册成功，请登录。</div>{% endif %}
+    {% if request.args.get('kicked') %}<div class="status warn">你的账号已在其他设备登录，当前设备已退出。</div>{% endif %}
+    {% if error %}<div class="status error">{{ error }}</div>{% endif %}
+    <form method="post" class="stack">
+      <label>用户名</label>
+      <input name="username" maxlength="32" required>
+      <label>密码</label>
+      <input name="password" type="password" required>
+      <button type="submit">登录</button>
+    </form>
+    <div class="muted small top-space">没有账号？<a href="{{ url_for('register') }}">去注册</a></div>
+  </div>
 </div>
 </body>
 </html>

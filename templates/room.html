@@ -1,75 +1,55 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>会议室 {{ room_id }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>会议室 {{ room_id }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
-<div class="page room-page">
-    <div class="card">
-        {% if room_exists %}
-        <div class="row between wrap gap">
-            <div>
-                <div class="badge">Room {{ room_id }}</div>
-                <h1>会议室 {{ room_id }}</h1>
-                <div class="muted">当前用户：{{ current_user.username }}</div>
-                <div class="muted mt8">统一邀请链接：</div>
-                <div class="link-block">{{ invite_url }}</div>
-            </div>
-            <div class="row gap wrap">
-                <a href="{{ url_for('history') }}"><button class="secondary">历史会议</button></a>
-                <button id="copyLinkBtn" class="secondary">复制邀请链接</button>
-                <button id="leaveBtn" class="danger">离开会议</button>
-            </div>
-        </div>
-
-        <div id="authBox" class="auth-box">
-            <div class="grid two">
-                <div>
-                    <label>昵称</label>
-                    <input id="userName" placeholder="请输入昵称" maxlength="32" value="{{ current_user.username }}" />
-                </div>
-                <div>
-                    <label>会议密码</label>
-                    <input id="roomPassword" placeholder="请输入会议密码" maxlength="6" value="{{ prefilled_password }}" />
-                </div>
-            </div>
-            <div class="row gap wrap mt12">
-                <button id="checkPermissionBtn" class="secondary">检测设备并授权</button>
-                <button id="enterBtn">进入会议</button>
-            </div>
-            <div class="muted mt12">说明：浏览器会在你检测设备或进入会议时申请摄像头/麦克风权限。</div>
-        </div>
-
-        <div id="statusBox" class="status large">等待进入会议…</div>
-
-        <div id="controls" class="toolbar hidden">
-            <button id="toggleMicBtn">关闭麦克风</button>
-            <button id="toggleCamBtn">关闭摄像头</button>
-            <button id="switchCamBtn" class="secondary">切换摄像头</button>
-            <button id="shareScreenBtn" class="secondary">共享屏幕</button>
-            <button id="rejoinBtn" class="secondary">重新进入</button>
-            <button id="virtualBgBtn" class="secondary" disabled title="这版暂未接入 AI 人像分割">虚拟背景（待接入）</button>
-        </div>
-
-        <div class="row between wrap gap mt12">
-            <div id="participants" class="muted">在线人数：0</div>
-            <div id="deviceInfo" class="muted"></div>
-        </div>
-
-        <div class="video-grid" id="videoGrid">
-            <div class="video-card" id="localCard">
-                <div class="video-title">我</div>
-                <video id="localVideo" autoplay muted playsinline></video>
-            </div>
-        </div>
-        {% else %}
-        <h1>会议不存在或已结束</h1>
-        <a href="{{ url_for('index') }}"><button>返回首页</button></a>
-        {% endif %}
+<div class="page">
+  <div class="card">
+    {% if room_exists %}
+    <div class="row between wrap">
+      <div>
+        <h1>会议室 {{ room_id }}</h1>
+        <div class="muted small">请使用统一邀请链接加入会议。</div>
+      </div>
+      <div class="row gap wrap">
+        <button id="copyLinkBtn" class="secondary">复制邀请链接</button>
+        <a class="btn secondary" href="{{ url_for('index') }}">返回首页</a>
+        <button id="leaveBtn" class="danger">离开会议</button>
+      </div>
     </div>
+
+    <div id="authBox" class="auth-box">
+      <label>昵称</label>
+      <input id="userName" placeholder="请输入昵称" maxlength="32" />
+      <label>会议密码</label>
+      <input id="roomPassword" placeholder="请输入会议密码" maxlength="6" value="{{ prefilled_password }}" />
+      <button id="enterBtn">进入会议</button>
+    </div>
+
+    <div id="statusBox" class="status large">等待进入会议…</div>
+
+    <div id="controls" class="row gap wrap hidden">
+      <button id="toggleMicBtn">关闭麦克风</button>
+      <button id="toggleCamBtn">关闭摄像头</button>
+    </div>
+
+    <div id="participants" class="muted">在线人数：0</div>
+
+    <div class="video-grid" id="videoGrid">
+      <div class="video-card" id="localCard">
+        <div class="video-title">我</div>
+        <video id="localVideo" autoplay muted playsinline></video>
+      </div>
+    </div>
+    {% else %}
+    <h1>会议不存在</h1>
+    <a class="btn" href="{{ url_for('index') }}">返回首页</a>
+    {% endif %}
+  </div>
 </div>
 
 {% if room_exists %}
@@ -77,8 +57,8 @@
 <script>
 const ROOM_ID = "{{ room_id }}";
 const PREFILLED_PASSWORD = "{{ prefilled_password }}";
-const PREFILLED_NAME = new URLSearchParams(window.location.search).get('name') || "{{ current_user.username }}";
-const INVITE_URL = {{ invite_url|tojson }};
+const PREFILLED_NAME = new URLSearchParams(window.location.search).get('name') || '{{ current_user.username }}';
+const USER_ID = {{ current_user.id }};
 
 const authBox = document.getElementById('authBox');
 const statusBox = document.getElementById('statusBox');
@@ -86,575 +66,190 @@ const participantsBox = document.getElementById('participants');
 const controls = document.getElementById('controls');
 const localVideo = document.getElementById('localVideo');
 const videoGrid = document.getElementById('videoGrid');
-const deviceInfo = document.getElementById('deviceInfo');
-
 const socket = io({ transports: ['websocket', 'polling'] });
-const peers = new Map();
 
 let localStream = null;
-let cameraStream = null;
-let screenStream = null;
-let mySid = null;
 let joined = false;
-let availableVideoInputs = [];
-let currentVideoInputIndex = 0;
-let localUserName = PREFILLED_NAME;
+let mySid = null;
+const peers = new Map();
 
-const storageKey = `meeting-room-${ROOM_ID}`;
 document.getElementById('userName').value = PREFILLED_NAME;
 document.getElementById('roomPassword').value = PREFILLED_PASSWORD;
 
-bindEvents();
-restoreDraft();
-refreshDeviceList().catch(() => {});
-
-document.addEventListener('visibilitychange', () => {
-    saveDraft();
+document.getElementById('copyLinkBtn').addEventListener('click', async () => {
+  const url = new URL(window.location.href);
+  try {
+    await navigator.clipboard.writeText(url.toString());
+    setStatus('邀请链接已复制。');
+  } catch {
+    setStatus('复制失败，请手动复制地址栏。');
+  }
 });
-window.addEventListener('beforeunload', () => {
-    saveDraft();
-});
 
-function bindEvents() {
-    document.getElementById('copyLinkBtn').addEventListener('click', copyInviteLink);
-    document.getElementById('leaveBtn').addEventListener('click', leaveMeeting);
-    document.getElementById('enterBtn').addEventListener('click', enterMeeting);
-    document.getElementById('toggleMicBtn').addEventListener('click', toggleMic);
-    document.getElementById('toggleCamBtn').addEventListener('click', toggleCam);
-    document.getElementById('switchCamBtn').addEventListener('click', switchCamera);
-    document.getElementById('shareScreenBtn').addEventListener('click', toggleScreenShare);
-    document.getElementById('checkPermissionBtn').addEventListener('click', previewDevices);
-    document.getElementById('rejoinBtn').addEventListener('click', rejoinMeeting);
-}
+document.getElementById('leaveBtn').addEventListener('click', leaveMeeting);
+document.getElementById('enterBtn').addEventListener('click', enterMeeting);
+document.getElementById('toggleMicBtn').addEventListener('click', toggleMic);
+document.getElementById('toggleCamBtn').addEventListener('click', toggleCam);
 
-function saveDraft() {
-    const payload = {
-        roomId: ROOM_ID,
-        password: document.getElementById('roomPassword').value.trim().toUpperCase(),
-        userName: document.getElementById('userName').value.trim(),
-        ts: Date.now(),
-    };
-    localStorage.setItem(storageKey, JSON.stringify(payload));
-}
-
-function restoreDraft() {
-    try {
-        const raw = localStorage.getItem(storageKey);
-        if (!raw) return;
-        const data = JSON.parse(raw);
-        if (data.password && !document.getElementById('roomPassword').value) {
-            document.getElementById('roomPassword').value = data.password;
-        }
-        if (data.userName && !document.getElementById('userName').value) {
-            document.getElementById('userName').value = data.userName;
-        }
-    } catch (e) {
-        console.warn('restoreDraft failed', e);
-    }
-}
-
-async function copyInviteLink() {
-    try {
-        await navigator.clipboard.writeText(INVITE_URL);
-        setStatus('邀请链接已复制。');
-    } catch (e) {
-        setStatus('复制失败，请手动复制。');
-    }
-}
-
-function setStatus(msg, isError = false) {
-    statusBox.textContent = msg;
-    statusBox.classList.toggle('error', isError);
-}
-
-function updateCount(n) {
-    participantsBox.textContent = `在线人数：${n}`;
-}
-
-function ensureSecureContextTip() {
-    if (window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-        return '';
-    }
-    return '当前地址不是安全上下文，手机浏览器通常无法打开摄像头/麦克风。请改用 HTTPS 域名。';
-}
-
-async function refreshDeviceList() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    availableVideoInputs = devices.filter(d => d.kind === 'videoinput');
-    if (availableVideoInputs.length) {
-        const currentTrack = localStream?.getVideoTracks?.()[0] || cameraStream?.getVideoTracks?.()[0];
-        if (currentTrack) {
-            const currentId = currentTrack.getSettings().deviceId;
-            const index = availableVideoInputs.findIndex(d => d.deviceId === currentId);
-            if (index >= 0) currentVideoInputIndex = index;
-        }
-        const current = availableVideoInputs[currentVideoInputIndex] || availableVideoInputs[0];
-        deviceInfo.textContent = `当前摄像头：${current.label || `摄像头 ${currentVideoInputIndex + 1}`}`;
-    } else {
-        deviceInfo.textContent = '未检测到摄像头';
-    }
-}
-
-async function previewDevices() {
-    try {
-        setStatus('正在申请摄像头和麦克风权限…');
-        await ensureLocalMedia();
-        await refreshDeviceList();
-        setStatus('设备授权成功，可以进入会议了。');
-    } catch (err) {
-        setStatus(err.message, true);
-    }
-}
-
-async function getPreferredMediaStream() {
-    const tip = ensureSecureContextTip();
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error(tip || '当前浏览器不支持摄像头/麦克风调用。');
-    }
-
-    let videoConstraint = true;
-    if (availableVideoInputs.length > 0) {
-        const device = availableVideoInputs[currentVideoInputIndex] || availableVideoInputs[0];
-        videoConstraint = { deviceId: { exact: device.deviceId } };
-    } else {
-        videoConstraint = { facingMode: 'user' };
-    }
-
-    try {
-        return await navigator.mediaDevices.getUserMedia({
-            video: videoConstraint,
-            audio: true,
-        });
-    } catch (firstErr) {
-        try {
-            return await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: { ideal: 'environment' } },
-                audio: true,
-            });
-        } catch (secondErr) {
-            throw new Error((tip ? tip + '；' : '') + `${secondErr.name}: ${secondErr.message}`);
-        }
-    }
-}
+function setStatus(msg) { statusBox.textContent = msg; }
+function updateCount(n) { participantsBox.textContent = `在线人数：${n}`; }
+function iceConfig() { return { iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] }; }
 
 async function ensureLocalMedia() {
-    if (localStream) return localStream;
-    cameraStream = await getPreferredMediaStream();
-    localStream = cameraStream;
-    localVideo.srcObject = localStream;
-    controls.classList.remove('hidden');
-    await refreshDeviceList();
-    return localStream;
+  if (localStream) return localStream;
+  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  localVideo.srcObject = localStream;
+  controls.classList.remove('hidden');
+  return localStream;
 }
 
-async function enterMeeting() {
-    if (joined) return;
-
-    localUserName = document.getElementById('userName').value.trim() || 'Guest';
-    const password = document.getElementById('roomPassword').value.trim().toUpperCase();
-
-    if (!password) {
-        setStatus('请输入会议密码。', true);
-        return;
-    }
-
-    setStatus('正在进入会议…');
-    saveDraft();
-
-    try {
-        const res = await fetch('/api/join_room', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ room_id: ROOM_ID, password })
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.message || '验证失败');
-
-        await ensureLocalMedia();
-
-        authBox.classList.add('hidden');
-        joined = true;
-        socket.emit('join_room', {
-            room_id: ROOM_ID,
-            password,
-            user_name: localUserName,
-        });
-
-        setStatus('已进入会议，正在连接其他参会者…');
-    } catch (err) {
-        joined = false;
-        setStatus('进入失败：' + err.message, true);
-    }
-}
-
-async function rejoinMeeting() {
-    if (joined) {
-        setStatus('你已经在会议中。');
-        return;
-    }
-    restoreDraft();
-    await enterMeeting();
-}
-
-socket.on('connect', () => {
-    if (joined) {
-        setStatus('连接已恢复，你可以点击“重新进入”。');
-        joined = false;
-    }
-});
-
-socket.on('join_error', (data) => {
-    joined = false;
-    setStatus('进入失败：' + (data.message || '未知错误'), true);
-});
-
-socket.on('join_ok', async (data) => {
-    mySid = data.self_sid;
-    updateCount(data.participant_count || 1);
-
-    const existing = data.participants || [];
-    for (const p of existing) {
-        if (p.sid !== mySid) {
-            await ensurePeerConnection(p.sid, p.name || 'Remote');
-        }
-    }
-
-    setStatus('已进入会议。');
-});
-
-socket.on('participant_joined', async (data) => {
-    updateCount(data.participant_count || 1);
-    const sid = data.sid;
-    if (!sid || sid === mySid) return;
-
-    const state = await ensurePeerConnection(sid, data.name || 'Remote');
-    const pc = state.pc;
-
-    try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit('signal', {
-            target: sid,
-            payload: pc.localDescription,
-        });
-        setStatus(`新成员已加入：${data.name || 'Remote'}`);
-    } catch (err) {
-        console.error('createOffer failed:', err);
-    }
-});
-
-socket.on('participant_left', (data) => {
-    updateCount(data.participant_count || 1);
-    cleanupPeer(data.sid);
-    setStatus(`${data.name || '某位成员'} 已离开会议。`);
-});
-
-socket.on('signal', async ({ from, name, payload }) => {
-    if (!from || !payload) return;
-
-    try {
-        const state = await ensurePeerConnection(from, name || 'Remote');
-        const pc = state.pc;
-
-        if (payload.type === 'offer') {
-            await pc.setRemoteDescription(new RTCSessionDescription(payload));
-            await flushPendingCandidates(state);
-
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-
-            socket.emit('signal', {
-                target: from,
-                payload: pc.localDescription,
-            });
-        } else if (payload.type === 'answer') {
-            await pc.setRemoteDescription(new RTCSessionDescription(payload));
-            await flushPendingCandidates(state);
-        } else if (payload.type === 'ice-candidate' && payload.candidate) {
-            if (pc.remoteDescription && pc.remoteDescription.type) {
-                await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
-            } else {
-                state.pendingCandidates.push(payload.candidate);
-            }
-        }
-    } catch (err) {
-        console.error('signal handle failed:', err, payload);
-    }
-});
-
-async function ensurePeerConnection(targetSid, targetName) {
-    if (peers.has(targetSid)) {
-        const state = peers.get(targetSid);
-        if (targetName && (!state.name || state.name === 'Remote')) {
-            state.name = targetName;
-            updateRemoteTitle(targetSid, targetName);
-        }
-        return state;
-    }
-
-    const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
-
-    const state = {
-        pc,
-        name: targetName || 'Remote',
-        pendingCandidates: []
-    };
-
-    peers.set(targetSid, state);
-
-    if (localStream) {
-        for (const track of localStream.getTracks()) {
-            pc.addTrack(track, localStream);
-        }
-    }
-
-    pc.onicecandidate = (event) => {
-        if (!event.candidate) return;
-        socket.emit('signal', {
-            target: targetSid,
-            payload: {
-                type: 'ice-candidate',
-                candidate: event.candidate,
-            },
-        });
-    };
-
-    pc.ontrack = (event) => {
-        const stream = event.streams && event.streams[0];
-        if (!stream) return;
-        attachRemoteVideo(targetSid, state.name, stream);
-    };
-
-    pc.onconnectionstatechange = () => {
-        const s = pc.connectionState;
-        if (s === 'connected') {
-            setStatus(`已连接：${state.name}`);
-        } else if (s === 'failed' || s === 'closed' || s === 'disconnected') {
-            cleanupPeer(targetSid);
-        }
-    };
-
-    return state;
-}
-
-async function flushPendingCandidates(state) {
-    while (state.pendingCandidates.length > 0) {
-        const candidate = state.pendingCandidates.shift();
-        try {
-            await state.pc.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (err) {
-            console.warn('补加 ICE candidate 失败:', err);
-        }
-    }
-}
-
-function attachRemoteVideo(sid, name, stream) {
-    let card = document.getElementById(`card-${sid}`);
-    if (!card) {
-        card = document.createElement('div');
-        card.className = 'video-card';
-        card.id = `card-${sid}`;
-        card.innerHTML = `
-            <div class="video-title" id="title-${sid}">${escapeHtml(name || 'Remote')}</div>
-            <video autoplay playsinline></video>
-        `;
-        videoGrid.appendChild(card);
-    }
-
-    const title = card.querySelector('.video-title');
-    if (title) title.textContent = name || 'Remote';
-
-    const video = card.querySelector('video');
-    if (video.srcObject !== stream) {
-        video.srcObject = stream;
-    }
-
-    video.play().catch(() => {
-        setStatus('远端音视频已到达；若仍无声，请点击页面任意处后重试。');
-    });
-}
-
-function updateRemoteTitle(sid, name) {
-    const title = document.getElementById(`title-${sid}`);
-    if (title) title.textContent = name || 'Remote';
+function getOrCreateRemoteCard(sid, name) {
+  let card = document.getElementById(`remote-${sid}`);
+  if (card) return card.querySelector('video');
+  card = document.createElement('div');
+  card.className = 'video-card';
+  card.id = `remote-${sid}`;
+  card.innerHTML = `<div class="video-title">${name}</div><video autoplay playsinline></video>`;
+  videoGrid.appendChild(card);
+  return card.querySelector('video');
 }
 
 function cleanupPeer(sid) {
-    const state = peers.get(sid);
-    if (state) {
-        try { state.pc.ontrack = null; } catch {}
-        try { state.pc.onicecandidate = null; } catch {}
-        try { state.pc.close(); } catch {}
-        peers.delete(sid);
-    }
-    removeRemoteVideo(sid);
+  const state = peers.get(sid);
+  if (state) {
+    try { state.pc.close(); } catch {}
+    peers.delete(sid);
+  }
+  const card = document.getElementById(`remote-${sid}`);
+  if (card) card.remove();
 }
 
-function removeRemoteVideo(sid) {
-    const card = document.getElementById(`card-${sid}`);
-    if (card) card.remove();
+async function ensurePeer(sid, name) {
+  if (peers.has(sid)) return peers.get(sid);
+  const pc = new RTCPeerConnection(iceConfig());
+  const remoteVideo = getOrCreateRemoteCard(sid, name || 'Remote');
+  const state = { pc, name: name || 'Remote', pending: [] };
+  peers.set(sid, state);
+
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      socket.emit('signal', { target: sid, payload: { type: 'candidate', candidate: e.candidate } });
+    }
+  };
+
+  pc.ontrack = (e) => {
+    remoteVideo.srcObject = e.streams[0];
+  };
+
+  return state;
+}
+
+async function enterMeeting() {
+  if (joined) return;
+  const userName = document.getElementById('userName').value.trim() || 'Guest';
+  const password = document.getElementById('roomPassword').value.trim().toUpperCase();
+  if (!password) return setStatus('请输入会议密码。');
+
+  try {
+    setStatus('正在验证并申请摄像头/麦克风...');
+    const res = await fetch('/api/join_room', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ room_id: ROOM_ID, password })
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || '验证失败');
+
+    await ensureLocalMedia();
+    joined = true;
+    authBox.classList.add('hidden');
+    socket.emit('join_room', { room_id: ROOM_ID, password, user_name: userName, user_id: USER_ID });
+  } catch (err) {
+    setStatus('进入失败：' + err.message);
+  }
+}
+
+async function leaveMeeting() {
+  socket.emit('leave_room');
+  window.location.href = '{{ url_for("index") }}';
 }
 
 function toggleMic() {
-    if (!localStream) return;
-    const track = localStream.getAudioTracks()[0];
-    if (!track) return;
-    track.enabled = !track.enabled;
-    document.getElementById('toggleMicBtn').textContent = track.enabled ? '关闭麦克风' : '打开麦克风';
+  if (!localStream) return;
+  const track = localStream.getAudioTracks()[0];
+  track.enabled = !track.enabled;
+  document.getElementById('toggleMicBtn').textContent = track.enabled ? '关闭麦克风' : '打开麦克风';
 }
 
 function toggleCam() {
-    if (!localStream) return;
-    const track = localStream.getVideoTracks()[0];
-    if (!track) return;
-    track.enabled = !track.enabled;
-    document.getElementById('toggleCamBtn').textContent = track.enabled ? '关闭摄像头' : '打开摄像头';
+  if (!localStream) return;
+  const track = localStream.getVideoTracks()[0];
+  track.enabled = !track.enabled;
+  document.getElementById('toggleCamBtn').textContent = track.enabled ? '关闭摄像头' : '打开摄像头';
 }
 
-async function switchCamera() {
-    try {
-        await refreshDeviceList();
-        if (availableVideoInputs.length < 2) {
-            setStatus('没有检测到可切换的前后摄像头。');
-            return;
-        }
-        currentVideoInputIndex = (currentVideoInputIndex + 1) % availableVideoInputs.length;
+socket.on('join_error', (data) => {
+  joined = false;
+  setStatus('进入失败：' + (data.message || '未知错误'));
+});
 
-        const newStream = await navigator.mediaDevices.getUserMedia({
-            video: { deviceId: { exact: availableVideoInputs[currentVideoInputIndex].deviceId } },
-            audio: false,
-        });
-        const newTrack = newStream.getVideoTracks()[0];
+socket.on('join_ok', async (data) => {
+  mySid = data.self_sid;
+  updateCount(data.participant_count || 1);
+  const existing = data.participants || [];
+  for (const p of existing) {
+    if (p.sid === mySid) continue;
+    await ensurePeer(p.sid, p.name);
+  }
+  setStatus(existing.length ? '已进入会议，正在建立连接...' : '已进入会议，等待其他人加入...');
+});
 
-        await replaceVideoTrack(newTrack);
+socket.on('participant_joined', async (data) => {
+  if (!mySid || data.sid === mySid) return;
+  updateCount(data.participant_count || 1);
+  const state = await ensurePeer(data.sid, data.name);
+  if (state.pc.signalingState !== 'stable') return;
+  const offer = await state.pc.createOffer();
+  await state.pc.setLocalDescription(offer);
+  socket.emit('signal', { target: data.sid, payload: state.pc.localDescription });
+});
 
-        if (cameraStream) {
-            cameraStream.getTracks().forEach(t => {
-                if (t !== newTrack) t.stop();
-            });
-        }
-        cameraStream = new MediaStream([
-            newTrack,
-            ...(localStream.getAudioTracks() || []),
-        ]);
-        localStream = new MediaStream([
-            newTrack,
-            ...(localStream.getAudioTracks() || []),
-        ]);
-        localVideo.srcObject = localStream;
-        await refreshDeviceList();
-        setStatus('摄像头已切换。');
-    } catch (err) {
-        setStatus('切换摄像头失败：' + err.message, true);
-    }
-}
+socket.on('participant_left', (data) => {
+  cleanupPeer(data.sid);
+  updateCount(data.participant_count || 1);
+  setStatus((data.name || '有人') + ' 离开了会议。');
+});
 
-async function replaceVideoTrack(newTrack) {
-    const audioTracks = localStream ? localStream.getAudioTracks() : [];
-    const nextStream = new MediaStream([newTrack, ...audioTracks]);
-    for (const [, state] of peers) {
-        const sender = state.pc.getSenders().find(s => s.track && s.track.kind === 'video');
-        if (sender) {
-            await sender.replaceTrack(newTrack);
-        }
-    }
-    const oldTrack = localStream?.getVideoTracks?.()[0];
-    if (oldTrack && oldTrack !== newTrack) oldTrack.stop();
-    localStream = nextStream;
-    localVideo.srcObject = nextStream;
-}
+socket.on('signal', async (data) => {
+  const from = data.from;
+  const payload = data.payload || {};
+  if (!from || from === mySid) return;
+  const state = await ensurePeer(from, data.name || 'Remote');
+  const pc = state.pc;
 
-async function toggleScreenShare() {
-    const btn = document.getElementById('shareScreenBtn');
-    if (screenStream) {
-        await stopScreenShare();
-        btn.textContent = '共享屏幕';
-        setStatus('已停止共享屏幕。');
-        return;
-    }
+  if (payload.type === 'offer') {
+    await pc.setRemoteDescription(new RTCSessionDescription(payload));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    socket.emit('signal', { target: from, payload: pc.localDescription });
+  } else if (payload.type === 'answer') {
+    await pc.setRemoteDescription(new RTCSessionDescription(payload));
+  } else if (payload.type === 'candidate' && payload.candidate) {
+    try { await pc.addIceCandidate(payload.candidate); } catch (e) { console.warn(e); }
+  }
+});
 
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-        setStatus('当前浏览器不支持共享屏幕。', true);
-        return;
-    }
+socket.on('force_logout', (data) => {
+  alert(data.message || '你已被挤下线');
+  window.location.href = '{{ url_for("login") }}?kicked=1';
+});
 
-    try {
-        screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        const screenTrack = screenStream.getVideoTracks()[0];
-        screenTrack.onended = async () => {
-            await stopScreenShare();
-            btn.textContent = '共享屏幕';
-            setStatus('屏幕共享已结束。');
-        };
-
-        await replaceVideoTrack(screenTrack);
-        btn.textContent = '停止共享';
-        setStatus('正在共享屏幕…');
-    } catch (err) {
-        setStatus('共享屏幕失败：' + err.message, true);
-    }
-}
-
-async function stopScreenShare() {
-    if (!screenStream) return;
-    screenStream.getTracks().forEach(t => t.stop());
-    screenStream = null;
-
-    const currentAudio = localStream ? localStream.getAudioTracks() : [];
-    const freshCamera = await navigator.mediaDevices.getUserMedia({
-        video: availableVideoInputs.length
-            ? { deviceId: { exact: availableVideoInputs[currentVideoInputIndex].deviceId } }
-            : true,
-        audio: false,
-    });
-    const cameraTrack = freshCamera.getVideoTracks()[0];
-    for (const [, state] of peers) {
-        const sender = state.pc.getSenders().find(s => s.track && s.track.kind === 'video');
-        if (sender) {
-            await sender.replaceTrack(cameraTrack);
-        }
-    }
-    const oldVideo = localStream?.getVideoTracks?.()[0];
-    if (oldVideo && oldVideo !== cameraTrack) oldVideo.stop();
-
-    cameraStream = new MediaStream([cameraTrack, ...currentAudio]);
-    localStream = new MediaStream([cameraTrack, ...currentAudio]);
-    localVideo.srcObject = localStream;
-}
-
-function leaveMeeting() {
-    socket.emit('leave_room');
-    joined = false;
-    localStorage.removeItem(storageKey);
-
-    for (const sid of Array.from(peers.keys())) {
-        cleanupPeer(sid);
-    }
-
-    if (screenStream) {
-        screenStream.getTracks().forEach(t => t.stop());
-        screenStream = null;
-    }
-    if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-        localStream = null;
-        cameraStream = null;
-    }
-
-    window.location.href = '{{ url_for("index") }}';
-}
-
-function escapeHtml(str) {
-    return String(str)
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
-}
+socket.on('force_leave', (data) => {
+  alert(data.message || '会议已结束');
+  window.location.href = '{{ url_for("index") }}';
+});
 </script>
 {% endif %}
 </body>
