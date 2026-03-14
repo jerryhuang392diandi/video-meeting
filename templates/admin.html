@@ -40,9 +40,15 @@
     <div class="list-item stacked">
       <div>
         <div class="item-title">{{ m.room_id }} · {{ m.host_name }}</div>
-        <div class="muted">{{ t('created_at') }}: {{ m.created_at }} · {{ t('status') }}: {{ m.status }}</div>
+        <div class="muted">{{ t('created_at') }}: {{ m.created_at }}{% if m.ended_at %} · {{ t('ended_at') }}: {{ m.ended_at }}{% endif %}</div>
+        <div class="muted">{{ t('status') }}: {{ t('meeting_active') if m.status == 'active' else t('meeting_ended') }}</div>
       </div>
-      <form method="post" action="{{ url_for('admin_end_meeting', meeting_id=m.id) }}"><button class="ghost-btn danger" type="submit">{{ t('end_meeting') }}</button></form>
+      <div class="row-compact wrap-actions">
+        {% if m.status == 'active' %}
+        <form method="post" action="{{ url_for('admin_end_meeting', meeting_id=m.id) }}"><button class="ghost-btn danger" type="submit">{{ t('end_meeting') }}</button></form>
+        {% endif %}
+        <form method="post" action="{{ url_for('admin_delete_meeting', meeting_id=m.id) }}"><button class="ghost-btn danger" type="submit">{{ t('delete_record') }}</button></form>
+      </div>
     </div>
     {% else %}
       <div class="notice">{{ t('no_meetings') }}</div>

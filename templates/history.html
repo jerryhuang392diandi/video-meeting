@@ -4,7 +4,7 @@
 <header class="topbar compact">
   <div>
     <div class="brand">{{ t('meeting_history') }}</div>
-    <div class="muted">{{ t('subtitle') }}</div>
+    <div class="muted">{{ t('meeting_duration_limit') }}</div>
   </div>
   <div class="top-actions">
     <div class="lang-switch">
@@ -15,48 +15,24 @@
   </div>
 </header>
 
-<section class="panel panel-glow history-hero">
-  <div>
-    <div class="section-tag">{{ t('meeting_history') }}</div>
-    <h2 class="history-hero-title">{{ t('meeting_history') }}</h2>
-    <p class="muted history-hero-desc">{{ t('dashboard_desc') }}</p>
-  </div>
-  <div class="history-summary">
-    <div class="summary-chip">{{ t('role_host') }}</div>
-    <div class="summary-chip">{{ t('role_participant') }}</div>
-    <div class="summary-chip success">{{ t('meeting_available') }}</div>
-  </div>
-</section>
-
-<section class="history-list">
-  {% for item in meetings %}
-    {% set m = item.meeting %}
-    {% set is_active = m.status != 'ended' %}
-    <article class="panel panel-glow history-card">
-      <div class="history-card-main">
-        <div class="history-title-row">
-          <div class="item-title">{{ t('room_id') }}: {{ m.room_id }}</div>
-          <div class="history-badges">
-            <span class="status-badge {% if is_active %}active{% else %}ended{% endif %}">{{ t('status_active') if is_active else t('status_ended') }}</span>
-            <span class="role-badge">{{ t('role_host') if item.role == 'host' else t('role_participant') }}</span>
-          </div>
-        </div>
-        <div class="history-meta-grid">
-          <div><span>{{ t('host') }}</span><strong>{{ m.host_name }}</strong></div>
-          <div><span>{{ t('room_password') }}</span><strong>{{ m.room_password }}</strong></div>
-          <div><span>{{ t('created_at') }}</span><strong>{{ m.created_at.strftime('%Y-%m-%d %H:%M') if m.created_at else '-' }}</strong></div>
-          <div><span>{{ t('ended_at') }}</span><strong>{{ m.ended_at.strftime('%Y-%m-%d %H:%M') if m.ended_at else '-' }}</strong></div>
-        </div>
+<section class="panel list-panel panel-glow">
+  {% for m in meetings %}
+    <div class="list-item history-item">
+      <div>
+        <div class="item-title">{{ t('room_id') }}: {{ m.room_id }}</div>
+        <div class="muted">{{ t('host') }}: {{ m.host_name }}</div>
+        <div class="muted">{{ t('meeting_role') }}: {{ t('created_meeting') if m.relation == 'created' else t('joined_meeting') }}</div>
+        <div class="muted">{{ t('created_at') }}: {{ m.created_at }}{% if m.ended_at %} · {{ t('ended_at') }}: {{ m.ended_at }}{% endif %}</div>
       </div>
-      <div class="history-card-side">
-        <div class="muted history-side-note">{{ t('meeting_available') if is_active else t('meeting_unavailable') }}</div>
-        {% if is_active %}
-          <a class="primary-btn anchor-btn slim-btn history-join-btn" href="{{ url_for('room_page', room_id=m.room_id) }}?pwd={{ m.room_password }}">{{ t('rejoin') }}</a>
+      <div class="history-actions">
+        {% if m.can_rejoin %}
+          <span class="section-tag active">{{ t('meeting_active') }}</span>
+          <a class="primary-btn anchor-btn slim-btn" href="{{ url_for('room_page', room_id=m.room_id) }}?pwd={{ m.room_password }}">{{ t('enter_active_meeting') }}</a>
         {% else %}
-          <span class="ghost-btn slim-btn disabled-btn">{{ t('ended_label') }}</span>
+          <span class="section-tag ended">{{ t('ended_badge') }}</span>
         {% endif %}
       </div>
-    </article>
+    </div>
   {% else %}
     <div class="notice">{{ t('no_history') }}</div>
   {% endfor %}

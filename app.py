@@ -9,7 +9,7 @@ import tempfile
 import threading
 import time
 from urllib.parse import quote
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
 
@@ -43,6 +43,7 @@ login_manager.login_view = "login"
 
 MAX_PARTICIPANTS = 6
 ROOM_EMPTY_GRACE_SECONDS = 20
+MEETING_DURATION_SECONDS = 90 * 60
 rooms = {}
 sid_to_user = {}
 
@@ -155,13 +156,19 @@ TRANSLATIONS = {
         "host_left_room": "主持人已离开会议，当前会议暂时没有主持人。",
         "host_returned_room": "主持人已返回会议，主持权限已恢复。",
         "you_left_meeting": "你已离开会议",
-        "status_active": "进行中",
-        "status_ended": "已结束",
-        "role_host": "我创建的会议",
-        "role_participant": "我参加的会议",
-        "meeting_available": "可重新进入",
-        "meeting_unavailable": "仅保留记录",
-        "ended_label": "已结束",
+        "record_password_label": "会议密码",
+        "record_direct_mp4": "浏览器已直接生成 MP4 文件",
+        "delete_record": "删除记录",
+        "joined_meeting": "参与会议",
+        "created_meeting": "创建会议",
+        "meeting_role": "会议关系",
+        "meeting_active": "进行中",
+        "meeting_ended": "已结束",
+        "expired_meeting": "会议已超过 90 分钟，系统已自动解散。",
+        "delete_meeting_success": "会议记录已删除",
+        "meeting_duration_limit": "会议时长上限 90 分钟",
+        "enter_active_meeting": "进入会议",
+        "ended_badge": "已结束",
     },
     "en": {
         "app_name": "Video Meeting System",
@@ -271,13 +278,17 @@ TRANSLATIONS = {
         "host_left_room": "The host has left the meeting. The room currently has no active host.",
         "host_returned_room": "The host has returned. Host privileges have been restored.",
         "you_left_meeting": "You left the meeting",
-        "status_active": "Active",
-        "status_ended": "Ended",
-        "role_host": "Hosted by me",
-        "role_participant": "Joined by me",
-        "meeting_available": "Available to rejoin",
-        "meeting_unavailable": "Record only",
-        "ended_label": "Ended",
+        "delete_record": "Delete record",
+        "joined_meeting": "Joined meeting",
+        "created_meeting": "Created meeting",
+        "meeting_role": "Relation",
+        "meeting_active": "Active",
+        "meeting_ended": "Ended",
+        "expired_meeting": "This meeting exceeded 90 minutes and was ended automatically.",
+        "delete_meeting_success": "Meeting record deleted",
+        "meeting_duration_limit": "90-minute meeting limit",
+        "enter_active_meeting": "Enter meeting",
+        "ended_badge": "Ended",
     },
 }
 
@@ -403,6 +414,137 @@ def get_base_url():
     host = (os.environ.get("PUBLIC_HOST") or request.host or "").strip()
     return f"{scheme}://{host}"
 
+
+
+def is_meeting_expired(meeting):
+    if not meeting or not meeting.created_at:
+        return False
+    return datetime.utcnow() >= (meeting.created_at + timedelta(seconds=MEETING_DURATION_SECONDS))
+
+
+def cancel_room_expiry(room_id):
+    room = rooms.get(room_id)
+    if not room:
+        return
+    timer = room.get("expiry_timer")
+    if timer:
+        timer.cancel()
+    room["expiry_timer"] = None
+
+
+def end_meeting_by_room_id(room_id, message_key=None):
+    with app.app_context():
+        room = rooms.get(room_id)
+        meeting = Meeting.query.filter_by(room_id=room_id).first()
+        if not meeting:
+            cancel_room_expiry(room_id)
+            rooms.pop(room_id, None)
+            return
+        if meeting.status != "ended":
+            meeting.status = "ended"
+            meeting.ended_at = datetime.utcnow()
+            db.session.commit()
+
+        cancel_room_cleanup(room_id)
+        cancel_room_expiry(room_id)
+        room = rooms.pop(room_id, room)
+        if room:
+            for participant_sid in list(room.get("participants", {}).keys()):
+                participant = MeetingParticipant.query.filter_by(sid=participant_sid).order_by(MeetingParticipant.id.desc()).first()
+                if participant and not participant.left_at:
+                    participant.left_at = datetime.utcnow()
+            db.session.commit()
+            lang = room.get("lang", "zh")
+            message = tf(lang, message_key) if message_key else tf(lang, "meeting_closed")
+            socketio.emit("force_leave", {"message": message}, room=room_id)
+
+
+def schedule_room_expiry(room_id, created_at_ts):
+    room = rooms.get(room_id)
+    if not room:
+        return
+    cancel_room_expiry(room_id)
+    remaining = max(0, int(created_at_ts + MEETING_DURATION_SECONDS - time.time()))
+    timer = threading.Timer(remaining, end_meeting_by_room_id, args=(room_id, "expired_meeting"))
+    timer.daemon = True
+    room["expiry_timer"] = timer
+    timer.start()
+
+
+def ensure_meeting_not_expired(meeting):
+    if not meeting:
+        return False
+    if meeting.status == "ended":
+        return False
+    if is_meeting_expired(meeting):
+        end_meeting_by_room_id(meeting.room_id, "expired_meeting")
+        return False
+    return True
+
+
+def ensure_runtime_room(meeting):
+    room = rooms.get(meeting.room_id)
+    if room:
+        return room
+    room = rooms[meeting.room_id] = {
+        "password": meeting.room_password,
+        "host_name": meeting.host_name,
+        "participants": {},
+        "created_at": meeting.created_at.timestamp(),
+        "meeting_db_id": meeting.id,
+        "host_user_id": meeting.host_user_id,
+        "host_present": False,
+        "cleanup_timer": None,
+        "empty_since": None,
+        "expiry_timer": None,
+        "lang": session.get("lang", "zh"),
+    }
+    schedule_room_expiry(meeting.room_id, meeting.created_at.timestamp())
+    return room
+
+
+def build_history_meetings_for_user(user_id):
+    host_meetings = Meeting.query.filter_by(host_user_id=user_id).all()
+    participant_rows = (
+        db.session.query(MeetingParticipant.meeting_id)
+        .filter(MeetingParticipant.user_id == user_id)
+        .distinct()
+        .all()
+    )
+    participant_ids = [row[0] for row in participant_rows]
+    participant_meetings = Meeting.query.filter(Meeting.id.in_(participant_ids)).all() if participant_ids else []
+
+    merged = {}
+    for meeting in host_meetings:
+        merged[meeting.id] = {
+            "meeting": meeting,
+            "relation": "created",
+        }
+    for meeting in participant_meetings:
+        if meeting.id in merged:
+            continue
+        merged[meeting.id] = {
+            "meeting": meeting,
+            "relation": "joined",
+        }
+
+    items = []
+    for item in merged.values():
+        meeting = item["meeting"]
+        is_active = ensure_meeting_not_expired(meeting)
+        items.append({
+            "id": meeting.id,
+            "room_id": meeting.room_id,
+            "room_password": meeting.room_password,
+            "host_name": meeting.host_name,
+            "created_at": meeting.created_at,
+            "ended_at": meeting.ended_at,
+            "status": "active" if is_active else "ended",
+            "relation": item["relation"],
+            "can_rejoin": is_active,
+        })
+    items.sort(key=lambda x: x["created_at"], reverse=True)
+    return items
 
 
 
@@ -579,7 +721,10 @@ def api_create_room():
         "host_present": False,
         "cleanup_timer": None,
         "empty_since": None,
+        "expiry_timer": None,
+        "lang": session.get("lang", "zh"),
     }
+    schedule_room_expiry(room_id, meeting.created_at.timestamp())
 
     join_url = f"{get_base_url()}/room/{room_id}?pwd={password}"
     return jsonify({"success": True, "room_id": room_id, "password": password, "join_url": join_url})
@@ -593,23 +738,12 @@ def api_join_room():
     password = normalize_password(data.get("password") or "")
 
     meeting = Meeting.query.filter_by(room_id=room_id).first()
-    if not meeting or meeting.status == "ended":
+    if not ensure_meeting_not_expired(meeting):
         return jsonify({"success": False, "message": t("meeting_not_found")}), 404
     if normalize_password(meeting.room_password) != password:
         return jsonify({"success": False, "message": t("wrong_password")}), 403
 
-    if room_id not in rooms:
-        rooms[room_id] = {
-            "password": meeting.room_password,
-            "host_name": meeting.host_name,
-            "participants": {},
-            "created_at": meeting.created_at.timestamp(),
-            "meeting_db_id": meeting.id,
-            "host_user_id": meeting.host_user_id,
-            "host_present": False,
-            "cleanup_timer": None,
-            "empty_since": None,
-        }
+    ensure_runtime_room(meeting)
     return jsonify({"success": True, "message": "ok"})
 
 
@@ -617,7 +751,7 @@ def api_join_room():
 @login_required
 def room_page(room_id):
     meeting = Meeting.query.filter_by(room_id=room_id).first()
-    if not meeting or meeting.status == "ended":
+    if not ensure_meeting_not_expired(meeting):
         abort(404)
     room_password = request.args.get("pwd", meeting.room_password)
     invite_url = f"{get_base_url()}{url_for('room_page', room_id=room_id)}?pwd={quote(room_password)}"
@@ -634,26 +768,7 @@ def room_page(room_id):
 @app.get("/history")
 @login_required
 def history():
-    hosted_meetings = Meeting.query.filter_by(host_user_id=current_user.id).all()
-    participant_meetings = (
-        Meeting.query.join(MeetingParticipant, MeetingParticipant.meeting_id == Meeting.id)
-        .filter(MeetingParticipant.user_id == current_user.id)
-        .all()
-    )
-
-    meeting_map = {}
-    for meeting in hosted_meetings:
-        meeting_map[meeting.id] = {"meeting": meeting, "role": "host"}
-
-    for meeting in participant_meetings:
-        if meeting.id not in meeting_map:
-            meeting_map[meeting.id] = {"meeting": meeting, "role": "participant"}
-
-    meetings = sorted(
-        meeting_map.values(),
-        key=lambda item: item["meeting"].created_at or datetime.min,
-        reverse=True,
-    )
+    meetings = build_history_meetings_for_user(current_user.id)
     return render_template("history.html", meetings=meetings)
 
 
@@ -666,53 +781,65 @@ def api_remux_recording():
 
     ffmpeg_path = shutil.which("ffmpeg")
     if not ffmpeg_path:
-        return jsonify({"success": False, "message": "ffmpeg not installed"}), 501
+        return jsonify({"success": False, "message": "ffmpeg not installed on server"}), 501
 
     workdir = tempfile.mkdtemp(prefix="meeting-remux-")
-    input_path = os.path.join(workdir, "input.webm")
+    input_ext = Path(upload.filename).suffix.lower() or ".webm"
+    input_path = os.path.join(workdir, f"input{input_ext}")
     output_path = os.path.join(workdir, "output.mp4")
     upload.save(input_path)
 
-    cmd = [
-        ffmpeg_path,
-        "-y",
-        "-fflags",
-        "+genpts",
-        "-i",
-        input_path,
-        "-map",
-        "0:v:0",
-        "-map",
-        "0:a?",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-pix_fmt",
-        "yuv420p",
-        "-profile:v",
-        "main",
-        "-movflags",
-        "+faststart",
-        "-c:a",
-        "aac",
-        "-ar",
-        "48000",
-        "-ac",
-        "2",
-        "-shortest",
-        output_path,
+    command_candidates = [
+        [
+            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
+            "-map", "0:v:0", "-map", "0:a?",
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-profile:v", "main", "-movflags", "+faststart",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+            "-shortest", output_path,
+        ],
+        [
+            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
+            "-map", "0:v:0", "-map", "0:a?",
+            "-c:v", "mpeg4", "-q:v", "5", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+            "-shortest", output_path,
+        ],
+        [
+            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
+            "-map", "0:v:0",
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-profile:v", "main", "-movflags", "+faststart",
+            output_path,
+        ],
+        [
+            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
+            "-map", "0:v:0",
+            "-c:v", "mpeg4", "-q:v", "5", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            output_path,
+        ],
     ]
-    try:
-        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-    except Exception as exc:
-        shutil.rmtree(workdir, ignore_errors=True)
-        return jsonify({"success": False, "message": str(exc)}), 500
 
-    if completed.returncode != 0 or not os.path.exists(output_path):
-        shutil.rmtree(workdir, ignore_errors=True)
+    errors = []
+    for cmd in command_candidates:
+        try:
+            completed = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        except Exception as exc:
+            errors.append(str(exc))
+            continue
+        if completed.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            break
         err = (completed.stderr or completed.stdout or "ffmpeg failed").strip()
-        return jsonify({"success": False, "message": err[-1200:]}), 500
+        errors.append(err[-800:])
+        try:
+            os.remove(output_path)
+        except OSError:
+            pass
+    else:
+        shutil.rmtree(workdir, ignore_errors=True)
+        return jsonify({"success": False, "message": " | ".join(errors[-3:]) or "ffmpeg failed"}), 500
 
     data = Path(output_path).read_bytes()
 
@@ -733,6 +860,8 @@ def api_remux_recording():
 @login_required
 @admin_required
 def admin_dashboard():
+    for meeting in Meeting.query.filter_by(status="active").all():
+        ensure_meeting_not_expired(meeting)
     users = User.query.order_by(User.created_at.desc()).all()
     meetings = Meeting.query.order_by(Meeting.created_at.desc()).all()
     online_rooms = [
@@ -770,18 +899,27 @@ def admin_enable_user(user_id):
 @admin_required
 def admin_end_meeting(meeting_id):
     meeting = Meeting.query.get_or_404(meeting_id)
-    meeting.status = "ended"
-    meeting.ended_at = datetime.utcnow()
-    db.session.commit()
-
-    cancel_room_cleanup(meeting.room_id)
-    room = rooms.pop(meeting.room_id, None)
-    if room:
-        lang = session.get("lang", "zh")
-        for sid in list(room["participants"].keys()):
-            socketio.emit("force_leave", {"message": tf(lang, "meeting_closed")}, to=sid)
+    end_meeting_by_room_id(meeting.room_id, "meeting_closed")
     return redirect(url_for("admin_dashboard"))
 
+
+
+
+@app.post("/admin/meeting/<int:meeting_id>/delete")
+@login_required
+@admin_required
+def admin_delete_meeting(meeting_id):
+    meeting = Meeting.query.get_or_404(meeting_id)
+    if meeting.status != "ended":
+        end_meeting_by_room_id(meeting.room_id, "meeting_closed")
+        meeting = Meeting.query.get_or_404(meeting_id)
+    MeetingParticipant.query.filter_by(meeting_id=meeting.id).delete()
+    cancel_room_cleanup(meeting.room_id)
+    cancel_room_expiry(meeting.room_id)
+    rooms.pop(meeting.room_id, None)
+    db.session.delete(meeting)
+    db.session.commit()
+    return redirect(url_for("admin_dashboard"))
 
 @app.errorhandler(404)
 def not_found(_):
@@ -799,23 +937,13 @@ def on_join_room(data):
     password = normalize_password(data.get("password") or "")
     user_name = (data.get("user_name") or "Guest").strip()[:32] or "Guest"
 
-    room = rooms.get(room_id)
-    if not room:
-        meeting = Meeting.query.filter_by(room_id=room_id).first()
-        if not meeting or meeting.status == "ended":
-            emit("join_error", {"message": t("meeting_not_found")})
-            return
-        room = rooms[room_id] = {
-            "password": meeting.room_password,
-            "host_name": meeting.host_name,
-            "participants": {},
-            "created_at": meeting.created_at.timestamp(),
-            "meeting_db_id": meeting.id,
-            "host_user_id": meeting.host_user_id,
-            "host_present": False,
-            "cleanup_timer": None,
-            "empty_since": None,
-        }
+    meeting = Meeting.query.filter_by(room_id=room_id).first()
+    if not ensure_meeting_not_expired(meeting):
+        emit("join_error", {"message": t("meeting_not_found")})
+        return
+
+    room = ensure_runtime_room(meeting)
+    room["lang"] = session.get("lang", "zh")
 
     if normalize_password(room["password"]) != password:
         emit("join_error", {"message": t("wrong_password")})
@@ -908,19 +1036,7 @@ def on_host_end_meeting(data=None):
         emit("host_action_error", {"message": t("host_only_action")})
         return
 
-    meeting.status = "ended"
-    meeting.ended_at = datetime.utcnow()
-    db.session.commit()
-
-    cancel_room_cleanup(room_id)
-    room = rooms.pop(room_id, None)
-    if room:
-        for participant_sid in list(room["participants"].keys()):
-            participant = MeetingParticipant.query.filter_by(sid=participant_sid).order_by(MeetingParticipant.id.desc()).first()
-            if participant and not participant.left_at:
-                participant.left_at = datetime.utcnow()
-        db.session.commit()
-        socketio.emit("force_leave", {"message": t("meeting_closed_by_host")}, room=room_id)
+    end_meeting_by_room_id(room_id, "meeting_closed_by_host")
 
 
 @socketio.on("leave_room")
