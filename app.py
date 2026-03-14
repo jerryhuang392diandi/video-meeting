@@ -2,7 +2,9 @@ import os
 import secrets
 import sqlite3
 import string
+import threading
 import time
+from urllib.parse import quote
 from datetime import datetime
 from functools import wraps
 
@@ -35,6 +37,7 @@ login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
 MAX_PARTICIPANTS = 6
+ROOM_EMPTY_GRACE_SECONDS = 20
 rooms = {}
 sid_to_user = {}
 
@@ -365,10 +368,53 @@ def generate_password(length=6):
 
 
 def get_base_url():
-    scheme = (os.environ.get("PUBLIC_SCHEME") or request.headers.get("X-Forwarded-Proto", request.scheme) or "http").strip()
+    scheme = (os.environ.get("PUBLIC_SCHEME") or request.headers.get("X-Forwarded-Proto") or "https").strip()
     host = (os.environ.get("PUBLIC_HOST") or request.host or "").strip()
     return f"{scheme}://{host}"
 
+
+
+
+def cancel_room_cleanup(room_id):
+    room = rooms.get(room_id)
+    if not room:
+        return
+    timer = room.get("cleanup_timer")
+    if timer:
+        timer.cancel()
+    room["cleanup_timer"] = None
+    room["empty_since"] = None
+
+
+def finalize_room_if_still_empty(room_id):
+    with app.app_context():
+        room = rooms.get(room_id)
+        if not room:
+            return
+        if room.get("participants"):
+            room["cleanup_timer"] = None
+            room["empty_since"] = None
+            return
+
+        meeting = Meeting.query.get(room.get("meeting_db_id"))
+        if meeting and meeting.status != "ended":
+            meeting.status = "ended"
+            meeting.ended_at = datetime.utcnow()
+            db.session.commit()
+
+        rooms.pop(room_id, None)
+
+
+def schedule_room_cleanup(room_id, delay=ROOM_EMPTY_GRACE_SECONDS):
+    room = rooms.get(room_id)
+    if not room:
+        return
+    cancel_room_cleanup(room_id)
+    room["empty_since"] = time.time()
+    timer = threading.Timer(delay, finalize_room_if_still_empty, args=(room_id,))
+    timer.daemon = True
+    room["cleanup_timer"] = timer
+    timer.start()
 
 def admin_required(func):
     @wraps(func)
@@ -498,6 +544,8 @@ def api_create_room():
         "participants": {},
         "created_at": time.time(),
         "meeting_db_id": meeting.id,
+        "cleanup_timer": None,
+        "empty_since": None,
     }
 
     join_url = f"{get_base_url()}/room/{room_id}?pwd={password}"
@@ -524,6 +572,8 @@ def api_join_room():
             "participants": {},
             "created_at": meeting.created_at.timestamp(),
             "meeting_db_id": meeting.id,
+            "cleanup_timer": None,
+            "empty_since": None,
         }
     return jsonify({"success": True, "message": "ok"})
 
@@ -535,7 +585,8 @@ def room_page(room_id):
     if not meeting:
         abort(404)
     room_password = request.args.get("pwd", meeting.room_password)
-    return render_template("room.html", room_id=room_id, room_password=room_password)
+    invite_url = f"{get_base_url()}{url_for('room_page', room_id=room_id)}?pwd={quote(room_password)}"
+    return render_template("room.html", room_id=room_id, room_password=room_password, invite_url=invite_url)
 
 
 @app.get("/history")
@@ -590,6 +641,7 @@ def admin_end_meeting(meeting_id):
     meeting.ended_at = datetime.utcnow()
     db.session.commit()
 
+    cancel_room_cleanup(meeting.room_id)
     room = rooms.pop(meeting.room_id, None)
     if room:
         lang = session.get("lang", "zh")
@@ -626,6 +678,8 @@ def on_join_room(data):
             "participants": {},
             "created_at": meeting.created_at.timestamp(),
             "meeting_db_id": meeting.id,
+            "cleanup_timer": None,
+            "empty_since": None,
         }
 
     if normalize_password(room["password"]) != password:
@@ -637,6 +691,7 @@ def on_join_room(data):
         emit("join_error", {"message": f"{t('room_full')} ({MAX_PARTICIPANTS})"})
         return
 
+    cancel_room_cleanup(room_id)
     existing = [{"sid": osid, "name": info["name"]} for osid, info in room["participants"].items()]
     room["participants"][sid] = {"name": user_name, "joined_at": time.time()}
     sid_to_user[sid] = {"room_id": room_id, "name": user_name}
@@ -709,12 +764,7 @@ def on_leave_room(*_args):
             room=room_id,
         )
         if not room["participants"]:
-            meeting = Meeting.query.get(room["meeting_db_id"])
-            if meeting and meeting.status != "ended":
-                meeting.status = "ended"
-                meeting.ended_at = datetime.utcnow()
-                db.session.commit()
-            rooms.pop(room_id, None)
+            schedule_room_cleanup(room_id)
 
 
 @socketio.on("disconnect")

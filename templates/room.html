@@ -33,7 +33,7 @@
     <div class="mini-panel">
       <div class="muted">{{ t('invite_link') }}</div>
       <div class="row-compact">
-        <input id="inviteInput" readonly value="{{ request.url }}" />
+        <input id="inviteInput" readonly value="{{ invite_url }}" />
         <button class="ghost-btn" id="copyInviteBtn">{{ t('copy') }}</button>
       </div>
     </div>
@@ -50,6 +50,7 @@
 
 {% block scripts %}
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
 <script>
 const ROOM_ID = {{ room_id|tojson }};
 const ROOM_PASSWORD = {{ room_password|tojson }};
@@ -57,27 +58,29 @@ const DEFAULT_USER_NAME = {{ current_user.username|tojson }};
 const USER_NAME = (localStorage.getItem('meeting_display_name') || DEFAULT_USER_NAME).trim() || DEFAULT_USER_NAME;
 const TEXT_PERMISSION_READY = {{ t('permission_ready')|tojson }};
 const TEXT_PERMISSION_FAILED = {{ t('permission_failed')|tojson }};
-const TEXT_VIRTUAL_BG = {{ t('virtual_bg_tip')|tojson }};
-const TEXT_RECORDING = {{ t('recording_tip')|tojson }};
 const TEXT_MEETING_CLOSED = {{ t('meeting_closed')|tojson }};
 const TEXT_COPIED = {{ t('copied')|tojson }};
 const TEXT_MIC_ON = {{ t('mic_on')|tojson }};
 const TEXT_MIC_OFF = {{ t('mic_off')|tojson }};
 const TEXT_CAMERA_ON = {{ t('camera_on')|tojson }};
 const TEXT_CAMERA_OFF = {{ t('camera_off')|tojson }};
-const TEXT_FOCUS_ME = {{ ('聚焦自己' if lang == 'zh' else 'Focus me')|tojson }};
 const TEXT_SCREEN_SHARE_MODE = {{ ('共享屏幕模式已开启' if lang == 'zh' else 'Screen share mode enabled')|tojson }};
 const TEXT_SCREEN_SHARE_STOPPED = {{ ('共享屏幕模式已结束' if lang == 'zh' else 'Screen share mode ended')|tojson }};
 const TEXT_NO_VIDEO = {{ ('未开启摄像头' if lang == 'zh' else 'Camera off')|tojson }};
-const TEXT_RECORD_START = {{ ('开始录屏' if lang == 'zh' else 'Start recording')|tojson }};
 const TEXT_RECORD_STOP = {{ ('停止录屏' if lang == 'zh' else 'Stop recording')|tojson }};
 const TEXT_RECORD_SAVED = {{ ('录屏文件已保存' if lang == 'zh' else 'Recording saved')|tojson }};
 const TEXT_RECORD_NOT_SUPPORTED = {{ ('当前浏览器不支持录屏' if lang == 'zh' else 'Screen recording is not supported in this browser')|tojson }};
-const TEXT_VIRTUAL_BG_PICK = {{ ('请选择一张背景图片；下一版可接入真正的人像分割替换' if lang == 'zh' else 'Choose a background image; the next version can add true person segmentation and replacement')|tojson }};
-const TEXT_VIRTUAL_BG_SELECTED = {{ ('已选择虚拟背景图片，当前版本先保留入口' if lang == 'zh' else 'Virtual background image selected; this version keeps the entry point ready')|tojson }};
+const TEXT_RECORD_FALLBACK = {{ ('当前浏览器不支持直接导出 MP4，已自动保存为 WebM' if lang == 'zh' else 'This browser cannot export MP4 directly, so the recording will be saved as WebM')|tojson }};
+const TEXT_VIRTUAL_BG_PICK = {{ ('请选择一张背景图片，系统会开始做人像抠图并替换背景' if lang == 'zh' else 'Choose a background image and the app will start person segmentation with background replacement')|tojson }};
+const TEXT_VIRTUAL_BG_LOADING = {{ ('正在加载虚拟背景模型...' if lang == 'zh' else 'Loading virtual background model...')|tojson }};
+const TEXT_VIRTUAL_BG_READY = {{ ('虚拟背景已启用' if lang == 'zh' else 'Virtual background enabled')|tojson }};
+const TEXT_VIRTUAL_BG_FAILED = {{ ('虚拟背景启动失败' if lang == 'zh' else 'Failed to enable virtual background')|tojson }};
 
 const socket = io();
+const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
 let localStream = null;
+let rawCameraStream = null;
 let currentFacingMode = 'user';
 let peerConnections = {};
 let participantMeta = {};
@@ -85,9 +88,16 @@ let focusedSid = 'local';
 let hiddenSidebar = false;
 let currentSharerSid = null;
 let isSharingScreen = false;
-let localCameraEnabled = true;
 let activeRecorder = null;
 let recorderStream = null;
+let virtualBgEnabled = false;
+let virtualBgImageDataUrl = null;
+let virtualBgImageEl = new Image();
+let segmentationModel = null;
+let segmentationSending = false;
+let virtualBgLoopActive = false;
+let processedCanvasStream = null;
+let processedVideoStream = null;
 
 const localVideo = document.createElement('video');
 localVideo.id = 'localVideo';
@@ -95,12 +105,25 @@ localVideo.autoplay = true;
 localVideo.muted = true;
 localVideo.playsInline = true;
 
+const rawPreviewVideo = document.createElement('video');
+rawPreviewVideo.autoplay = true;
+rawPreviewVideo.muted = true;
+rawPreviewVideo.playsInline = true;
+rawPreviewVideo.style.display = 'none';
+document.body.appendChild(rawPreviewVideo);
+
+const processingCanvas = document.createElement('canvas');
+processingCanvas.style.display = 'none';
+document.body.appendChild(processingCanvas);
+const processingCtx = processingCanvas.getContext('2d');
+
 const videoStage = document.getElementById('videoStage');
 const videoMain = document.getElementById('videoMain');
 const videoSidebar = document.getElementById('videoSidebar');
 const participantCountEl = document.getElementById('participantCount');
 const statusBox = document.getElementById('statusBox');
-const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const recordingBtn = document.getElementById('recordingBtn');
+const virtualBgInput = document.getElementById('virtualBgInput');
 
 function setStatus(msg, cls='') {
   statusBox.className = 'notice ' + cls;
@@ -169,25 +192,17 @@ function renderLayout() {
   videoSidebar.innerHTML = '';
 
   const focusTarget = document.getElementById('card-' + (focusedSid || 'local')) || document.getElementById('card-local');
-  const useFocusLayout = !!focusTarget;
 
-  cards.forEach(card => {
-    card.classList.remove('is-focused', 'is-sidebar');
+  cards.forEach(card => card.classList.remove('is-focused', 'is-sidebar'));
+
+  videoStage.classList.add('focus-layout');
+  focusTarget.classList.add('is-focused');
+  videoMain.appendChild(focusTarget);
+
+  cards.filter(card => card !== focusTarget).forEach(card => {
+    card.classList.add('is-sidebar');
+    videoSidebar.appendChild(card);
   });
-
-  if (useFocusLayout) {
-    videoStage.classList.add('focus-layout');
-    focusTarget.classList.add('is-focused');
-    videoMain.appendChild(focusTarget);
-
-    cards.filter(card => card !== focusTarget).forEach(card => {
-      card.classList.add('is-sidebar');
-      videoSidebar.appendChild(card);
-    });
-  } else {
-    videoStage.classList.remove('focus-layout');
-    cards.forEach(card => videoMain.appendChild(card));
-  }
 
   videoStage.classList.toggle('sidebar-hidden', hiddenSidebar);
   videoStage.classList.toggle('screen-share-mode', !!currentSharerSid);
@@ -196,46 +211,64 @@ function renderLayout() {
 function focusParticipant(sid, opts = {}) {
   focusedSid = sid;
   if (typeof opts.hideSidebar === 'boolean') hiddenSidebar = opts.hideSidebar;
-  if (opts.screenShare) {
-    currentSharerSid = sid;
-    setStatus(TEXT_SCREEN_SHARE_MODE);
-  }
+  if (opts.screenShare) currentSharerSid = sid;
   renderLayout();
-  syncSidebarBtn();
 }
-
-function clearFocus() {
-  focusedSid = 'local';
-  currentSharerSid = null;
-  hiddenSidebar = false;
-  renderLayout();
-  syncSidebarBtn();
-}
-
-function syncSidebarBtn() {}
 
 function updateParticipantCount() {
-  const total = 1 + Object.keys(participantMeta).length;
-  participantCountEl.textContent = total;
+  participantCountEl.textContent = 1 + Object.keys(participantMeta).length;
+}
+
+function stopStreamTracks(stream) {
+  if (!stream) return;
+  stream.getTracks().forEach(track => {
+    try { track.stop(); } catch (_) {}
+  });
+}
+
+function cleanupProcessedVideoStream() {
+  if (processedCanvasStream) {
+    stopStreamTracks(processedCanvasStream);
+    processedCanvasStream = null;
+  }
+  if (processedVideoStream && processedVideoStream !== rawCameraStream) {
+    const extraVideoTracks = processedVideoStream.getVideoTracks();
+    extraVideoTracks.forEach(track => {
+      try { track.stop(); } catch (_) {}
+    });
+  }
+  processedVideoStream = null;
+}
+
+function useLocalOutputStream(stream) {
+  localStream = stream;
+  localVideo.srcObject = stream;
+  const localCard = ensureCard('local', getDisplayName('local'), true);
+  updatePlaceholder(localCard, !!stream?.getVideoTracks?.()[0]?.enabled);
+  replaceOutgoingTracks();
+  renderLayout();
 }
 
 async function requestMedia(forceFacingMode = null) {
   try {
-    if (localStream) {
-      localStream.getTracks().forEach(t => t.stop());
-    }
+    if (rawCameraStream) stopStreamTracks(rawCameraStream);
+    cleanupProcessedVideoStream();
+
     const constraints = {
       audio: true,
       video: forceFacingMode ? { facingMode: { ideal: forceFacingMode } } : true,
     };
-    localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    localVideo.srcObject = localStream;
-    localCameraEnabled = true;
-    const localCard = ensureCard('local', getDisplayName('local'), true);
-    updatePlaceholder(localCard, true);
-    replaceOutgoingTracks();
+    rawCameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    rawPreviewVideo.srcObject = rawCameraStream;
+    await rawPreviewVideo.play().catch(() => {});
+
+    if (virtualBgEnabled && virtualBgImageDataUrl) {
+      await activateVirtualBackground();
+    } else {
+      useLocalOutputStream(rawCameraStream);
+    }
+
     setStatus(TEXT_PERMISSION_READY);
-    renderLayout();
   } catch (err) {
     console.error(err);
     setStatus(TEXT_PERMISSION_FAILED + ': ' + err.message, 'error');
@@ -326,7 +359,7 @@ function downloadBlob(blob, filename) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 async function toggleScreenRecording() {
@@ -344,27 +377,42 @@ async function toggleScreenRecording() {
   try {
     recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
     const chunks = [];
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-      ? 'video/webm;codecs=vp9'
-      : 'video/webm';
 
-    activeRecorder = new MediaRecorder(recorderStream, { mimeType });
+    let mimeType = '';
+    let extension = 'webm';
+    if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E,mp4a.40.2')) {
+      mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
+      extension = 'mp4';
+    } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
+      mimeType = 'video/webm;codecs=vp9,opus';
+    } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
+      mimeType = 'video/webm;codecs=vp8,opus';
+    } else if (MediaRecorder.isTypeSupported('video/webm')) {
+      mimeType = 'video/webm';
+    } else {
+      setStatus(TEXT_RECORD_NOT_SUPPORTED, 'error');
+      recorderStream.getTracks().forEach(track => track.stop());
+      recorderStream = null;
+      return;
+    }
+
+    activeRecorder = new MediaRecorder(recorderStream, mimeType ? { mimeType } : undefined);
     activeRecorder.ondataavailable = (event) => {
       if (event.data && event.data.size > 0) chunks.push(event.data);
     };
     activeRecorder.onstop = () => {
-      const blob = new Blob(chunks, { type: mimeType });
-      downloadBlob(blob, `meeting-recording-${Date.now()}.webm`);
-      document.getElementById('recordingBtn').textContent = {{ t('recording')|tojson }};
+      const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
+      downloadBlob(blob, `meeting-recording-${Date.now()}.${extension}`);
+      recordingBtn.textContent = {{ t('recording')|tojson }};
       activeRecorder = null;
       recorderStream = null;
-      setStatus(TEXT_RECORD_SAVED);
+      setStatus(extension === 'mp4' ? TEXT_RECORD_SAVED : TEXT_RECORD_FALLBACK, extension === 'mp4' ? '' : 'warning');
     };
     recorderStream.getVideoTracks()[0].onended = () => {
       if (activeRecorder && activeRecorder.state !== 'inactive') activeRecorder.stop();
     };
     activeRecorder.start(1000);
-    document.getElementById('recordingBtn').textContent = TEXT_RECORD_STOP;
+    recordingBtn.textContent = TEXT_RECORD_STOP;
     setStatus(TEXT_RECORD_STOP);
   } catch (err) {
     activeRecorder = null;
@@ -374,6 +422,103 @@ async function toggleScreenRecording() {
   }
 }
 
+async function loadSegmentationModel() {
+  if (segmentationModel) return segmentationModel;
+  if (typeof SelfieSegmentation === 'undefined') {
+    throw new Error('SelfieSegmentation not loaded');
+  }
+  segmentationModel = new SelfieSegmentation({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
+  });
+  segmentationModel.setOptions({ modelSelection: 1 });
+  segmentationModel.onResults(onSegmentationResults);
+  return segmentationModel;
+}
+
+function drawImageCover(ctx, img, x, y, width, height) {
+  const scale = Math.max(width / img.width, height / img.height);
+  const drawWidth = img.width * scale;
+  const drawHeight = img.height * scale;
+  const dx = x + (width - drawWidth) / 2;
+  const dy = y + (height - drawHeight) / 2;
+  ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
+}
+
+function onSegmentationResults(results) {
+  if (!virtualBgEnabled || !virtualBgImageEl.src) return;
+
+  const width = results.image.videoWidth || results.image.width || 1280;
+  const height = results.image.videoHeight || results.image.height || 720;
+  if (processingCanvas.width !== width || processingCanvas.height !== height) {
+    processingCanvas.width = width;
+    processingCanvas.height = height;
+  }
+
+  processingCtx.save();
+  processingCtx.clearRect(0, 0, width, height);
+  processingCtx.drawImage(results.segmentationMask, 0, 0, width, height);
+  processingCtx.globalCompositeOperation = 'source-out';
+  drawImageCover(processingCtx, virtualBgImageEl, 0, 0, width, height);
+  processingCtx.globalCompositeOperation = 'destination-atop';
+  processingCtx.drawImage(results.image, 0, 0, width, height);
+  processingCtx.restore();
+}
+
+async function startSegmentationLoop() {
+  if (virtualBgLoopActive) return;
+  virtualBgLoopActive = true;
+
+  const loop = async () => {
+    if (!virtualBgEnabled) {
+      virtualBgLoopActive = false;
+      return;
+    }
+    if (segmentationSending || !rawPreviewVideo.srcObject) {
+      requestAnimationFrame(loop);
+      return;
+    }
+    try {
+      segmentationSending = true;
+      await segmentationModel.send({ image: rawPreviewVideo });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      segmentationSending = false;
+      requestAnimationFrame(loop);
+    }
+  };
+
+  requestAnimationFrame(loop);
+}
+
+async function activateVirtualBackground() {
+  if (!rawCameraStream || !virtualBgImageDataUrl) return;
+  setStatus(TEXT_VIRTUAL_BG_LOADING, 'warning');
+
+  await loadSegmentationModel();
+  virtualBgImageEl = new Image();
+  await new Promise((resolve, reject) => {
+    virtualBgImageEl.onload = resolve;
+    virtualBgImageEl.onerror = reject;
+    virtualBgImageEl.src = virtualBgImageDataUrl;
+  });
+
+  rawPreviewVideo.srcObject = rawCameraStream;
+  await rawPreviewVideo.play().catch(() => {});
+  virtualBgEnabled = true;
+  await startSegmentationLoop();
+
+  cleanupProcessedVideoStream();
+  processedCanvasStream = processingCanvas.captureStream(24);
+  processedVideoStream = new MediaStream();
+  const processedTrack = processedCanvasStream.getVideoTracks()[0];
+  if (processedTrack) processedVideoStream.addTrack(processedTrack);
+  rawCameraStream.getAudioTracks().forEach(track => processedVideoStream.addTrack(track));
+
+  useLocalOutputStream(processedVideoStream);
+  setStatus(TEXT_VIRTUAL_BG_READY);
+}
+
 function broadcastUiEvent(payload) {
   socket.emit('room_ui_event', payload);
 }
@@ -381,15 +526,13 @@ function broadcastUiEvent(payload) {
 socket.on('connect', async () => {
   ensureCard('local', getDisplayName('local'), true);
   renderLayout();
-  if (!localStream) await requestMedia(currentFacingMode);
+  if (!rawCameraStream && !localStream) await requestMedia(currentFacingMode);
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
 });
 
 socket.on('join_ok', async (data) => {
   participantCountEl.textContent = data.participant_count;
-  for (const p of data.participants) {
-    addRemoteParticipant(p.sid, p.name);
-  }
+  for (const p of data.participants) addRemoteParticipant(p.sid, p.name);
   focusParticipant('local');
 });
 
@@ -442,14 +585,7 @@ socket.on('room_ui_event', (data) => {
     hiddenSidebar = false;
     focusedSid = 'local';
     renderLayout();
-    syncSidebarBtn();
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
-  } else if (data.type === 'focus_participant') {
-    focusParticipant(data.targetSid || data.from, { hideSidebar: !!data.hideSidebar });
-  } else if (data.type === 'sidebar_visibility') {
-    hiddenSidebar = !!data.hidden;
-    renderLayout();
-    syncSidebarBtn();
   }
 });
 
@@ -459,19 +595,22 @@ document.getElementById('switchCameraBtn').onclick = async () => {
   await requestMedia(currentFacingMode);
 };
 document.getElementById('toggleMicBtn').onclick = () => {
-  const track = localStream?.getAudioTracks?.()[0];
-  if (!track) return;
-  track.enabled = !track.enabled;
-  setStatus(track.enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
+  const rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
+  if (!rawTrack) return;
+  rawTrack.enabled = !rawTrack.enabled;
+  const localTrack = localStream?.getAudioTracks?.()[0];
+  if (localTrack && localTrack !== rawTrack) localTrack.enabled = rawTrack.enabled;
+  setStatus(rawTrack.enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
 };
 document.getElementById('toggleCameraBtn').onclick = () => {
-  const track = localStream?.getVideoTracks?.()[0];
+  const rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
   const localCard = ensureCard('local', getDisplayName('local'), true);
-  if (!track) return;
-  track.enabled = !track.enabled;
-  localCameraEnabled = track.enabled;
-  updatePlaceholder(localCard, localCameraEnabled);
-  setStatus(track.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
+  if (!rawTrack) return;
+  rawTrack.enabled = !rawTrack.enabled;
+  const outputVideoTrack = localStream?.getVideoTracks?.()[0];
+  if (outputVideoTrack && outputVideoTrack !== rawTrack) outputVideoTrack.enabled = rawTrack.enabled;
+  updatePlaceholder(localCard, rawTrack.enabled);
+  setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 };
 document.getElementById('shareScreenBtn').onclick = async () => {
   try {
@@ -486,16 +625,22 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     updatePlaceholder(screenCard, true);
     isSharingScreen = true;
     focusParticipant('local', { hideSidebar: false, screenShare: true });
+    setStatus(TEXT_SCREEN_SHARE_MODE);
     broadcastUiEvent({ type: 'screen_share_started', hideSidebar: false });
 
     screenTrack.onended = async () => {
       isSharingScreen = false;
-      await requestMedia(currentFacingMode);
+      if (virtualBgEnabled && virtualBgImageDataUrl) {
+        await activateVirtualBackground();
+      } else if (rawCameraStream) {
+        useLocalOutputStream(rawCameraStream);
+      } else {
+        await requestMedia(currentFacingMode);
+      }
       currentSharerSid = null;
       hiddenSidebar = false;
       focusedSid = 'local';
       renderLayout();
-      syncSidebarBtn();
       broadcastUiEvent({ type: 'screen_share_stopped' });
       setStatus(TEXT_SCREEN_SHARE_STOPPED);
     };
@@ -505,14 +650,26 @@ document.getElementById('shareScreenBtn').onclick = async () => {
 };
 document.getElementById('virtualBgBtn').onclick = () => {
   setStatus(TEXT_VIRTUAL_BG_PICK, 'warning');
-  document.getElementById('virtualBgInput').click();
+  virtualBgInput.click();
 };
-document.getElementById('virtualBgInput').onchange = (event) => {
+virtualBgInput.onchange = async (event) => {
   const file = event.target.files?.[0];
   if (!file) return;
-  setStatus(TEXT_VIRTUAL_BG_SELECTED + '：' + file.name, 'warning');
+  virtualBgImageDataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+  try {
+    if (!rawCameraStream) await requestMedia(currentFacingMode);
+    await activateVirtualBackground();
+  } catch (err) {
+    console.error(err);
+    setStatus(TEXT_VIRTUAL_BG_FAILED + ': ' + err.message, 'error');
+  }
 };
-document.getElementById('recordingBtn').onclick = () => toggleScreenRecording();
+recordingBtn.onclick = () => toggleScreenRecording();
 document.getElementById('copyInviteBtn').onclick = async () => {
   await navigator.clipboard.writeText(document.getElementById('inviteInput').value);
   setStatus(TEXT_COPIED);
@@ -520,6 +677,5 @@ document.getElementById('copyInviteBtn').onclick = async () => {
 
 ensureCard('local', getDisplayName('local'), true);
 renderLayout();
-syncSidebarBtn();
 </script>
 {% endblock %}
