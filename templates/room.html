@@ -76,6 +76,10 @@ const TEXT_VIRTUAL_BG_PICK = {{ ('请选择一张背景图片，系统会开始�
 const TEXT_VIRTUAL_BG_LOADING = {{ ('正在加载虚拟背景模型...' if lang == 'zh' else 'Loading virtual background model...')|tojson }};
 const TEXT_VIRTUAL_BG_READY = {{ ('虚拟背景已启用' if lang == 'zh' else 'Virtual background enabled')|tojson }};
 const TEXT_VIRTUAL_BG_FAILED = {{ ('虚拟背景启动失败' if lang == 'zh' else 'Failed to enable virtual background')|tojson }};
+const TEXT_VIRTUAL_BG_OFF = {{ ('虚拟背景已关闭' if lang == 'zh' else 'Virtual background disabled')|tojson }};
+const TEXT_RECORD_CONVERTING = {{ ('正在转换为可拖动的 MP4，请稍候...' if lang == 'zh' else 'Converting to a seekable MP4, please wait...')|tojson }};
+const TEXT_RECORD_MP4_FAILED = {{ ('MP4 转换失败，已回退保存为 WebM' if lang == 'zh' else 'MP4 conversion failed, saved as WebM instead')|tojson }};
+const TEXT_IMAGE_NOT_SUPPORTED = {{ ('该图片无法作为虚拟背景，请换一张 PNG/JPG 图片' if lang == 'zh' else 'This image cannot be used as a virtual background. Try a PNG or JPG image instead.')|tojson }};
 const TEXT_HOST_END_CONFIRM = {{ ('确定要解散当前会议吗？所有参会者都会被移出。' if lang == 'zh' else 'End this meeting now? All participants will be removed.')|tojson }};
 
 const socket = io();
@@ -100,6 +104,12 @@ let segmentationSending = false;
 let virtualBgLoopActive = false;
 let processedCanvasStream = null;
 let processedVideoStream = null;
+let processedFrameCount = 0;
+let virtualBgActivationToken = 0;
+let activeVirtualBgToken = 0;
+const MAX_VBG_WIDTH = 960;
+const MAX_VBG_HEIGHT = 540;
+const VBG_CAPTURE_FPS = 15;
 
 const localVideo = document.createElement('video');
 localVideo.id = 'localVideo';
@@ -234,11 +244,7 @@ function stopStreamTracks(stream) {
   });
 }
 
-function cleanupProcessedVideoStream() {
-  if (processedCanvasStream) {
-    stopStreamTracks(processedCanvasStream);
-    processedCanvasStream = null;
-  }
+function cleanupProcessedVideoStream({ stopCanvas = false } = {}) {
   if (processedVideoStream && processedVideoStream !== rawCameraStream) {
     const extraVideoTracks = processedVideoStream.getVideoTracks();
     extraVideoTracks.forEach(track => {
@@ -246,22 +252,32 @@ function cleanupProcessedVideoStream() {
     });
   }
   processedVideoStream = null;
+  if (stopCanvas && processedCanvasStream) {
+    stopStreamTracks(processedCanvasStream);
+    processedCanvasStream = null;
+  }
 }
 
-function disableVirtualBackgroundState() {
+function disableVirtualBackgroundState({ stopCanvas = false } = {}) {
   virtualBgEnabled = false;
   virtualBgLoopActive = false;
   segmentationSending = false;
-  cleanupProcessedVideoStream();
+  virtualBgActivationToken += 1;
+  activeVirtualBgToken = 0;
+  cleanupProcessedVideoStream({ stopCanvas });
 }
 
 function fallbackToRawCamera(message = null) {
   if (!rawCameraStream) return;
   disableVirtualBackgroundState();
   rawPreviewVideo.srcObject = rawCameraStream;
-  localVideo.srcObject = rawCameraStream;
   useLocalOutputStream(rawCameraStream);
   if (message) setStatus(message, 'warning');
+}
+
+function deactivateVirtualBackground(message = null) {
+  virtualBgImageDataUrl = null;
+  fallbackToRawCamera(message || TEXT_VIRTUAL_BG_OFF);
 }
 
 function useLocalOutputStream(stream) {
@@ -273,10 +289,64 @@ function useLocalOutputStream(stream) {
   renderLayout();
 }
 
+function getScaledSize(width, height) {
+  if (!width || !height) return { width: 640, height: 360 };
+  const scale = Math.min(MAX_VBG_WIDTH / width, MAX_VBG_HEIGHT / height, 1);
+  const scaledWidth = Math.max(2, Math.round((width * scale) / 2) * 2);
+  const scaledHeight = Math.max(2, Math.round((height * scale) / 2) * 2);
+  return { width: scaledWidth, height: scaledHeight };
+}
+
+async function waitForVideoReady(videoEl, timeoutMs = 2000) {
+  if (videoEl.readyState >= 2 && videoEl.videoWidth && videoEl.videoHeight) return true;
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('Camera preview not ready'));
+    }, timeoutMs);
+    const onReady = () => {
+      cleanup();
+      resolve(true);
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      videoEl.removeEventListener('loadedmetadata', onReady);
+      videoEl.removeEventListener('canplay', onReady);
+    };
+    videoEl.addEventListener('loadedmetadata', onReady);
+    videoEl.addEventListener('canplay', onReady);
+  });
+  return true;
+}
+
+async function ensureProcessedCanvasStream() {
+  if (processedCanvasStream && processedCanvasStream.getVideoTracks()[0] && processedCanvasStream.getVideoTracks()[0].readyState === 'live') {
+    return processedCanvasStream;
+  }
+  if (!processingCanvas.width || !processingCanvas.height) throw new Error('Processed canvas is empty');
+  processedCanvasStream = processingCanvas.captureStream(VBG_CAPTURE_FPS);
+  return processedCanvasStream;
+}
+
+async function transcodeRecordingBlob(blob) {
+  const formData = new FormData();
+  formData.append('recording', blob, 'meeting-recording.webm');
+  const response = await fetch('/api/remux-recording', { method: 'POST', body: formData, credentials: 'same-origin' });
+  if (!response.ok) {
+    let message = 'convert failed';
+    try {
+      const data = await response.json();
+      message = data?.message || message;
+    } catch (_) {}
+    throw new Error(message);
+  }
+  return await response.blob();
+}
+
 async function requestMedia(forceFacingMode = null) {
   try {
     if (rawCameraStream) stopStreamTracks(rawCameraStream);
-    disableVirtualBackgroundState();
+    disableVirtualBackgroundState({ stopCanvas: true });
 
     const constraints = {
       audio: true,
@@ -408,11 +478,7 @@ async function toggleScreenRecording() {
     const chunks = [];
 
     let mimeType = '';
-    let extension = 'webm';
-    if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E,mp4a.40.2')) {
-      mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
-      extension = 'mp4';
-    } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
+    if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
       mimeType = 'video/webm;codecs=vp9,opus';
     } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
       mimeType = 'video/webm;codecs=vp8,opus';
@@ -429,13 +495,22 @@ async function toggleScreenRecording() {
     activeRecorder.ondataavailable = (event) => {
       if (event.data && event.data.size > 0) chunks.push(event.data);
     };
-    activeRecorder.onstop = () => {
-      const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
-      downloadBlob(blob, `meeting-recording-${Date.now()}.${extension}`);
+    activeRecorder.onstop = async () => {
+      const webmBlob = new Blob(chunks, { type: mimeType || 'video/webm' });
       recordingBtn.textContent = {{ t('recording')|tojson }};
       activeRecorder = null;
       recorderStream = null;
-      setStatus(extension === 'mp4' ? TEXT_RECORD_SAVED : TEXT_RECORD_FALLBACK, extension === 'mp4' ? '' : 'warning');
+
+      try {
+        setStatus(TEXT_RECORD_CONVERTING, 'warning');
+        const mp4Blob = await transcodeRecordingBlob(webmBlob);
+        downloadBlob(mp4Blob, `meeting-recording-${Date.now()}.mp4`);
+        setStatus(TEXT_RECORD_SAVED);
+      } catch (err) {
+        console.error(err);
+        downloadBlob(webmBlob, `meeting-recording-${Date.now()}.webm`);
+        setStatus(TEXT_RECORD_MP4_FAILED, 'warning');
+      }
     };
     recorderStream.getVideoTracks()[0].onended = () => {
       if (activeRecorder && activeRecorder.state !== 'inactive') activeRecorder.stop();
@@ -474,10 +549,11 @@ function drawImageCover(ctx, img, x, y, width, height) {
 }
 
 function onSegmentationResults(results) {
-  if (!virtualBgEnabled || !virtualBgImageEl.src) return;
+  if (!virtualBgEnabled || !virtualBgImageEl?.src) return;
 
-  const width = results.image.videoWidth || results.image.width || 1280;
-  const height = results.image.videoHeight || results.image.height || 720;
+  const sourceWidth = results.image.videoWidth || results.image.width || 1280;
+  const sourceHeight = results.image.videoHeight || results.image.height || 720;
+  const { width, height } = getScaledSize(sourceWidth, sourceHeight);
   if (processingCanvas.width !== width || processingCanvas.height !== height) {
     processingCanvas.width = width;
     processingCanvas.height = height;
@@ -491,6 +567,7 @@ function onSegmentationResults(results) {
   processingCtx.globalCompositeOperation = 'destination-atop';
   processingCtx.drawImage(results.image, 0, 0, width, height);
   processingCtx.restore();
+  processedFrameCount += 1;
 }
 
 async function startSegmentationLoop() {
@@ -522,39 +599,71 @@ async function startSegmentationLoop() {
 
 async function activateVirtualBackground() {
   if (!rawCameraStream || !virtualBgImageDataUrl) return false;
+  const activationToken = ++virtualBgActivationToken;
+  let hadWorkingVbg = !!processedVideoStream && localStream === processedVideoStream;
+  const previousBgImageEl = virtualBgImageEl;
   setStatus(TEXT_VIRTUAL_BG_LOADING, 'warning');
 
   try {
     await loadSegmentationModel();
     const bgImage = new Image();
     await new Promise((resolve, reject) => {
-      bgImage.onload = resolve;
-      bgImage.onerror = reject;
+      bgImage.onload = () => {
+        if (!bgImage.naturalWidth || !bgImage.naturalHeight) {
+          reject(new Error(TEXT_IMAGE_NOT_SUPPORTED));
+          return;
+        }
+        resolve();
+      };
+      bgImage.onerror = () => reject(new Error(TEXT_IMAGE_NOT_SUPPORTED));
       bgImage.src = virtualBgImageDataUrl;
     });
 
     rawPreviewVideo.srcObject = rawCameraStream;
     await rawPreviewVideo.play().catch(() => {});
+    await waitForVideoReady(rawPreviewVideo, 2500);
 
-    disableVirtualBackgroundState();
+    const startCount = processedFrameCount;
+
     virtualBgImageEl = bgImage;
     virtualBgEnabled = true;
     await startSegmentationLoop();
 
-    await new Promise(resolve => setTimeout(resolve, 180));
-    processedCanvasStream = processingCanvas.captureStream(24);
-    processedVideoStream = new MediaStream();
+    const deadline = Date.now() + 3000;
+    while (processedFrameCount < startCount + 2) {
+      if (activationToken !== virtualBgActivationToken) return false;
+      if (Date.now() > deadline) throw new Error('Segmentation timeout');
+      await new Promise(resolve => setTimeout(resolve, 60));
+    }
+
+    await ensureProcessedCanvasStream();
     const processedTrack = processedCanvasStream.getVideoTracks()[0];
     if (!processedTrack) throw new Error('Processed video track unavailable');
-    processedVideoStream.addTrack(processedTrack);
-    rawCameraStream.getAudioTracks().forEach(track => processedVideoStream.addTrack(track));
 
+    const nextOutputStream = new MediaStream();
+    nextOutputStream.addTrack(processedTrack.clone());
+    rawCameraStream.getAudioTracks().forEach(track => nextOutputStream.addTrack(track));
+
+    if (activationToken !== virtualBgActivationToken) {
+      stopStreamTracks(nextOutputStream);
+      return false;
+    }
+
+    cleanupProcessedVideoStream();
+    processedVideoStream = nextOutputStream;
+    activeVirtualBgToken = activationToken;
     useLocalOutputStream(processedVideoStream);
     setStatus(TEXT_VIRTUAL_BG_READY);
     return true;
   } catch (err) {
     console.error(err);
-    fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'));
+    if (hadWorkingVbg && processedVideoStream) {
+      virtualBgImageEl = previousBgImageEl;
+      virtualBgEnabled = true;
+      setStatus(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'), 'warning');
+    } else {
+      fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'));
+    }
     return false;
   }
 }
@@ -693,6 +802,10 @@ document.getElementById('shareScreenBtn').onclick = async () => {
   }
 };
 document.getElementById('virtualBgBtn').onclick = async () => {
+  if (virtualBgEnabled) {
+    deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF);
+    return;
+  }
   if (!rawCameraStream) {
     await requestMedia(currentFacingMode);
     if (!rawCameraStream) return;
@@ -703,18 +816,24 @@ document.getElementById('virtualBgBtn').onclick = async () => {
 virtualBgInput.onchange = async (event) => {
   const file = event.target.files?.[0];
   if (!file) return;
-  virtualBgImageDataUrl = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-  if (!rawCameraStream) {
-    await requestMedia(currentFacingMode);
-    if (!rawCameraStream) return;
+  try {
+    virtualBgImageDataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    if (!rawCameraStream) {
+      await requestMedia(currentFacingMode);
+      if (!rawCameraStream) return;
+    }
+    await activateVirtualBackground();
+  } catch (err) {
+    console.error(err);
+    setStatus(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || TEXT_IMAGE_NOT_SUPPORTED), 'warning');
+  } finally {
+    event.target.value = '';
   }
-  await activateVirtualBackground();
-  event.target.value = '';
 };
 recordingBtn.onclick = () => toggleScreenRecording();
 if (hostEndMeetingBtn) {

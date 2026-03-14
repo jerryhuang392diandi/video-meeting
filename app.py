@@ -1,14 +1,18 @@
+import io
 import os
 import secrets
+import shutil
 import sqlite3
 import string
+import subprocess
+import tempfile
 import threading
 import time
 from urllib.parse import quote
 from datetime import datetime
 from functools import wraps
 
-from flask import Flask, abort, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, abort, after_this_request, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_login import (
     LoginManager,
     UserMixin,
@@ -607,6 +611,65 @@ def room_page(room_id):
 def history():
     meetings = Meeting.query.filter_by(host_user_id=current_user.id).order_by(Meeting.created_at.desc()).all()
     return render_template("history.html", meetings=meetings)
+
+
+@app.post("/api/remux-recording")
+@login_required
+def api_remux_recording():
+    upload = request.files.get("recording")
+    if not upload or not upload.filename:
+        return jsonify({"success": False, "message": "No recording uploaded"}), 400
+
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        return jsonify({"success": False, "message": "ffmpeg not installed"}), 501
+
+    workdir = tempfile.mkdtemp(prefix="meeting-remux-")
+    input_path = os.path.join(workdir, "input.webm")
+    output_path = os.path.join(workdir, "output.mp4")
+    upload.save(input_path)
+
+    cmd = [
+        ffmpeg_path,
+        "-y",
+        "-i",
+        input_path,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        output_path,
+    ]
+    try:
+        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    except Exception as exc:
+        shutil.rmtree(workdir, ignore_errors=True)
+        return jsonify({"success": False, "message": str(exc)}), 500
+
+    if completed.returncode != 0 or not os.path.exists(output_path):
+        shutil.rmtree(workdir, ignore_errors=True)
+        err = (completed.stderr or completed.stdout or "ffmpeg failed").strip()
+        return jsonify({"success": False, "message": err[-500:]}), 500
+
+    data = Path(output_path).read_bytes()
+
+    @after_this_request
+    def cleanup(response):
+        shutil.rmtree(workdir, ignore_errors=True)
+        return response
+
+    return send_file(
+        io.BytesIO(data),
+        mimetype="video/mp4",
+        as_attachment=True,
+        download_name=f"meeting-recording-{int(time.time() * 1000)}.mp4",
+    )
 
 
 @app.get("/admin")
