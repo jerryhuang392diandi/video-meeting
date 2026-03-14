@@ -46,7 +46,6 @@ ROOM_EMPTY_GRACE_SECONDS = 20
 MEETING_DURATION_SECONDS = 90 * 60
 rooms = {}
 sid_to_user = {}
-user_to_sids = {}
 
 TRANSLATIONS = {
     "zh": {
@@ -416,58 +415,6 @@ def generate_password(length=6):
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
-
-
-def register_user_socket(user_id, sid):
-    if not user_id or not sid:
-        return
-    bucket = user_to_sids.setdefault(user_id, set())
-    bucket.add(sid)
-
-
-def unregister_user_socket(sid):
-    info = sid_to_user.get(sid)
-    if not info:
-        return
-    user_id = info.get("user_id")
-    if not user_id:
-        return
-    bucket = user_to_sids.get(user_id)
-    if not bucket:
-        return
-    bucket.discard(sid)
-    if not bucket:
-        user_to_sids.pop(user_id, None)
-
-
-def force_logout_user_sockets(user_id, message_key="kicked", exclude_sid=None):
-    if not user_id:
-        return
-    target_sids = list(user_to_sids.get(user_id, set()))
-    for sid in target_sids:
-        if exclude_sid and sid == exclude_sid:
-            continue
-        info = sid_to_user.get(sid) or {}
-        lang = info.get("lang", "zh")
-        message = tf(lang, message_key)
-        try:
-            socketio.emit("force_leave", {"message": message}, to=sid)
-        except Exception:
-            pass
-        try:
-            socketio.server.disconnect(sid, namespace="/")
-        except Exception:
-            pass
-
-
-def current_session_valid():
-    if not current_user.is_authenticated:
-        return False
-    fresh_user = db.session.get(User, current_user.id)
-    if not fresh_user or not fresh_user.is_active_user:
-        return False
-    return session.get("session_version") == fresh_user.session_version
-
 def get_base_url():
     scheme = (os.environ.get("PUBLIC_SCHEME") or request.headers.get("X-Forwarded-Proto") or "https").strip()
     host = (os.environ.get("PUBLIC_HOST") or request.host or "").strip()
@@ -718,7 +665,6 @@ def register():
 
     user.session_version = (user.session_version or 0) + 1
     db.session.commit()
-    force_logout_user_sockets(user.id)
     login_user(user)
     session["session_version"] = user.session_version
     return redirect(url_for("index"))
@@ -740,7 +686,6 @@ def login():
 
     user.session_version = (user.session_version or 0) + 1
     db.session.commit()
-    force_logout_user_sockets(user.id)
     login_user(user)
     session["session_version"] = user.session_version
     return redirect(url_for("index"))
@@ -942,7 +887,6 @@ def admin_disable_user(user_id):
     user.is_active_user = False
     user.session_version = (user.session_version or 0) + 1
     db.session.commit()
-    force_logout_user_sockets(user.id)
     return redirect(url_for("admin_dashboard"))
 
 
@@ -999,14 +943,6 @@ def on_join_room(data):
     password = normalize_password(data.get("password") or "")
     user_name = (data.get("user_name") or "Guest").strip()[:32] or "Guest"
 
-    if not current_session_valid():
-        emit("force_leave", {"message": t("kicked")})
-        try:
-            socketio.server.disconnect(request.sid, namespace="/")
-        except Exception:
-            pass
-        return
-
     meeting = Meeting.query.filter_by(room_id=room_id).first()
     if not ensure_meeting_not_expired(meeting):
         emit("join_error", {"message": t("meeting_not_found")})
@@ -1027,13 +963,7 @@ def on_join_room(data):
     cancel_room_cleanup(room_id)
     existing = [{"sid": osid, "name": info["name"]} for osid, info in room["participants"].items()]
     room["participants"][sid] = {"name": user_name, "joined_at": time.time()}
-    sid_to_user[sid] = {
-        "room_id": room_id,
-        "name": user_name,
-        "user_id": current_user.id if current_user.is_authenticated else None,
-        "lang": session.get("lang", "zh"),
-    }
-    register_user_socket(current_user.id if current_user.is_authenticated else None, sid)
+    sid_to_user[sid] = {"room_id": room_id, "name": user_name}
     join_room(room_id)
 
     host_returned = False
@@ -1089,8 +1019,6 @@ def on_room_ui_event(data):
     if not info:
         return
     room_id = info["room_id"]
-    unregister_user_socket(sid)
-    sid_to_user.pop(sid, None)
     payload = data or {}
     payload["from"] = sid
     emit("room_ui_event", payload, room=room_id, include_self=False)
@@ -1105,8 +1033,6 @@ def on_host_end_meeting(data=None):
         return
 
     room_id = info["room_id"]
-    unregister_user_socket(sid)
-    sid_to_user.pop(sid, None)
     meeting = Meeting.query.filter_by(room_id=room_id).first()
     if not meeting or meeting.status == "ended":
         emit("host_action_error", {"message": t("meeting_not_found")})
@@ -1122,12 +1048,10 @@ def on_host_end_meeting(data=None):
 @socketio.on("leave_room")
 def on_leave_room(*_args):
     sid = request.sid
-    info = sid_to_user.get(sid)
+    info = sid_to_user.pop(sid, None)
     if not info:
         return
     room_id = info["room_id"]
-    unregister_user_socket(sid)
-    sid_to_user.pop(sid, None)
     room = rooms.get(room_id)
     leave_room(room_id)
     if room and sid in room["participants"]:
