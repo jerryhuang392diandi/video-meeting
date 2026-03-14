@@ -46,11 +46,12 @@ ROOM_EMPTY_GRACE_SECONDS = 20
 MEETING_DURATION_SECONDS = 90 * 60
 rooms = {}
 sid_to_user = {}
+user_active_sids = {}
 
 TRANSLATIONS = {
     "zh": {
-        "app_name": "视频会议系统",
-        "subtitle": "双语视频会议平台｜单设备登录｜管理员后台",
+        "app_name": "西小电视频会议系统",
+        "subtitle": "西小电视频会议平台｜单设备登录｜管理员后台",
         "nav_home": "首页",
         "nav_history": "历史会议",
         "nav_admin": "管理员后台",
@@ -607,6 +608,40 @@ def admin_required(func):
     return wrapper
 
 
+def disconnect_user_sockets(user_id, exclude_sid=None, message=None):
+    if not user_id:
+        return
+    active_sids = list(user_active_sids.get(user_id, set()))
+    for sid in active_sids:
+        if exclude_sid and sid == exclude_sid:
+            continue
+        try:
+            socketio.emit("force_logout", {"message": message or t("kicked")}, to=sid)
+        except Exception:
+            pass
+        try:
+            socketio.server.disconnect(sid)
+        except Exception:
+            pass
+
+
+def bind_user_socket(user_id, sid):
+    if not user_id or not sid:
+        return
+    user_active_sids.setdefault(user_id, set()).add(sid)
+
+
+def unbind_user_socket(user_id, sid):
+    if not user_id or not sid:
+        return
+    active_sids = user_active_sids.get(user_id)
+    if not active_sids:
+        return
+    active_sids.discard(sid)
+    if not active_sids:
+        user_active_sids.pop(user_id, None)
+
+
 @app.before_request
 def ensure_default_lang():
     session.setdefault("lang", "zh")
@@ -667,6 +702,7 @@ def register():
     db.session.commit()
     login_user(user)
     session["session_version"] = user.session_version
+    disconnect_user_sockets(user.id, message=t("kicked"))
     return redirect(url_for("index"))
 
 
@@ -688,12 +724,14 @@ def login():
     db.session.commit()
     login_user(user)
     session["session_version"] = user.session_version
+    disconnect_user_sockets(user.id, message=t("kicked"))
     return redirect(url_for("index"))
 
 
 @app.get("/logout")
 @login_required
 def logout():
+    disconnect_user_sockets(current_user.id, message=t("kicked"))
     logout_user()
     session.clear()
     return redirect(url_for("login"))
@@ -960,10 +998,19 @@ def on_join_room(data):
         emit("join_error", {"message": f"{t('room_full')} ({MAX_PARTICIPANTS})"})
         return
 
+    if not current_user.is_authenticated:
+        emit("join_error", {"message": t("invalid_login")})
+        return
+    fresh_user = db.session.get(User, current_user.id)
+    if not fresh_user or not fresh_user.is_active_user or session.get("session_version") != fresh_user.session_version:
+        emit("force_logout", {"message": t("kicked")})
+        return
+
     cancel_room_cleanup(room_id)
     existing = [{"sid": osid, "name": info["name"]} for osid, info in room["participants"].items()]
     room["participants"][sid] = {"name": user_name, "joined_at": time.time()}
-    sid_to_user[sid] = {"room_id": room_id, "name": user_name}
+    sid_to_user[sid] = {"room_id": room_id, "name": user_name, "user_id": current_user.id}
+    bind_user_socket(current_user.id, sid)
     join_room(room_id)
 
     host_returned = False
@@ -1052,6 +1099,7 @@ def on_leave_room(*_args):
     if not info:
         return
     room_id = info["room_id"]
+    unbind_user_socket(info.get("user_id"), sid)
     room = rooms.get(room_id)
     leave_room(room_id)
     if room and sid in room["participants"]:

@@ -765,6 +765,13 @@ socket.on('force_leave', (data) => {
   window.location.href = '/';
 });
 
+socket.on('force_logout', (data) => {
+  cleanupMeetingSession();
+  try { socket.disconnect(); } catch (_) {}
+  alert(data?.message || {{ t('kicked')|tojson }});
+  window.location.href = '/login?kicked=1';
+});
+
 socket.on('host_presence_changed', (data) => {
   if (!data) return;
   setStatus(data.message || (data.host_present ? TEXT_HOST_RETURNED_ROOM : TEXT_HOST_LEFT_ROOM), data.host_present ? '' : 'warning');
