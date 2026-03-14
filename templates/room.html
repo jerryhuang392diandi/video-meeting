@@ -27,6 +27,7 @@
       <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
       <button class="ghost-btn" id="toggleMicBtn">{{ t('mic') }}</button>
       <button class="ghost-btn" id="toggleCameraBtn">{{ t('camera') }}</button>
+      {% if is_host %}<button class="ghost-btn danger-btn" id="hostEndMeetingBtn">{{ t('host_end_meeting') }}</button>{% endif %}
     </div>
     <input id="virtualBgInput" type="file" accept="image/*" class="hidden" />
     <div id="statusBox" class="notice">{{ t('room_ready') }}</div>
@@ -75,6 +76,7 @@ const TEXT_VIRTUAL_BG_PICK = {{ ('请选择一张背景图片，系统会开始�
 const TEXT_VIRTUAL_BG_LOADING = {{ ('正在加载虚拟背景模型...' if lang == 'zh' else 'Loading virtual background model...')|tojson }};
 const TEXT_VIRTUAL_BG_READY = {{ ('虚拟背景已启用' if lang == 'zh' else 'Virtual background enabled')|tojson }};
 const TEXT_VIRTUAL_BG_FAILED = {{ ('虚拟背景启动失败' if lang == 'zh' else 'Failed to enable virtual background')|tojson }};
+const TEXT_HOST_END_CONFIRM = {{ ('确定要解散当前会议吗？所有参会者都会被移出。' if lang == 'zh' else 'End this meeting now? All participants will be removed.')|tojson }};
 
 const socket = io();
 const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
@@ -124,8 +126,10 @@ const participantCountEl = document.getElementById('participantCount');
 const statusBox = document.getElementById('statusBox');
 const recordingBtn = document.getElementById('recordingBtn');
 const virtualBgInput = document.getElementById('virtualBgInput');
+const hostEndMeetingBtn = document.getElementById('hostEndMeetingBtn');
 
 function setStatus(msg, cls='') {
+  if (!statusBox) return;
   statusBox.className = 'notice ' + cls;
   statusBox.textContent = msg;
 }
@@ -137,7 +141,8 @@ function getDisplayName(sid) {
 function ensureCard(sid, displayName = null, isLocal = false) {
   let card = document.getElementById('card-' + sid);
   if (card) {
-    if (displayName) card.querySelector('.video-label').textContent = displayName;
+    const labelEl = card.querySelector('.video-label');
+    if (displayName && labelEl) labelEl.textContent = displayName;
     return card;
   }
 
@@ -181,17 +186,20 @@ function ensureCard(sid, displayName = null, isLocal = false) {
 }
 
 function updatePlaceholder(card, hasVideo) {
+  if (!card) return;
   card.classList.toggle('has-video', !!hasVideo);
 }
 
 function renderLayout() {
+  if (!videoMain || !videoSidebar || !videoStage) return;
   const cards = Array.from(document.querySelectorAll('.video-card'));
   if (!cards.length) return;
 
   videoMain.innerHTML = '';
   videoSidebar.innerHTML = '';
 
-  const focusTarget = document.getElementById('card-' + (focusedSid || 'local')) || document.getElementById('card-local');
+  const focusTarget = document.getElementById('card-' + (focusedSid || 'local')) || document.getElementById('card-local') || cards[0];
+  if (!focusTarget) return;
 
   cards.forEach(card => card.classList.remove('is-focused', 'is-sidebar'));
 
@@ -240,6 +248,22 @@ function cleanupProcessedVideoStream() {
   processedVideoStream = null;
 }
 
+function disableVirtualBackgroundState() {
+  virtualBgEnabled = false;
+  virtualBgLoopActive = false;
+  segmentationSending = false;
+  cleanupProcessedVideoStream();
+}
+
+function fallbackToRawCamera(message = null) {
+  if (!rawCameraStream) return;
+  disableVirtualBackgroundState();
+  rawPreviewVideo.srcObject = rawCameraStream;
+  localVideo.srcObject = rawCameraStream;
+  useLocalOutputStream(rawCameraStream);
+  if (message) setStatus(message, 'warning');
+}
+
 function useLocalOutputStream(stream) {
   localStream = stream;
   localVideo.srcObject = stream;
@@ -252,7 +276,7 @@ function useLocalOutputStream(stream) {
 async function requestMedia(forceFacingMode = null) {
   try {
     if (rawCameraStream) stopStreamTracks(rawCameraStream);
-    cleanupProcessedVideoStream();
+    disableVirtualBackgroundState();
 
     const constraints = {
       audio: true,
@@ -262,13 +286,18 @@ async function requestMedia(forceFacingMode = null) {
     rawPreviewVideo.srcObject = rawCameraStream;
     await rawPreviewVideo.play().catch(() => {});
 
-    if (virtualBgEnabled && virtualBgImageDataUrl) {
-      await activateVirtualBackground();
-    } else {
-      useLocalOutputStream(rawCameraStream);
-    }
+    useLocalOutputStream(rawCameraStream);
 
-    setStatus(TEXT_PERMISSION_READY);
+    if (virtualBgImageDataUrl) {
+      try {
+        await activateVirtualBackground();
+      } catch (vbgErr) {
+        console.error(vbgErr);
+        fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (vbgErr.message || 'unknown error'));
+      }
+    } else {
+      setStatus(TEXT_PERMISSION_READY);
+    }
   } catch (err) {
     console.error(err);
     setStatus(TEXT_PERMISSION_FAILED + ': ' + err.message, 'error');
@@ -492,31 +521,42 @@ async function startSegmentationLoop() {
 }
 
 async function activateVirtualBackground() {
-  if (!rawCameraStream || !virtualBgImageDataUrl) return;
+  if (!rawCameraStream || !virtualBgImageDataUrl) return false;
   setStatus(TEXT_VIRTUAL_BG_LOADING, 'warning');
 
-  await loadSegmentationModel();
-  virtualBgImageEl = new Image();
-  await new Promise((resolve, reject) => {
-    virtualBgImageEl.onload = resolve;
-    virtualBgImageEl.onerror = reject;
-    virtualBgImageEl.src = virtualBgImageDataUrl;
-  });
+  try {
+    await loadSegmentationModel();
+    const bgImage = new Image();
+    await new Promise((resolve, reject) => {
+      bgImage.onload = resolve;
+      bgImage.onerror = reject;
+      bgImage.src = virtualBgImageDataUrl;
+    });
 
-  rawPreviewVideo.srcObject = rawCameraStream;
-  await rawPreviewVideo.play().catch(() => {});
-  virtualBgEnabled = true;
-  await startSegmentationLoop();
+    rawPreviewVideo.srcObject = rawCameraStream;
+    await rawPreviewVideo.play().catch(() => {});
 
-  cleanupProcessedVideoStream();
-  processedCanvasStream = processingCanvas.captureStream(24);
-  processedVideoStream = new MediaStream();
-  const processedTrack = processedCanvasStream.getVideoTracks()[0];
-  if (processedTrack) processedVideoStream.addTrack(processedTrack);
-  rawCameraStream.getAudioTracks().forEach(track => processedVideoStream.addTrack(track));
+    disableVirtualBackgroundState();
+    virtualBgImageEl = bgImage;
+    virtualBgEnabled = true;
+    await startSegmentationLoop();
 
-  useLocalOutputStream(processedVideoStream);
-  setStatus(TEXT_VIRTUAL_BG_READY);
+    await new Promise(resolve => setTimeout(resolve, 180));
+    processedCanvasStream = processingCanvas.captureStream(24);
+    processedVideoStream = new MediaStream();
+    const processedTrack = processedCanvasStream.getVideoTracks()[0];
+    if (!processedTrack) throw new Error('Processed video track unavailable');
+    processedVideoStream.addTrack(processedTrack);
+    rawCameraStream.getAudioTracks().forEach(track => processedVideoStream.addTrack(track));
+
+    useLocalOutputStream(processedVideoStream);
+    setStatus(TEXT_VIRTUAL_BG_READY);
+    return true;
+  } catch (err) {
+    console.error(err);
+    fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'));
+    return false;
+  }
 }
 
 function broadcastUiEvent(payload) {
@@ -555,6 +595,10 @@ socket.on('join_error', (data) => {
 socket.on('force_leave', (data) => {
   alert(data.message || TEXT_MEETING_CLOSED);
   window.location.href = '/';
+});
+
+socket.on('host_action_error', (data) => {
+  setStatus(data?.message || 'Action failed', 'error');
 });
 
 socket.on('signal', async (data) => {
@@ -630,10 +674,10 @@ document.getElementById('shareScreenBtn').onclick = async () => {
 
     screenTrack.onended = async () => {
       isSharingScreen = false;
-      if (virtualBgEnabled && virtualBgImageDataUrl) {
+      if (virtualBgImageDataUrl) {
         await activateVirtualBackground();
       } else if (rawCameraStream) {
-        useLocalOutputStream(rawCameraStream);
+        fallbackToRawCamera();
       } else {
         await requestMedia(currentFacingMode);
       }
@@ -648,7 +692,11 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     setStatus(err.message, 'error');
   }
 };
-document.getElementById('virtualBgBtn').onclick = () => {
+document.getElementById('virtualBgBtn').onclick = async () => {
+  if (!rawCameraStream) {
+    await requestMedia(currentFacingMode);
+    if (!rawCameraStream) return;
+  }
   setStatus(TEXT_VIRTUAL_BG_PICK, 'warning');
   virtualBgInput.click();
 };
@@ -661,15 +709,22 @@ virtualBgInput.onchange = async (event) => {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
-  try {
-    if (!rawCameraStream) await requestMedia(currentFacingMode);
-    await activateVirtualBackground();
-  } catch (err) {
-    console.error(err);
-    setStatus(TEXT_VIRTUAL_BG_FAILED + ': ' + err.message, 'error');
+  if (!rawCameraStream) {
+    await requestMedia(currentFacingMode);
+    if (!rawCameraStream) return;
   }
+  await activateVirtualBackground();
+  event.target.value = '';
 };
 recordingBtn.onclick = () => toggleScreenRecording();
+if (hostEndMeetingBtn) {
+  hostEndMeetingBtn.onclick = () => {
+    if (confirm(TEXT_HOST_END_CONFIRM)) {
+      socket.emit('host_end_meeting', { room_id: ROOM_ID });
+    }
+  };
+}
+
 document.getElementById('copyInviteBtn').onclick = async () => {
   await navigator.clipboard.writeText(document.getElementById('inviteInput').value);
   setStatus(TEXT_COPIED);

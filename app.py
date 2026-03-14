@@ -144,6 +144,9 @@ TRANSLATIONS = {
         "no": "否",
         "no_online_rooms": "暂无在线房间",
         "no_meetings": "暂无会议记录",
+        "host_end_meeting": "解散会议",
+        "host_only_action": "仅主持人可执行此操作",
+        "meeting_closed_by_host": "会议已被主持人解散。",
     },
     "en": {
         "app_name": "Video Meeting System",
@@ -247,6 +250,9 @@ TRANSLATIONS = {
         "no": "No",
         "no_online_rooms": "No online rooms",
         "no_meetings": "No meeting records",
+        "host_end_meeting": "End meeting",
+        "host_only_action": "Only the host can perform this action",
+        "meeting_closed_by_host": "The meeting has been ended by the host.",
     },
 }
 
@@ -586,7 +592,14 @@ def room_page(room_id):
         abort(404)
     room_password = request.args.get("pwd", meeting.room_password)
     invite_url = f"{get_base_url()}{url_for('room_page', room_id=room_id)}?pwd={quote(room_password)}"
-    return render_template("room.html", room_id=room_id, room_password=room_password, invite_url=invite_url)
+    is_host = current_user.is_authenticated and current_user.id == meeting.host_user_id
+    return render_template(
+        "room.html",
+        room_id=room_id,
+        room_password=room_password,
+        invite_url=invite_url,
+        is_host=is_host,
+    )
 
 
 @app.get("/history")
@@ -740,6 +753,39 @@ def on_room_ui_event(data):
     payload = data or {}
     payload["from"] = sid
     emit("room_ui_event", payload, room=room_id, include_self=False)
+
+
+@socketio.on("host_end_meeting")
+def on_host_end_meeting(data=None):
+    sid = request.sid
+    info = sid_to_user.get(sid)
+    if not info:
+        emit("host_action_error", {"message": t("failed")})
+        return
+
+    room_id = info["room_id"]
+    meeting = Meeting.query.filter_by(room_id=room_id).first()
+    if not meeting or meeting.status == "ended":
+        emit("host_action_error", {"message": t("meeting_not_found")})
+        return
+
+    if not current_user.is_authenticated or current_user.id != meeting.host_user_id:
+        emit("host_action_error", {"message": t("host_only_action")})
+        return
+
+    meeting.status = "ended"
+    meeting.ended_at = datetime.utcnow()
+    db.session.commit()
+
+    cancel_room_cleanup(room_id)
+    room = rooms.pop(room_id, None)
+    if room:
+        for participant_sid in list(room["participants"].keys()):
+            participant = MeetingParticipant.query.filter_by(sid=participant_sid).order_by(MeetingParticipant.id.desc()).first()
+            if participant and not participant.left_at:
+                participant.left_at = datetime.utcnow()
+        db.session.commit()
+        socketio.emit("force_leave", {"message": t("meeting_closed_by_host")}, room=room_id)
 
 
 @socketio.on("leave_room")
