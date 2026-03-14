@@ -43,6 +43,39 @@
 <section class="grid two">
   <div class="panel panel-glow">
     <div class="section-head">
+      <h2>{{ t('traffic_usage') }}</h2>
+      <span class="section-tag">{{ t('free_quota_default') }}</span>
+    </div>
+    <div class="status-grid traffic-grid">
+      <div><span>{{ t('used_traffic') }}</span><strong>{{ traffic.used_mb }} MB</strong></div>
+      <div><span>{{ t('monthly_quota') }}</span><strong>{{ traffic.total_mb }} MB</strong></div>
+      <div><span>{{ t('remaining_traffic') }}</span><strong>{{ traffic.remaining_mb }} MB</strong></div>
+      <div><span>{{ t('next_reset') }}</span><strong class="local-datetime" data-utc="{{ utc_iso(traffic.next_reset_at) }}">{{ traffic.next_reset_at }}</strong></div>
+    </div>
+    <div class="notice {% if traffic.status == 'exceeded' %}error{% elif traffic.status == 'low' %}warning{% endif %}">
+      {% if traffic.status == 'exceeded' %}{{ t('quota_exceeded') }}{% elif traffic.status == 'low' %}{{ t('quota_warning') }}{% else %}{{ t('quota_status_ok') }}{% endif %}
+    </div>
+  </div>
+
+  <div class="panel panel-glow">
+    <div class="section-head">
+      <h2>{{ t('traffic_guide') }}</h2>
+      <span class="section-tag">{{ t('traffic_reset_rule') }}</span>
+    </div>
+    <div class="muted" style="line-height:1.75;">{{ t('traffic_guide_desc') }}</div>
+    <div class="guide-list">
+      <div class="guide-item">1. {{ t('guide_tip_1') }}</div>
+      <div class="guide-item">2. {{ t('guide_tip_2') }}</div>
+      <div class="guide-item">3. {{ t('guide_tip_3') }}</div>
+      <div class="guide-item">4. {{ t('guide_tip_4') }}</div>
+    </div>
+    <div class="notice">{{ t('traffic_reset_example') }}</div>
+  </div>
+</section>
+
+<section class="grid two">
+  <div class="panel panel-glow">
+    <div class="section-head">
       <h2>{{ t('create_room') }}</h2>
       <span class="section-tag">Host</span>
     </div>

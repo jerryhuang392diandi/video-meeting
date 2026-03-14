@@ -17,17 +17,23 @@
 
 <section class="grid two">
   <div class="panel panel-glow">
-    <h2>{{ t('users') }}</h2>
+    <div class="section-head"><h2>{{ t('users') }}</h2><span class="section-tag">{{ t('traffic_management') }}</span></div>
     {% for u in users %}
     <div class="list-item stacked">
       <div>
         <div class="item-title">{{ u.username }}</div>
         <div class="muted">ID {{ u.id }} · {{ t('admin_role') }}: {{ t('yes') if u.is_admin else t('no') }} · {{ t('status') }}: {{ t('enabled') if u.is_active_user else t('disabled') }}</div>
+        <div class="muted">{{ t('used_traffic') }}: {{ traffic_rows[u.id].used_mb }} MB · {{ t('monthly_quota') }}: {{ traffic_rows[u.id].total_mb }} MB · {{ t('remaining_traffic') }}: {{ traffic_rows[u.id].remaining_mb }} MB</div>
+        <div class="muted">{{ t('traffic_last_reset') }}: <span class="local-datetime" data-utc="{{ utc_iso(traffic_rows[u.id].last_reset_at) }}">{{ traffic_rows[u.id].last_reset_at }}</span> · {{ t('next_reset') }}: <span class="local-datetime" data-utc="{{ utc_iso(traffic_rows[u.id].next_reset_at) }}">{{ traffic_rows[u.id].next_reset_at }}</span></div>
       </div>
       {% if not u.is_admin %}
-      <div class="row-compact">
+      <div class="row-compact wrap-actions">
         <form method="post" action="{{ url_for('admin_disable_user', user_id=u.id) }}"><button class="ghost-btn" type="submit">{{ t('disable') }}</button></form>
         <form method="post" action="{{ url_for('admin_enable_user', user_id=u.id) }}"><button class="ghost-btn" type="submit">{{ t('enable') }}</button></form>
+        <form method="post" action="{{ url_for('admin_update_user_quota', user_id=u.id) }}" class="row-compact quota-form">
+          <input name="monthly_quota_mb" type="number" min="1" step="1" value="{{ u.monthly_quota_mb or 10240 }}" style="max-width:140px;" />
+          <button class="ghost-btn" type="submit">{{ t('save_quota') }}</button>
+        </form>
       </div>
       {% endif %}
     </div>
