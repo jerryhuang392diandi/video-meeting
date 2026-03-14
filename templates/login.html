@@ -26,6 +26,7 @@
     </div>
     <p class="muted">{{ t('placeholder_login_hint') }}</p>
   </div>
+
   <form method="post" class="form-card elevated-card">
     {% if request.args.get('kicked') %}
       <div class="notice warning">{{ t('kicked') }}</div>
@@ -33,12 +34,105 @@
     {% if error %}
       <div class="notice error">{{ error }}</div>
     {% endif %}
+
     <label>{{ t('username') }}</label>
     <input name="username" maxlength="32" required />
+
     <label>{{ t('password') }}</label>
     <input name="password" type="password" required />
+
     <button class="primary-btn" type="submit">{{ t('submit_login') }}</button>
     <a class="text-link" href="{{ url_for('register') }}">{{ t('nav_register') }}</a>
+
+    <div class="login-help-block">
+      <div class="login-help-title">{{ t('login_help_title') }}</div>
+      <div class="login-help-actions">
+        <button type="button" class="ghost-btn help-btn" onclick="openGuideModal()">
+          {{ t('user_guide') }}
+        </button>
+        <button type="button" class="ghost-btn help-btn" onclick="openSupportModal()">
+          {{ t('support_hotline') }}
+        </button>
+      </div>
+    </div>
   </form>
 </section>
+
+<div id="guideModal" class="modal-overlay" onclick="closeModalOnMask(event, 'guideModal')">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>{{ t('guide_title') }}</h3>
+      <button type="button" class="modal-close" onclick="closeGuideModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <ul class="guide-list">
+        <li>{{ t('guide_step_1') }}</li>
+        <li>{{ t('guide_step_2') }}</li>
+        <li>{{ t('guide_step_3') }}</li>
+        <li>{{ t('guide_step_4') }}</li>
+        <li>{{ t('guide_step_5') }}</li>
+      </ul>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="ghost-btn" onclick="closeGuideModal()">{{ t('close') }}</button>
+    </div>
+  </div>
+</div>
+
+<div id="supportModal" class="modal-overlay" onclick="closeModalOnMask(event, 'supportModal')">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>{{ t('support_title') }}</h3>
+      <button type="button" class="modal-close" onclick="closeSupportModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="support-item">
+        <span>{{ t('support_phone_label') }}</span>
+        <strong>400-800-1234</strong>
+      </div>
+      <div class="support-item">
+        <span>{{ t('support_email_label') }}</span>
+        <strong>support@peoplelovesai.xyz</strong>
+      </div>
+      <div class="support-item">
+        <span>{{ t('support_hours_label') }}</span>
+        <strong>{{ t('support_hours_value') }}</strong>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="ghost-btn" onclick="closeSupportModal()">{{ t('close') }}</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function openGuideModal() {
+    document.getElementById('guideModal').classList.add('show');
+  }
+
+  function closeGuideModal() {
+    document.getElementById('guideModal').classList.remove('show');
+  }
+
+  function openSupportModal() {
+    document.getElementById('supportModal').classList.add('show');
+  }
+
+  function closeSupportModal() {
+    document.getElementById('supportModal').classList.remove('show');
+  }
+
+  function closeModalOnMask(event, modalId) {
+    if (event.target.id === modalId) {
+      document.getElementById(modalId).classList.remove('show');
+    }
+  }
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') {
+      closeGuideModal();
+      closeSupportModal();
+    }
+  });
+</script>
 {% endblock %}
