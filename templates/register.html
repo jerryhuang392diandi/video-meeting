@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>注册 - 视频会议系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+<div class="page auth-page">
+    <div class="card auth-card">
+        <div class="badge">Video Meeting</div>
+        <h1>注册</h1>
+        <p class="muted">创建账号后，就能保存会议历史、重新进入会议。</p>
+        {% if error %}<div class="status error">{{ error }}</div>{% endif %}
+        <form method="post" class="stack-lg">
+            <div>
+                <label>用户名</label>
+                <input name="username" maxlength="32" placeholder="至少 2 个字符" required />
+            </div>
+            <div>
+                <label>密码</label>
+                <input name="password" type="password" minlength="6" placeholder="至少 6 位" required />
+            </div>
+            <button type="submit">注册并登录</button>
+        </form>
+        <div class="muted center mt16">已有账号？<a href="{{ url_for('login') }}">去登录</a></div>
+    </div>
+</div>
+</body>
+</html>

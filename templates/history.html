@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>历史会议</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+<div class="page">
+    <div class="card">
+        <div class="row between wrap gap">
+            <div>
+                <div class="badge">History</div>
+                <h1>历史会议</h1>
+                <p class="muted">这里会保留你创建过和参加过的会议记录。</p>
+            </div>
+            <div class="row gap wrap">
+                <a href="{{ url_for('index') }}"><button class="secondary">返回首页</button></a>
+                <a href="{{ url_for('logout') }}"><button class="danger">退出登录</button></a>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid two">
+        <section class="card">
+            <h2>我创建的会议</h2>
+            {% if hosted %}
+                <div class="stack">
+                    {% for m in hosted %}
+                    <div class="history-item">
+                        <div class="row between wrap gap">
+                            <div>
+                                <div><strong>会议号：</strong>{{ m.room_id }}</div>
+                                <div><strong>密码：</strong>{{ m.room_password }}</div>
+                                <div><strong>主持人：</strong>{{ m.host_name }}</div>
+                                <div><strong>状态：</strong>{{ m.status }}</div>
+                                <div class="muted">创建时间：{{ m.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+                            </div>
+                            <div>
+                                {% if m.status == 'active' %}
+                                    <a href="{{ url_for('room_page', room_id=m.room_id) }}?pwd={{ m.room_password }}&name={{ current_user.username }}"><button>重新进入</button></a>
+                                {% else %}
+                                    <button class="secondary" disabled>已结束</button>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="status">暂无记录</div>
+            {% endif %}
+        </section>
+
+        <section class="card">
+            <h2>我参加过的会议</h2>
+            {% if joined %}
+                <div class="stack">
+                    {% for meeting, participant in joined %}
+                    <div class="history-item">
+                        <div class="row between wrap gap">
+                            <div>
+                                <div><strong>会议号：</strong>{{ meeting.room_id }}</div>
+                                <div><strong>房主：</strong>{{ meeting.host_name }}</div>
+                                <div><strong>我当时的昵称：</strong>{{ participant.display_name }}</div>
+                                <div><strong>状态：</strong>{{ meeting.status }}</div>
+                                <div class="muted">加入时间：{{ participant.joined_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+                            </div>
+                            <div>
+                                {% if meeting.status == 'active' %}
+                                    <a href="{{ url_for('room_page', room_id=meeting.room_id) }}?pwd={{ meeting.room_password }}&name={{ participant.display_name }}"><button>重新进入</button></a>
+                                {% else %}
+                                    <button class="secondary" disabled>已结束</button>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="status">暂无记录</div>
+            {% endif %}
+        </section>
+    </div>
+</div>
+</body>
+</html>
