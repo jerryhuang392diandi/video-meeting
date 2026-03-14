@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('help_page_title') }}{% endblock %}
+{% block shell_class %}auth-shell narrow-shell{% endblock %}
+{% block content %}
+<header class="topbar compact">
+  <div>
+    <div class="brand">{{ t('app_name') }}</div>
+    <div class="muted">{{ t('subtitle') }}</div>
+  </div>
+  <div class="lang-switch">
+    <a class="chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}">{{ t('lang_zh') }}</a>
+    <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
+  </div>
+</header>
+
+<section class="hero-card auth-landing-card glass-highlight">
+  <div class="landing-copy">
+    <span class="eyebrow">{{ t('help_page_title') }}</span>
+    <h1>{{ t('guide_center') }}</h1>
+    <p>{{ t('help_page_intro') }}</p>
+    <div class="landing-actions">
+      <a class="ghost-btn anchor-btn" href="{{ url_for('login') }}">{{ t('back_to_login') }}</a>
+      <a class="ghost-btn anchor-btn" href="{{ url_for('support_page') }}">{{ t('open_support_center') }}</a>
+    </div>
+  </div>
+</section>
+
+<section class="panel elevated-card help-page-panel">
+  <div class="section-head">
+    <h2>{{ t('guide_directory') }}</h2>
+    <span class="section-tag">Help</span>
+  </div>
+  <div class="guide-page-list">
+    <details class="guide-item" open>
+      <summary>{{ t('guide_login') }}</summary>
+      <p>{{ t('guide_login_desc') }}</p>
+    </details>
+    <details class="guide-item">
+      <summary>{{ t('guide_register') }}</summary>
+      <p>{{ t('guide_register_desc') }}</p>
+    </details>
+    <details class="guide-item">
+      <summary>{{ t('guide_create_meeting') }}</summary>
+      <p>{{ t('guide_create_meeting_desc') }}</p>
+    </details>
+    <details class="guide-item">
+      <summary>{{ t('guide_join_meeting') }}</summary>
+      <p>{{ t('guide_join_meeting_desc') }}</p>
+    </details>
+    <details class="guide-item">
+      <summary>{{ t('guide_share_screen') }}</summary>
+      <p>{{ t('guide_share_screen_desc') }}</p>
+    </details>
+    <details class="guide-item">
+      <summary>{{ t('guide_traffic_rules') }}</summary>
+      <p>{{ t('guide_traffic_rules_desc') }}</p>
+    </details>
+  </div>
+</section>
+{% endblock %}

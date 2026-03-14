@@ -217,6 +217,15 @@ TRANSLATIONS = {
         "support_email": "支持邮箱",
         "support_email_value": "support@peoplelovesai.xyz",
         "support_phone_value": "+86 400-800-1234",
+        "help_page_title": "用户指南",
+        "help_page_intro": "查看登录、注册、开启会议、加入会议、共享屏幕与流量规则等使用说明。",
+        "support_page_title": "客服支持",
+        "support_page_intro": "如遇登录、会议、配额或设备问题，可通过以下方式联系平台客服。",
+        "back_to_login": "返回登录",
+        "open_help_center": "用户指南",
+        "open_support_center": "客服支持",
+        "auth_tagline": "稳定、安全、现代化的视频会议体验",
+        "auth_desc_simple": "支持中英双语、管理员后台、单设备登录与 TURN relay 流量统计。",
     },
     "en": {
         "app_name": "Video Meeting System",
@@ -384,6 +393,15 @@ TRANSLATIONS = {
         "support_email": "Support email",
         "support_email_value": "support@peoplelovesai.xyz",
         "support_phone_value": "+86 400-800-1234",
+        "help_page_title": "用户指南",
+        "help_page_intro": "查看登录、注册、开启会议、加入会议、共享屏幕与流量规则等使用说明。",
+        "support_page_title": "客服支持",
+        "support_page_intro": "如遇登录、会议、配额或设备问题，可通过以下方式联系平台客服。",
+        "back_to_login": "返回登录",
+        "open_help_center": "用户指南",
+        "open_support_center": "客服支持",
+        "auth_tagline": "稳定、安全、现代化的视频会议体验",
+        "auth_desc_simple": "支持中英双语、管理员后台、单设备登录与 TURN relay 流量统计。",
     },
 }
 
@@ -950,6 +968,16 @@ def index():
     sync_user_traffic(current_user.id)
     db.session.refresh(current_user)
     return render_template("index.html", traffic=traffic_summary_dict(current_user))
+
+
+@app.route("/help")
+def help_page():
+    return render_template("help.html")
+
+
+@app.route("/support")
+def support_page():
+    return render_template("support.html")
 
 
 @app.route("/register", methods=["GET", "POST"])
