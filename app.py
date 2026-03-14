@@ -632,18 +632,31 @@ def api_remux_recording():
     cmd = [
         ffmpeg_path,
         "-y",
+        "-fflags",
+        "+genpts",
         "-i",
         input_path,
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
         "-c:v",
         "libx264",
         "-preset",
         "veryfast",
         "-pix_fmt",
         "yuv420p",
-        "-c:a",
-        "aac",
+        "-profile:v",
+        "main",
         "-movflags",
         "+faststart",
+        "-c:a",
+        "aac",
+        "-ar",
+        "48000",
+        "-ac",
+        "2",
+        "-shortest",
         output_path,
     ]
     try:
@@ -655,7 +668,7 @@ def api_remux_recording():
     if completed.returncode != 0 or not os.path.exists(output_path):
         shutil.rmtree(workdir, ignore_errors=True)
         err = (completed.stderr or completed.stdout or "ffmpeg failed").strip()
-        return jsonify({"success": False, "message": err[-500:]}), 500
+        return jsonify({"success": False, "message": err[-1200:]}), 500
 
     data = Path(output_path).read_bytes()
 

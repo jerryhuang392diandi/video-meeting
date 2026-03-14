@@ -79,6 +79,7 @@ const TEXT_VIRTUAL_BG_FAILED = {{ ('虚拟背景启动失败' if lang == 'zh' el
 const TEXT_VIRTUAL_BG_OFF = {{ ('虚拟背景已关闭' if lang == 'zh' else 'Virtual background disabled')|tojson }};
 const TEXT_RECORD_CONVERTING = {{ ('正在转换为可拖动的 MP4，请稍候...' if lang == 'zh' else 'Converting to a seekable MP4, please wait...')|tojson }};
 const TEXT_RECORD_MP4_FAILED = {{ ('MP4 转换失败，已回退保存为 WebM' if lang == 'zh' else 'MP4 conversion failed, saved as WebM instead')|tojson }};
+const TEXT_RECORD_MP4_SERVER_ERROR = {{ ('服务器 MP4 转换失败' if lang == 'zh' else 'Server-side MP4 conversion failed')|tojson }};
 const TEXT_IMAGE_NOT_SUPPORTED = {{ ('该图片无法作为虚拟背景，请换一张 PNG/JPG 图片' if lang == 'zh' else 'This image cannot be used as a virtual background. Try a PNG or JPG image instead.')|tojson }};
 const TEXT_HOST_END_CONFIRM = {{ ('确定要解散当前会议吗？所有参会者都会被移出。' if lang == 'zh' else 'End this meeting now? All participants will be removed.')|tojson }};
 
@@ -182,10 +183,11 @@ function ensureCard(sid, displayName = null, isLocal = false) {
 
   card.querySelector('[data-action="fullscreen"]').addEventListener('click', async () => {
     try {
-      if (document.fullscreenElement === card) {
+      const fullscreenTarget = card;
+      if (document.fullscreenElement === fullscreenTarget) {
         await document.exitFullscreen();
       } else {
-        await card.requestFullscreen();
+        await fullscreenTarget.requestFullscreen({ navigationUI: 'hide' }).catch(() => fullscreenTarget.requestFullscreen());
       }
     } catch (err) {
       console.error(err);
@@ -509,7 +511,8 @@ async function toggleScreenRecording() {
       } catch (err) {
         console.error(err);
         downloadBlob(webmBlob, `meeting-recording-${Date.now()}.webm`);
-        setStatus(TEXT_RECORD_MP4_FAILED, 'warning');
+        const reason = err?.message ? `${TEXT_RECORD_MP4_SERVER_ERROR}: ${err.message}` : TEXT_RECORD_MP4_FAILED;
+        setStatus(reason, 'warning');
       }
     };
     recorderStream.getVideoTracks()[0].onended = () => {
