@@ -147,6 +147,10 @@ function ensureCard(sid, displayName = null, isLocal = false) {
   videoEl.className = 'video-el';
   card.prepend(videoEl);
 
+  if (!card.parentElement) {
+    videoMain.appendChild(card);
+  }
+
   card.querySelector('[data-action="focus"]').addEventListener('click', () => {
     if (focusedSid === sid && !currentSharerSid) {
       clearFocus();
