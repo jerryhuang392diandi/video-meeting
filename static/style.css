@@ -423,3 +423,45 @@ video {
     min-height: 50vh;
   }
 }
+
+.video-card:fullscreen,
+.video-card:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  border-radius: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.video-card:fullscreen .video-toolbar,
+.video-card:-webkit-full-screen .video-toolbar {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+}
+.video-card:fullscreen .video-label,
+.video-card:-webkit-full-screen .video-label {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+}
+.video-card:fullscreen .video-el,
+.video-card:fullscreen video,
+.video-card:-webkit-full-screen .video-el,
+.video-card:-webkit-full-screen video {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  object-fit: contain;
+  background: #000;
+}
+.video-card:fullscreen .video-placeholder,
+.video-card:-webkit-full-screen .video-placeholder {
+  width: 100vw;
+  height: 100vh;
+}

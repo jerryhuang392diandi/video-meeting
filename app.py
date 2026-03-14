@@ -8,9 +8,9 @@ import subprocess
 import tempfile
 import threading
 import time
-from pathlib import Path
 from urllib.parse import quote
 from datetime import datetime
+from pathlib import Path
 from functools import wraps
 
 from flask import Flask, abort, after_this_request, jsonify, redirect, render_template, request, send_file, session, url_for
@@ -152,8 +152,9 @@ TRANSLATIONS = {
         "host_end_meeting": "解散会议",
         "host_only_action": "仅主持人可执行此操作",
         "meeting_closed_by_host": "会议已被主持人解散。",
-        "host_left_notice": "主持人已离开会议，当前无主持人",
-        "host_returned_notice": "主持人已返回会议",
+        "host_left_room": "主持人已离开会议，当前会议暂时没有主持人。",
+        "host_returned_room": "主持人已返回会议，主持权限已恢复。",
+        "you_left_meeting": "你已离开会议",
     },
     "en": {
         "app_name": "Video Meeting System",
@@ -260,8 +261,9 @@ TRANSLATIONS = {
         "host_end_meeting": "End meeting",
         "host_only_action": "Only the host can perform this action",
         "meeting_closed_by_host": "The meeting has been ended by the host.",
-        "host_left_notice": "The host left the meeting. There is currently no active host.",
-        "host_returned_notice": "The host has returned to the meeting.",
+        "host_left_room": "The host has left the meeting. The room currently has no active host.",
+        "host_returned_room": "The host has returned. Host privileges have been restored.",
+        "you_left_meeting": "You left the meeting",
     },
 }
 
@@ -560,7 +562,7 @@ def api_create_room():
         "created_at": time.time(),
         "meeting_db_id": meeting.id,
         "host_user_id": meeting.host_user_id,
-        "active_host_sid": None,
+        "host_present": False,
         "cleanup_timer": None,
         "empty_since": None,
     }
@@ -589,6 +591,8 @@ def api_join_room():
             "participants": {},
             "created_at": meeting.created_at.timestamp(),
             "meeting_db_id": meeting.id,
+            "host_user_id": meeting.host_user_id,
+            "host_present": False,
             "cleanup_timer": None,
             "empty_since": None,
         }
@@ -623,13 +627,13 @@ def history():
 @app.post("/api/remux-recording")
 @login_required
 def api_remux_recording():
-    upload = request.files.get("recording") or request.files.get("file")
+    upload = request.files.get("recording")
     if not upload or not upload.filename:
         return jsonify({"success": False, "message": "No recording uploaded"}), 400
 
-    ffmpeg_path = os.environ.get("FFMPEG_PATH") or shutil.which("ffmpeg")
+    ffmpeg_path = shutil.which("ffmpeg")
     if not ffmpeg_path:
-        return jsonify({"success": False, "message": "ffmpeg not installed or not found"}), 501
+        return jsonify({"success": False, "message": "ffmpeg not installed"}), 501
 
     workdir = tempfile.mkdtemp(prefix="meeting-remux-")
     input_path = os.path.join(workdir, "input.webm")
@@ -653,19 +657,21 @@ def api_remux_recording():
         "veryfast",
         "-pix_fmt",
         "yuv420p",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
+        "-profile:v",
+        "main",
         "-movflags",
         "+faststart",
+        "-c:a",
+        "aac",
+        "-ar",
+        "48000",
+        "-ac",
+        "2",
+        "-shortest",
         output_path,
     ]
     try:
         completed = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-    except subprocess.TimeoutExpired:
-        shutil.rmtree(workdir, ignore_errors=True)
-        return jsonify({"success": False, "message": "ffmpeg conversion timeout"}), 500
     except Exception as exc:
         shutil.rmtree(workdir, ignore_errors=True)
         return jsonify({"success": False, "message": str(exc)}), 500
@@ -673,7 +679,7 @@ def api_remux_recording():
     if completed.returncode != 0 or not os.path.exists(output_path):
         shutil.rmtree(workdir, ignore_errors=True)
         err = (completed.stderr or completed.stdout or "ffmpeg failed").strip()
-        return jsonify({"success": False, "message": err[-3000:]}), 500
+        return jsonify({"success": False, "message": err[-1200:]}), 500
 
     data = Path(output_path).read_bytes()
 
@@ -772,6 +778,8 @@ def on_join_room(data):
             "participants": {},
             "created_at": meeting.created_at.timestamp(),
             "meeting_db_id": meeting.id,
+            "host_user_id": meeting.host_user_id,
+            "host_present": False,
             "cleanup_timer": None,
             "empty_since": None,
         }
@@ -787,12 +795,14 @@ def on_join_room(data):
 
     cancel_room_cleanup(room_id)
     existing = [{"sid": osid, "name": info["name"]} for osid, info in room["participants"].items()]
-    room["participants"][sid] = {"name": user_name, "joined_at": time.time(), "user_id": current_user.id if current_user.is_authenticated else None}
-    sid_to_user[sid] = {"room_id": room_id, "name": user_name, "user_id": current_user.id if current_user.is_authenticated else None}
-    meeting = Meeting.query.filter_by(room_id=room_id).first()
-    if is_room_host_user(meeting, current_user):
-        room["active_host_sid"] = sid
+    room["participants"][sid] = {"name": user_name, "joined_at": time.time()}
+    sid_to_user[sid] = {"room_id": room_id, "name": user_name}
     join_room(room_id)
+
+    host_returned = False
+    if current_user.is_authenticated and current_user.id == room.get("host_user_id"):
+        host_returned = not room.get("host_present")
+        room["host_present"] = True
 
     participant = MeetingParticipant(
         meeting_id=room["meeting_db_id"],
@@ -810,17 +820,22 @@ def on_join_room(data):
             "participants": existing,
             "self_sid": sid,
             "participant_count": len(room["participants"]),
-            "is_active_host": room.get("active_host_sid") == sid,
-            **get_room_host_state(room),
+            "host_present": bool(room.get("host_present")),
         },
     )
     emit(
         "participant_joined",
-        {"sid": sid, "name": user_name, "participant_count": len(room["participants"]), **get_room_host_state(room)},
+        {"sid": sid, "name": user_name, "participant_count": len(room["participants"])},
         room=room_id,
         include_self=False,
     )
-    emit("host_status_changed", get_room_host_state(room), room=room_id)
+
+    if host_returned:
+        socketio.emit(
+            "host_presence_changed",
+            {"host_present": True, "message": t("host_returned_room")},
+            room=room_id,
+        )
 
 
 @socketio.on("signal")
@@ -886,21 +901,27 @@ def on_leave_room(*_args):
     leave_room(room_id)
     if room and sid in room["participants"]:
         name = room["participants"][sid]["name"]
-        was_active_host = room.get("active_host_sid") == sid
         del room["participants"][sid]
-        if was_active_host:
-            room["active_host_sid"] = None
+        host_left = False
+        if current_user.is_authenticated and current_user.id == room.get("host_user_id"):
+            if room.get("host_present"):
+                host_left = True
+            room["host_present"] = False
         participant = MeetingParticipant.query.filter_by(sid=sid).order_by(MeetingParticipant.id.desc()).first()
         if participant and not participant.left_at:
             participant.left_at = datetime.utcnow()
             db.session.commit()
         emit(
             "participant_left",
-            {"sid": sid, "name": name, "participant_count": len(room["participants"]), **get_room_host_state(room)},
+            {"sid": sid, "name": name, "participant_count": len(room["participants"])},
             room=room_id,
         )
-        if was_active_host:
-            emit("host_status_changed", get_room_host_state(room), room=room_id)
+        if host_left:
+            socketio.emit(
+                "host_presence_changed",
+                {"host_present": False, "message": t("host_left_room")},
+                room=room_id,
+            )
         if not room["participants"]:
             schedule_room_cleanup(room_id)
 
