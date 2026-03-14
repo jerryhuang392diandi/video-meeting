@@ -319,3 +319,107 @@ video {
 @media (max-width: 620px) {
   .button-grid-2 { grid-template-columns: 1fr; }
 }
+
+
+.video-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 16px;
+  min-height: 72vh;
+}
+.video-main {
+  min-height: 72vh;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  align-content: start;
+}
+.video-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 72vh;
+  overflow: auto;
+}
+.video-stage.sidebar-hidden {
+  grid-template-columns: minmax(0, 1fr) 0;
+}
+.video-stage.sidebar-hidden .video-sidebar {
+  display: none;
+}
+.video-stage.focus-layout .video-main {
+  grid-template-columns: 1fr;
+}
+.video-stage.focus-layout .video-main .video-card {
+  min-height: 72vh;
+}
+.video-stage.screen-share-mode .video-main .video-card {
+  min-height: 76vh;
+}
+.video-sidebar .video-card {
+  min-height: 118px;
+}
+.video-sidebar .video-el,
+.video-sidebar video {
+  min-height: 118px;
+  height: 118px;
+}
+.video-toolbar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  gap: 8px;
+}
+.card-btn {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(6, 12, 24, .58);
+  color: var(--text);
+  font-size: 12px;
+  backdrop-filter: blur(8px);
+}
+.video-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: radial-gradient(circle at center, rgba(130,177,255,.08), transparent 55%), #050913;
+  z-index: 1;
+}
+.video-card.has-video .video-placeholder {
+  display: none;
+}
+.video-card .video-el,
+.video-card video {
+  position: relative;
+  z-index: 2;
+}
+.video-card.is-focused {
+  box-shadow: 0 0 0 2px rgba(130,177,255,.35), 0 18px 48px rgba(0,0,0,.35);
+}
+.video-stage.focus-layout .video-sidebar {
+  padding-left: 4px;
+}
+@media (max-width: 960px) {
+  .video-stage,
+  .video-stage.sidebar-hidden {
+    grid-template-columns: 1fr;
+  }
+  .video-sidebar {
+    flex-direction: row;
+    overflow: auto;
+    max-height: none;
+  }
+  .video-sidebar .video-card {
+    min-width: 180px;
+  }
+  .video-stage.focus-layout .video-main .video-card,
+  .video-stage.screen-share-mode .video-main .video-card {
+    min-height: 50vh;
+  }
+}

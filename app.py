@@ -675,6 +675,18 @@ def on_signal(data):
         emit("signal", data, to=target_sid)
 
 
+@socketio.on("room_ui_event")
+def on_room_ui_event(data):
+    sid = request.sid
+    info = sid_to_user.get(sid)
+    if not info:
+        return
+    room_id = info["room_id"]
+    payload = data or {}
+    payload["from"] = sid
+    emit("room_ui_event", payload, room=room_id, include_self=False)
+
+
 @socketio.on("leave_room")
 def on_leave_room(*_args):
     sid = request.sid

@@ -23,6 +23,9 @@
       <button class="primary-btn slim-btn" id="requestMediaBtn">{{ t('request_media') }}</button>
       <button class="ghost-btn" id="switchCameraBtn">{{ t('switch_camera') }}</button>
       <button class="ghost-btn" id="shareScreenBtn">{{ t('share_screen') }}</button>
+      <button class="ghost-btn" id="focusMeBtn">聚焦自己</button>
+      <button class="ghost-btn" id="toggleSidebarBtn">隐藏其他人</button>
+      <button class="ghost-btn" id="clearFocusBtn">恢复平铺</button>
       <button class="ghost-btn" id="virtualBgBtn">{{ t('virtual_bg') }}</button>
       <button class="ghost-btn" id="blurBgBtn">{{ t('blur_bg') }}</button>
       <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
@@ -43,11 +46,9 @@
   </aside>
 
   <main class="panel video-panel panel-glow">
-    <div id="videoGrid" class="video-grid">
-      <div class="video-card self-card">
-        <video id="localVideo" autoplay muted playsinline></video>
-        <div class="video-label">{{ t('local_you') }}</div>
-      </div>
+    <div id="videoStage" class="video-stage">
+      <div id="videoMain" class="video-main"></div>
+      <div id="videoSidebar" class="video-sidebar"></div>
     </div>
   </main>
 </section>
@@ -73,21 +74,166 @@ const TEXT_MIC_ON = {{ t('mic_on')|tojson }};
 const TEXT_MIC_OFF = {{ t('mic_off')|tojson }};
 const TEXT_CAMERA_ON = {{ t('camera_on')|tojson }};
 const TEXT_CAMERA_OFF = {{ t('camera_off')|tojson }};
+const TEXT_FOCUS_ME = {{ ('聚焦自己' if lang == 'zh' else 'Focus me')|tojson }};
+const TEXT_HIDE_OTHERS = {{ ('隐藏其他人' if lang == 'zh' else 'Hide others')|tojson }};
+const TEXT_SHOW_OTHERS = {{ ('显示其他人' if lang == 'zh' else 'Show others')|tojson }};
+const TEXT_RESET_LAYOUT = {{ ('已恢复平铺布局' if lang == 'zh' else 'Grid layout restored')|tojson }};
+const TEXT_SCREEN_SHARE_MODE = {{ ('共享屏幕模式已开启' if lang == 'zh' else 'Screen share mode enabled')|tojson }};
+const TEXT_SCREEN_SHARE_STOPPED = {{ ('共享屏幕模式已结束' if lang == 'zh' else 'Screen share mode ended')|tojson }};
+const TEXT_NO_VIDEO = {{ ('未开启摄像头' if lang == 'zh' else 'Camera off')|tojson }};
+const TEXT_FULLSCREEN = {{ ('全屏' if lang == 'zh' else 'Fullscreen')|tojson }};
+const TEXT_FOCUS = {{ ('聚焦' if lang == 'zh' else 'Focus')|tojson }};
+const TEXT_UNFOCUS = {{ ('取消聚焦' if lang == 'zh' else 'Unfocus')|tojson }};
 
 const socket = io();
 let localStream = null;
 let currentFacingMode = 'user';
 let peerConnections = {};
+let participantMeta = {};
+let focusedSid = 'local';
+let hiddenSidebar = false;
+let currentSharerSid = null;
+let isSharingScreen = false;
+let localCameraEnabled = true;
 
-const localVideo = document.getElementById('localVideo');
-const videoGrid = document.getElementById('videoGrid');
+const localVideo = document.createElement('video');
+localVideo.id = 'localVideo';
+localVideo.autoplay = true;
+localVideo.muted = true;
+localVideo.playsInline = true;
+
+const videoStage = document.getElementById('videoStage');
+const videoMain = document.getElementById('videoMain');
+const videoSidebar = document.getElementById('videoSidebar');
 const participantCountEl = document.getElementById('participantCount');
 const statusBox = document.getElementById('statusBox');
+const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
 const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 function setStatus(msg, cls='') {
   statusBox.className = 'notice ' + cls;
   statusBox.textContent = msg;
+}
+
+function getDisplayName(sid) {
+  return sid === 'local' ? `${USER_NAME} · {{ t('local_you') }}` : (participantMeta[sid]?.name || sid);
+}
+
+function ensureCard(sid, displayName = null, isLocal = false) {
+  let card = document.getElementById('card-' + sid);
+  if (card) {
+    if (displayName) card.querySelector('.video-label').textContent = displayName;
+    return card;
+  }
+
+  card = document.createElement('div');
+  card.className = 'video-card' + (isLocal ? ' self-card' : '');
+  card.id = 'card-' + sid;
+  card.dataset.sid = sid;
+  card.innerHTML = `
+    <div class="video-toolbar">
+      <button class="card-btn" data-action="focus">${TEXT_FOCUS}</button>
+      <button class="card-btn" data-action="fullscreen">${TEXT_FULLSCREEN}</button>
+    </div>
+    <div class="video-placeholder">${TEXT_NO_VIDEO}</div>
+    <div class="video-label">${displayName || getDisplayName(sid)}</div>
+  `;
+
+  const videoEl = sid === 'local' ? localVideo : document.createElement('video');
+  if (sid !== 'local') {
+    videoEl.autoplay = true;
+    videoEl.playsInline = true;
+  }
+  videoEl.className = 'video-el';
+  card.prepend(videoEl);
+
+  card.querySelector('[data-action="focus"]').addEventListener('click', () => {
+    if (focusedSid === sid && !currentSharerSid) {
+      clearFocus();
+    } else {
+      focusParticipant(sid);
+    }
+  });
+  card.querySelector('[data-action="fullscreen"]').addEventListener('click', async () => {
+    try {
+      if (document.fullscreenElement === card) {
+        await document.exitFullscreen();
+      } else {
+        await card.requestFullscreen();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
+  return card;
+}
+
+function updatePlaceholder(card, hasVideo) {
+  card.classList.toggle('has-video', !!hasVideo);
+}
+
+function renderLayout() {
+  const cards = Array.from(document.querySelectorAll('.video-card'));
+  if (!cards.length) return;
+
+  videoMain.innerHTML = '';
+  videoSidebar.innerHTML = '';
+
+  const focusTarget = document.getElementById('card-' + (focusedSid || 'local')) || document.getElementById('card-local');
+  const useFocusLayout = !!focusTarget;
+
+  cards.forEach(card => {
+    card.classList.remove('is-focused', 'is-sidebar');
+    const btn = card.querySelector('[data-action="focus"]');
+    if (btn) btn.textContent = (card === focusTarget && !currentSharerSid) ? TEXT_UNFOCUS : TEXT_FOCUS;
+  });
+
+  if (useFocusLayout) {
+    videoStage.classList.add('focus-layout');
+    focusTarget.classList.add('is-focused');
+    videoMain.appendChild(focusTarget);
+
+    cards.filter(card => card !== focusTarget).forEach(card => {
+      card.classList.add('is-sidebar');
+      videoSidebar.appendChild(card);
+    });
+  } else {
+    videoStage.classList.remove('focus-layout');
+    cards.forEach(card => videoMain.appendChild(card));
+  }
+
+  videoStage.classList.toggle('sidebar-hidden', hiddenSidebar);
+  videoStage.classList.toggle('screen-share-mode', !!currentSharerSid);
+}
+
+function focusParticipant(sid, opts = {}) {
+  focusedSid = sid;
+  if (typeof opts.hideSidebar === 'boolean') hiddenSidebar = opts.hideSidebar;
+  if (opts.screenShare) {
+    currentSharerSid = sid;
+    setStatus(TEXT_SCREEN_SHARE_MODE);
+  }
+  renderLayout();
+  syncSidebarBtn();
+}
+
+function clearFocus() {
+  focusedSid = 'local';
+  currentSharerSid = null;
+  hiddenSidebar = false;
+  renderLayout();
+  syncSidebarBtn();
+  setStatus(TEXT_RESET_LAYOUT);
+}
+
+function syncSidebarBtn() {
+  toggleSidebarBtn.textContent = hiddenSidebar ? TEXT_SHOW_OTHERS : TEXT_HIDE_OTHERS;
+}
+
+function updateParticipantCount() {
+  const total = 1 + Object.keys(participantMeta).length;
+  participantCountEl.textContent = total;
 }
 
 async function requestMedia(forceFacingMode = null) {
@@ -101,8 +247,12 @@ async function requestMedia(forceFacingMode = null) {
     };
     localStream = await navigator.mediaDevices.getUserMedia(constraints);
     localVideo.srcObject = localStream;
+    localCameraEnabled = true;
+    const localCard = ensureCard('local', getDisplayName('local'), true);
+    updatePlaceholder(localCard, true);
     replaceOutgoingTracks();
     setStatus(TEXT_PERMISSION_READY);
+    renderLayout();
   } catch (err) {
     console.error(err);
     setStatus(TEXT_PERMISSION_FAILED + ': ' + err.message, 'error');
@@ -150,20 +300,32 @@ function ensurePeer(targetSid) {
   return pc;
 }
 
+function addRemoteParticipant(sid, name) {
+  participantMeta[sid] = { name: name || sid };
+  const card = ensureCard(sid, participantMeta[sid].name, false);
+  updatePlaceholder(card, false);
+  renderLayout();
+  updateParticipantCount();
+}
+
 function addRemoteVideo(sid, stream) {
-  let card = document.getElementById('remote-' + sid);
-  if (!card) {
-    card = document.createElement('div');
-    card.className = 'video-card';
-    card.id = 'remote-' + sid;
-    card.innerHTML = `<video autoplay playsinline></video><div class="video-label">${sid}</div>`;
-    videoGrid.appendChild(card);
-  }
+  const card = ensureCard(sid, getDisplayName(sid), false);
   card.querySelector('video').srcObject = stream;
+  updatePlaceholder(card, true);
+  renderLayout();
 }
 
 function removeRemoteVideo(sid) {
-  document.getElementById('remote-' + sid)?.remove();
+  document.getElementById('card-' + sid)?.remove();
+  delete participantMeta[sid];
+  if (focusedSid === sid) focusedSid = 'local';
+  if (currentSharerSid === sid) {
+    currentSharerSid = null;
+    hiddenSidebar = false;
+    setStatus(TEXT_SCREEN_SHARE_STOPPED);
+  }
+  renderLayout();
+  updateParticipantCount();
 }
 
 async function callPeer(targetSid) {
@@ -173,18 +335,28 @@ async function callPeer(targetSid) {
   socket.emit('signal', { target: targetSid, from: socket.id, description: pc.localDescription, senderName: USER_NAME });
 }
 
+function broadcastUiEvent(payload) {
+  socket.emit('room_ui_event', payload);
+}
+
 socket.on('connect', async () => {
+  ensureCard('local', getDisplayName('local'), true);
+  renderLayout();
   if (!localStream) await requestMedia(currentFacingMode);
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
 });
 
 socket.on('join_ok', async (data) => {
   participantCountEl.textContent = data.participant_count;
-  // 新加入的人不要主动给所有旧成员发 offer
-  // 由旧成员在 participant_joined 里主动发起即可
+  for (const p of data.participants) {
+    addRemoteParticipant(p.sid, p.name);
+    await callPeer(p.sid);
+  }
+  focusParticipant('local');
 });
 
 socket.on('participant_joined', async (data) => {
+  addRemoteParticipant(data.sid, data.name);
   participantCountEl.textContent = data.participant_count;
   await callPeer(data.sid);
 });
@@ -223,6 +395,26 @@ socket.on('signal', async (data) => {
   }
 });
 
+socket.on('room_ui_event', (data) => {
+  if (!data || !data.type) return;
+  if (data.type === 'screen_share_started') {
+    focusParticipant(data.from, { hideSidebar: !!data.hideSidebar, screenShare: true });
+  } else if (data.type === 'screen_share_stopped') {
+    currentSharerSid = null;
+    hiddenSidebar = false;
+    focusedSid = 'local';
+    renderLayout();
+    syncSidebarBtn();
+    setStatus(TEXT_SCREEN_SHARE_STOPPED);
+  } else if (data.type === 'focus_participant') {
+    focusParticipant(data.targetSid || data.from, { hideSidebar: !!data.hideSidebar });
+  } else if (data.type === 'sidebar_visibility') {
+    hiddenSidebar = !!data.hidden;
+    renderLayout();
+    syncSidebarBtn();
+  }
+});
+
 document.getElementById('requestMediaBtn').onclick = () => requestMedia(currentFacingMode);
 document.getElementById('switchCameraBtn').onclick = async () => {
   currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
@@ -236,26 +428,54 @@ document.getElementById('toggleMicBtn').onclick = () => {
 };
 document.getElementById('toggleCameraBtn').onclick = () => {
   const track = localStream?.getVideoTracks?.()[0];
+  const localCard = ensureCard('local', getDisplayName('local'), true);
   if (!track) return;
   track.enabled = !track.enabled;
+  localCameraEnabled = track.enabled;
+  updatePlaceholder(localCard, localCameraEnabled);
   setStatus(track.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 };
 document.getElementById('shareScreenBtn').onclick = async () => {
   try {
     const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
     const screenTrack = screenStream.getVideoTracks()[0];
+    const screenCard = ensureCard('local', getDisplayName('local'), true);
     Object.values(peerConnections).forEach(pc => {
       const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
       if (sender) sender.replaceTrack(screenTrack);
     });
     localVideo.srcObject = screenStream;
+    updatePlaceholder(screenCard, true);
+    isSharingScreen = true;
+    focusParticipant('local', { hideSidebar: false, screenShare: true });
+    broadcastUiEvent({ type: 'screen_share_started', hideSidebar: false });
+
     screenTrack.onended = async () => {
+      isSharingScreen = false;
       await requestMedia(currentFacingMode);
+      currentSharerSid = null;
+      hiddenSidebar = false;
+      focusedSid = 'local';
+      renderLayout();
+      syncSidebarBtn();
+      broadcastUiEvent({ type: 'screen_share_stopped' });
+      setStatus(TEXT_SCREEN_SHARE_STOPPED);
     };
   } catch (err) {
     setStatus(err.message, 'error');
   }
 };
+document.getElementById('focusMeBtn').onclick = () => {
+  focusParticipant('local');
+  broadcastUiEvent({ type: 'focus_participant', targetSid: socket.id, hideSidebar: hiddenSidebar });
+};
+document.getElementById('toggleSidebarBtn').onclick = () => {
+  hiddenSidebar = !hiddenSidebar;
+  renderLayout();
+  syncSidebarBtn();
+  broadcastUiEvent({ type: 'sidebar_visibility', hidden: hiddenSidebar });
+};
+document.getElementById('clearFocusBtn').onclick = () => clearFocus();
 document.getElementById('virtualBgBtn').onclick = () => setStatus(TEXT_VIRTUAL_BG, 'warning');
 document.getElementById('blurBgBtn').onclick = () => setStatus(TEXT_BLUR_BG, 'warning');
 document.getElementById('recordingBtn').onclick = () => setStatus(TEXT_RECORDING, 'warning');
@@ -269,5 +489,9 @@ document.getElementById('copyInviteBtn').onclick = async () => {
   await navigator.clipboard.writeText(document.getElementById('inviteInput').value);
   setStatus(TEXT_COPIED);
 };
+
+ensureCard('local', getDisplayName('local'), true);
+renderLayout();
+syncSidebarBtn();
 </script>
 {% endblock %}
