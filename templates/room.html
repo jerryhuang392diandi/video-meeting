@@ -23,18 +23,12 @@
       <button class="primary-btn slim-btn" id="requestMediaBtn">{{ t('request_media') }}</button>
       <button class="ghost-btn" id="switchCameraBtn">{{ t('switch_camera') }}</button>
       <button class="ghost-btn" id="shareScreenBtn">{{ t('share_screen') }}</button>
-      <button class="ghost-btn" id="focusMeBtn">聚焦自己</button>
-      <button class="ghost-btn" id="toggleSidebarBtn">隐藏其他人</button>
-      <button class="ghost-btn" id="clearFocusBtn">恢复平铺</button>
       <button class="ghost-btn" id="virtualBgBtn">{{ t('virtual_bg') }}</button>
-      <button class="ghost-btn" id="blurBgBtn">{{ t('blur_bg') }}</button>
       <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
-      <button class="ghost-btn" id="participantsBtn">{{ t('participants_panel') }}</button>
-      <button class="ghost-btn" id="layoutBtn">{{ t('layout_switch') }}</button>
       <button class="ghost-btn" id="toggleMicBtn">{{ t('mic') }}</button>
       <button class="ghost-btn" id="toggleCameraBtn">{{ t('camera') }}</button>
-      <button class="ghost-btn danger full-span" id="leaveBtn">{{ t('leave') }}</button>
     </div>
+    <input id="virtualBgInput" type="file" accept="image/*" class="hidden" />
     <div id="statusBox" class="notice">{{ t('room_ready') }}</div>
     <div class="mini-panel">
       <div class="muted">{{ t('invite_link') }}</div>
@@ -64,10 +58,7 @@ const USER_NAME = (localStorage.getItem('meeting_display_name') || DEFAULT_USER_
 const TEXT_PERMISSION_READY = {{ t('permission_ready')|tojson }};
 const TEXT_PERMISSION_FAILED = {{ t('permission_failed')|tojson }};
 const TEXT_VIRTUAL_BG = {{ t('virtual_bg_tip')|tojson }};
-const TEXT_BLUR_BG = {{ t('blur_bg_tip')|tojson }};
 const TEXT_RECORDING = {{ t('recording_tip')|tojson }};
-const TEXT_PARTICIPANTS = {{ t('participants_tip')|tojson }};
-const TEXT_LAYOUT = {{ t('layout_tip')|tojson }};
 const TEXT_MEETING_CLOSED = {{ t('meeting_closed')|tojson }};
 const TEXT_COPIED = {{ t('copied')|tojson }};
 const TEXT_MIC_ON = {{ t('mic_on')|tojson }};
@@ -75,15 +66,15 @@ const TEXT_MIC_OFF = {{ t('mic_off')|tojson }};
 const TEXT_CAMERA_ON = {{ t('camera_on')|tojson }};
 const TEXT_CAMERA_OFF = {{ t('camera_off')|tojson }};
 const TEXT_FOCUS_ME = {{ ('聚焦自己' if lang == 'zh' else 'Focus me')|tojson }};
-const TEXT_HIDE_OTHERS = {{ ('隐藏其他人' if lang == 'zh' else 'Hide others')|tojson }};
-const TEXT_SHOW_OTHERS = {{ ('显示其他人' if lang == 'zh' else 'Show others')|tojson }};
-const TEXT_RESET_LAYOUT = {{ ('已恢复平铺布局' if lang == 'zh' else 'Grid layout restored')|tojson }};
 const TEXT_SCREEN_SHARE_MODE = {{ ('共享屏幕模式已开启' if lang == 'zh' else 'Screen share mode enabled')|tojson }};
 const TEXT_SCREEN_SHARE_STOPPED = {{ ('共享屏幕模式已结束' if lang == 'zh' else 'Screen share mode ended')|tojson }};
 const TEXT_NO_VIDEO = {{ ('未开启摄像头' if lang == 'zh' else 'Camera off')|tojson }};
-const TEXT_FULLSCREEN = {{ ('全屏' if lang == 'zh' else 'Fullscreen')|tojson }};
-const TEXT_FOCUS = {{ ('聚焦' if lang == 'zh' else 'Focus')|tojson }};
-const TEXT_UNFOCUS = {{ ('取消聚焦' if lang == 'zh' else 'Unfocus')|tojson }};
+const TEXT_RECORD_START = {{ ('开始录屏' if lang == 'zh' else 'Start recording')|tojson }};
+const TEXT_RECORD_STOP = {{ ('停止录屏' if lang == 'zh' else 'Stop recording')|tojson }};
+const TEXT_RECORD_SAVED = {{ ('录屏文件已保存' if lang == 'zh' else 'Recording saved')|tojson }};
+const TEXT_RECORD_NOT_SUPPORTED = {{ ('当前浏览器不支持录屏' if lang == 'zh' else 'Screen recording is not supported in this browser')|tojson }};
+const TEXT_VIRTUAL_BG_PICK = {{ ('请选择一张背景图片；下一版可接入真正的人像分割替换' if lang == 'zh' else 'Choose a background image; the next version can add true person segmentation and replacement')|tojson }};
+const TEXT_VIRTUAL_BG_SELECTED = {{ ('已选择虚拟背景图片，当前版本先保留入口' if lang == 'zh' else 'Virtual background image selected; this version keeps the entry point ready')|tojson }};
 
 const socket = io();
 let localStream = null;
@@ -95,6 +86,8 @@ let hiddenSidebar = false;
 let currentSharerSid = null;
 let isSharingScreen = false;
 let localCameraEnabled = true;
+let activeRecorder = null;
+let recorderStream = null;
 
 const localVideo = document.createElement('video');
 localVideo.id = 'localVideo';
@@ -107,7 +100,6 @@ const videoMain = document.getElementById('videoMain');
 const videoSidebar = document.getElementById('videoSidebar');
 const participantCountEl = document.getElementById('participantCount');
 const statusBox = document.getElementById('statusBox');
-const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
 const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 function setStatus(msg, cls='') {
@@ -132,8 +124,7 @@ function ensureCard(sid, displayName = null, isLocal = false) {
   card.dataset.sid = sid;
   card.innerHTML = `
     <div class="video-toolbar">
-      <button class="card-btn" data-action="focus">${TEXT_FOCUS}</button>
-      <button class="card-btn" data-action="fullscreen">${TEXT_FULLSCREEN}</button>
+      <button class="card-btn" data-action="fullscreen">{{ ('全屏' if lang == 'zh' else 'Fullscreen') }}</button>
     </div>
     <div class="video-placeholder">${TEXT_NO_VIDEO}</div>
     <div class="video-label">${displayName || getDisplayName(sid)}</div>
@@ -151,13 +142,6 @@ function ensureCard(sid, displayName = null, isLocal = false) {
     videoMain.appendChild(card);
   }
 
-  card.querySelector('[data-action="focus"]').addEventListener('click', () => {
-    if (focusedSid === sid && !currentSharerSid) {
-      clearFocus();
-    } else {
-      focusParticipant(sid);
-    }
-  });
   card.querySelector('[data-action="fullscreen"]').addEventListener('click', async () => {
     try {
       if (document.fullscreenElement === card) {
@@ -189,8 +173,6 @@ function renderLayout() {
 
   cards.forEach(card => {
     card.classList.remove('is-focused', 'is-sidebar');
-    const btn = card.querySelector('[data-action="focus"]');
-    if (btn) btn.textContent = (card === focusTarget && !currentSharerSid) ? TEXT_UNFOCUS : TEXT_FOCUS;
   });
 
   if (useFocusLayout) {
@@ -228,12 +210,9 @@ function clearFocus() {
   hiddenSidebar = false;
   renderLayout();
   syncSidebarBtn();
-  setStatus(TEXT_RESET_LAYOUT);
 }
 
-function syncSidebarBtn() {
-  toggleSidebarBtn.textContent = hiddenSidebar ? TEXT_SHOW_OTHERS : TEXT_HIDE_OTHERS;
-}
+function syncSidebarBtn() {}
 
 function updateParticipantCount() {
   const total = 1 + Object.keys(participantMeta).length;
@@ -337,6 +316,62 @@ async function callPeer(targetSid) {
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   socket.emit('signal', { target: targetSid, from: socket.id, description: pc.localDescription, senderName: USER_NAME });
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function toggleScreenRecording() {
+  if (activeRecorder) {
+    activeRecorder.stop();
+    recorderStream?.getTracks().forEach(track => track.stop());
+    return;
+  }
+
+  if (!navigator.mediaDevices?.getDisplayMedia || typeof MediaRecorder === 'undefined') {
+    setStatus(TEXT_RECORD_NOT_SUPPORTED, 'error');
+    return;
+  }
+
+  try {
+    recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    const chunks = [];
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+      ? 'video/webm;codecs=vp9'
+      : 'video/webm';
+
+    activeRecorder = new MediaRecorder(recorderStream, { mimeType });
+    activeRecorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) chunks.push(event.data);
+    };
+    activeRecorder.onstop = () => {
+      const blob = new Blob(chunks, { type: mimeType });
+      downloadBlob(blob, `meeting-recording-${Date.now()}.webm`);
+      document.getElementById('recordingBtn').textContent = {{ t('recording')|tojson }};
+      activeRecorder = null;
+      recorderStream = null;
+      setStatus(TEXT_RECORD_SAVED);
+    };
+    recorderStream.getVideoTracks()[0].onended = () => {
+      if (activeRecorder && activeRecorder.state !== 'inactive') activeRecorder.stop();
+    };
+    activeRecorder.start(1000);
+    document.getElementById('recordingBtn').textContent = TEXT_RECORD_STOP;
+    setStatus(TEXT_RECORD_STOP);
+  } catch (err) {
+    activeRecorder = null;
+    recorderStream?.getTracks().forEach(track => track.stop());
+    recorderStream = null;
+    setStatus(err.message || TEXT_RECORD_NOT_SUPPORTED, 'error');
+  }
 }
 
 function broadcastUiEvent(payload) {
@@ -468,26 +503,16 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     setStatus(err.message, 'error');
   }
 };
-document.getElementById('focusMeBtn').onclick = () => {
-  focusParticipant('local');
-  broadcastUiEvent({ type: 'focus_participant', targetSid: socket.id, hideSidebar: hiddenSidebar });
+document.getElementById('virtualBgBtn').onclick = () => {
+  setStatus(TEXT_VIRTUAL_BG_PICK, 'warning');
+  document.getElementById('virtualBgInput').click();
 };
-document.getElementById('toggleSidebarBtn').onclick = () => {
-  hiddenSidebar = !hiddenSidebar;
-  renderLayout();
-  syncSidebarBtn();
-  broadcastUiEvent({ type: 'sidebar_visibility', hidden: hiddenSidebar });
+document.getElementById('virtualBgInput').onchange = (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  setStatus(TEXT_VIRTUAL_BG_SELECTED + '：' + file.name, 'warning');
 };
-document.getElementById('clearFocusBtn').onclick = () => clearFocus();
-document.getElementById('virtualBgBtn').onclick = () => setStatus(TEXT_VIRTUAL_BG, 'warning');
-document.getElementById('blurBgBtn').onclick = () => setStatus(TEXT_BLUR_BG, 'warning');
-document.getElementById('recordingBtn').onclick = () => setStatus(TEXT_RECORDING, 'warning');
-document.getElementById('participantsBtn').onclick = () => setStatus(TEXT_PARTICIPANTS, 'warning');
-document.getElementById('layoutBtn').onclick = () => setStatus(TEXT_LAYOUT, 'warning');
-document.getElementById('leaveBtn').onclick = () => {
-  socket.emit('leave_room');
-  window.location.href = '/';
-};
+document.getElementById('recordingBtn').onclick = () => toggleScreenRecording();
 document.getElementById('copyInviteBtn').onclick = async () => {
   await navigator.clipboard.writeText(document.getElementById('inviteInput').value);
   setStatus(TEXT_COPIED);
