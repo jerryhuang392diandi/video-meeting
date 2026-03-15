@@ -62,10 +62,7 @@ login_manager.login_view = "login"
 
 
 def debug_log(tag, **kwargs):
-    try:
-        print(f"[DEBUG:{tag}] {kwargs}", flush=True)
-    except Exception:
-        pass
+    return None
 
 MAX_PARTICIPANTS = 6
 ROOM_EMPTY_GRACE_SECONDS = 20
@@ -287,6 +284,9 @@ TRANSLATIONS = {'zh': {'app_name': '西小电视频会议系统',
         'traffic_limit_reached': '你的本期流量额度已用完，请联系管理员。',
         'traffic_management': '流量管理',
         'kick_user': '踢出用户',
+        'delete_user': '删除用户',
+        'delete_user_confirm': '确认要永久删除用户 {username} 吗？此操作会删除账号及相关记录，且无法恢复。',
+        'delete_user_done': '用户已删除',
         'reset_user_password': '重置密码',
         'new_password_admin': '新密码',
         'apply_reset': '应用重置',
@@ -539,6 +539,9 @@ TRANSLATIONS = {'zh': {'app_name': '西小电视频会议系统',
         'host_returned_room': 'The host has returned. Host privileges have been restored.',
         'you_left_meeting': 'You left the meeting',
         'delete_record': 'Delete record',
+        'delete_user': 'Delete user',
+        'delete_user_confirm': 'Delete user {username} permanently? This will remove the account and related records and cannot be undone.',
+        'delete_user_done': 'User deleted',
         'batch_delete': 'Batch delete',
         'select_all': 'Select all',
         'selected_count': 'Selected',
@@ -1853,6 +1856,33 @@ def admin_kick_user(user_id):
     disconnect_user_sockets(user.id, message=kick_message)
     debug_log('ADMIN_KICK_DONE', user_id=user.id, remaining_sids=list(user_active_sids.get(user.id, set())), rooms={rid: {'participant_user_ids': [info.get('user_id') for info in info_map.get('participants', {}).values()], 'participant_sids': list(info_map.get('participants', {}).keys())} for rid, info_map in rooms.items()})
     return redirect(url_for("admin_dashboard"))
+
+
+@app.post("/admin/user/<int:user_id>/delete")
+@login_required
+@admin_required
+def admin_delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.is_admin or user.id == current_user.id:
+        return redirect(url_for("admin_dashboard"))
+
+    username = user.username
+    remove_user_from_runtime_rooms(user.id, reason_message=t("kicked_by_admin"))
+    disconnect_user_sockets(user.id, message=t("kicked_by_admin"))
+
+    hosted_meetings = Meeting.query.filter_by(host_user_id=user.id).all()
+    for meeting in hosted_meetings:
+        if meeting.status == "active":
+            end_meeting_by_room_id(meeting.room_id, "meeting_closed")
+        MeetingParticipant.query.filter_by(meeting_id=meeting.id).delete(synchronize_session=False)
+        db.session.delete(meeting)
+
+    MeetingParticipant.query.filter_by(user_id=user.id).delete(synchronize_session=False)
+    PasswordResetRequest.query.filter_by(username=username).delete(synchronize_session=False)
+    db.session.delete(user)
+    db.session.commit()
+    return redirect(url_for("admin_dashboard"))
+
 
 
 @app.post("/admin/user/<int:user_id>/reset-password")

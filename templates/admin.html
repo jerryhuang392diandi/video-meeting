@@ -68,7 +68,7 @@
       <div class="row-compact wrap-actions">
         <form method="post" action="{{ url_for('admin_disable_user', user_id=u.id) }}"><button class="ghost-btn" type="submit">{{ t('disable') }}</button></form>
         <form method="post" action="{{ url_for('admin_enable_user', user_id=u.id) }}"><button class="ghost-btn" type="submit">{{ t('enable') }}</button></form>
-        <form method="post" action="{{ url_for('admin_kick_user', user_id=u.id) }}" class="admin-kick-form" data-username="{{ u.username }}"><button class="ghost-btn danger" type="submit">{{ t('kick_user') }}</button></form>
+        <form method="post" action="{{ url_for('admin_delete_user', user_id=u.id) }}" class="admin-delete-user-form" data-username="{{ u.username }}"><button class="ghost-btn danger" type="submit">{{ t('delete_user') }}</button></form>
       </div>
       {% endif %}
       <form method="post" action="{{ url_for('admin_set_user_quota', user_id=u.id) }}" class="row-compact">
@@ -229,14 +229,13 @@
 
 
   (function () {
-    const kickForms = Array.from(document.querySelectorAll('.admin-kick-form'));
-    if (!kickForms.length) return;
-    kickForms.forEach((form) => {
+    const deleteForms = Array.from(document.querySelectorAll('.admin-delete-user-form'));
+    if (!deleteForms.length) return;
+    deleteForms.forEach((form) => {
       form.addEventListener('submit', function (event) {
         const username = form.dataset.username || '';
-        const message = document.documentElement.lang === 'zh'
-          ? `确认要踢出用户 ${username} 吗？`
-          : `Kick user ${username} now?`;
+        const template = {{ t('delete_user_confirm')|tojson }};
+        const message = String(template).replace('{username}', username);
         if (!window.confirm(message)) {
           event.preventDefault();
         }
