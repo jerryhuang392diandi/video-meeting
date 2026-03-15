@@ -38,6 +38,22 @@
         <option value="download" {% if default_attachment_permission == 'download' %}selected{% endif %}>{{ '可下载' if lang == 'zh' else 'Download allowed' }}</option>
         <option value="view" {% if default_attachment_permission == 'view' %}selected{% endif %}>{{ '仅查看' if lang == 'zh' else 'View only' }}</option>
       </select>
+      <div class="section-head" style="margin-top:16px;"><h3 style="margin:0;">{{ '会议默认偏好' if lang == 'zh' else 'Meeting defaults' }}</h3></div>
+      <label>{{ '进入会议后默认弹幕显示' if lang == 'zh' else 'Show danmaku by default' }}</label>
+      <select name="default_danmaku_enabled">
+        <option value="1" {% if default_danmaku_enabled %}selected{% endif %}>{{ '开启' if lang == 'zh' else 'On' }}</option>
+        <option value="0" {% if not default_danmaku_enabled %}selected{% endif %}>{{ '关闭' if lang == 'zh' else 'Off' }}</option>
+      </select>
+      <label>{{ '进入会议时默认开启摄像头' if lang == 'zh' else 'Enable camera when entering meetings' }}</label>
+      <select name="auto_enable_camera">
+        <option value="1" {% if auto_enable_camera %}selected{% endif %}>{{ '开启' if lang == 'zh' else 'On' }}</option>
+        <option value="0" {% if not auto_enable_camera %}selected{% endif %}>{{ '关闭' if lang == 'zh' else 'Off' }}</option>
+      </select>
+      <label>{{ '进入会议时默认开启麦克风' if lang == 'zh' else 'Enable microphone when entering meetings' }}</label>
+      <select name="auto_enable_microphone">
+        <option value="1" {% if auto_enable_microphone %}selected{% endif %}>{{ '开启' if lang == 'zh' else 'On' }}</option>
+        <option value="0" {% if not auto_enable_microphone %}selected{% endif %}>{{ '关闭' if lang == 'zh' else 'Off' }}</option>
+      </select>
       <button class="primary-btn" type="submit">{{ t('save') }}</button>
     </form>
   </div>

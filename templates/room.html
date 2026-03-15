@@ -43,6 +43,15 @@
       </div>
     </div>
     <div class="mini-panel">
+      <div class="muted">{{ '入会默认偏好' if lang == 'zh' else 'Join defaults' }}</div>
+      <div class="status-grid compact-grid">
+        <div><span>{{ '弹幕显示' if lang == 'zh' else 'Danmaku display' }}</span><strong>{{ ('开启' if default_danmaku_enabled else '关闭') if lang == 'zh' else ('On' if default_danmaku_enabled else 'Off') }}</strong></div>
+        <div><span>{{ '摄像头' if lang == 'zh' else 'Camera' }}</span><strong>{{ ('开启' if auto_enable_camera else '关闭') if lang == 'zh' else ('On' if auto_enable_camera else 'Off') }}</strong></div>
+        <div><span>{{ '麦克风' if lang == 'zh' else 'Mic' }}</span><strong>{{ ('开启' if auto_enable_microphone else '关闭') if lang == 'zh' else ('On' if auto_enable_microphone else 'Off') }}</strong></div>
+      </div>
+      <a class="ghost-btn wide-link mt-12" href="{{ url_for('account_page') }}">{{ '前往个人偏好' if lang == 'zh' else 'Open account preferences' }}</a>
+    </div>
+    <div class="mini-panel">
       <div class="muted">{{ '快速切换会议' if lang == 'zh' else 'Quick switch room' }}</div>
       <label>{{ t('room_id') }}</label>
       <input id="switchRoomId" maxlength="6" value="{{ room_id }}" />
@@ -139,6 +148,9 @@ const ROOM_ID = {{ room_id|tojson }};
 const ROOM_PASSWORD = {{ room_password|tojson }};
 const DEFAULT_USER_NAME = {{ current_user.username|tojson }};
 const DEFAULT_PREFERRED_NAME = {{ preferred_display_name|tojson }};
+const PREF_ENABLE_DANMAKU = {{ 'true' if default_danmaku_enabled else 'false' }};
+const PREF_AUTO_ENABLE_CAMERA = {{ 'true' if auto_enable_camera else 'false' }};
+const PREF_AUTO_ENABLE_MICROPHONE = {{ 'true' if auto_enable_microphone else 'false' }};
 let USER_NAME = (localStorage.getItem('meeting_display_name') || DEFAULT_PREFERRED_NAME || DEFAULT_USER_NAME).trim() || DEFAULT_PREFERRED_NAME || DEFAULT_USER_NAME;
 const TEXT_PERMISSION_READY = {{ t('permission_ready')|tojson }};
 const TEXT_PERMISSION_FAILED = {{ t('permission_failed')|tojson }};
@@ -471,18 +483,28 @@ async function transcodeRecordingBlob(blob, filename = 'meeting-recording.webm')
   return await response.blob();
 }
 
-async function requestMedia(forceFacingMode = null) {
+async function requestMedia(forceFacingMode = null, manualRequest = false) {
   try {
     if (rawCameraStream) stopStreamTracks(rawCameraStream);
     disableVirtualBackgroundState({ stopCanvas: true });
 
+    const wantsVideo = manualRequest ? true : !!PREF_AUTO_ENABLE_CAMERA;
+    const wantsAudio = manualRequest ? true : !!PREF_AUTO_ENABLE_MICROPHONE;
+    if (!wantsVideo && !wantsAudio) {
+      setStatus({{ ('当前偏好为入会不自动开启摄像头与麦克风，可手动点击“申请摄像头/麦克风权限”' if lang == 'zh' else 'Your preferences keep camera and microphone off when joining. Use the media button to enable them manually.')|tojson }});
+      return;
+    }
     const constraints = {
-      audio: true,
-      video: forceFacingMode ? { facingMode: { ideal: forceFacingMode } } : true,
+      audio: wantsAudio,
+      video: wantsVideo ? (forceFacingMode ? { facingMode: { ideal: forceFacingMode } } : true) : false,
     };
     rawCameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     rawPreviewVideo.srcObject = rawCameraStream;
     await rawPreviewVideo.play().catch(() => {});
+    if (!manualRequest) {
+      rawCameraStream.getVideoTracks().forEach(track => { track.enabled = !!PREF_AUTO_ENABLE_CAMERA; });
+      rawCameraStream.getAudioTracks().forEach(track => { track.enabled = !!PREF_AUTO_ENABLE_MICROPHONE; });
+    }
 
     useLocalOutputStream(rawCameraStream);
 
@@ -931,7 +953,7 @@ function appendChatMessage(data) {
   }
   renderChatMessageState(item, data);
   if (!data.preserveScroll) chatMessages.scrollTop = chatMessages.scrollHeight;
-  if (danmakuEnabled && data.mode === 'all' && data.message && !data.withdrawn) showDanmaku(`${data.senderName}: ${data.message}`);
+  if (PREF_ENABLE_DANMAKU && danmakuEnabled && data.mode === 'all' && data.message && !data.withdrawn) showDanmaku(`${data.senderName}: ${data.message}`);
 }
 
 async function copyText(text) {
@@ -1357,7 +1379,7 @@ function leaveMeetingAndExit(message = TEXT_YOU_LEFT_MEETING, redirectUrl = '/')
 socket.on('connect', async () => {
   ensureCard('local', getDisplayName('local'), true);
   renderLayout();
-  if (!rawCameraStream && !localStream) await requestMedia(currentFacingMode);
+  if ((PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream) await requestMedia(currentFacingMode, false);
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
 });
 
@@ -1489,10 +1511,10 @@ document.addEventListener('fullscreenchange', () => {
   }
 });
 
-document.getElementById('requestMediaBtn').onclick = () => requestMedia(currentFacingMode);
+document.getElementById('requestMediaBtn').onclick = () => requestMedia(currentFacingMode, true);
 document.getElementById('switchCameraBtn').onclick = async () => {
   currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-  await requestMedia(currentFacingMode);
+  await requestMedia(currentFacingMode, true);
 };
 document.getElementById('toggleMicBtn').onclick = () => {
   const rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
@@ -1535,7 +1557,7 @@ document.getElementById('shareScreenBtn').onclick = async () => {
       } else if (rawCameraStream) {
         fallbackToRawCamera();
       } else {
-        await requestMedia(currentFacingMode);
+        await requestMedia(currentFacingMode, true);
       }
       currentSharerSid = null;
       hiddenSidebar = false;
@@ -1554,7 +1576,7 @@ document.getElementById('virtualBgBtn').onclick = async () => {
     return;
   }
   if (!rawCameraStream) {
-    await requestMedia(currentFacingMode);
+    await requestMedia(currentFacingMode, true);
     if (!rawCameraStream) return;
   }
   setStatus(TEXT_VIRTUAL_BG_PICK, 'warning');
@@ -1571,7 +1593,7 @@ virtualBgInput.onchange = async (event) => {
       reader.readAsDataURL(file);
     });
     if (!rawCameraStream) {
-      await requestMedia(currentFacingMode);
+      await requestMedia(currentFacingMode, true);
       if (!rawCameraStream) return;
     }
     await activateVirtualBackground();

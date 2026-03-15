@@ -2074,3 +2074,48 @@ video:-webkit-full-screen {
 
 
 .chat-file-card.standardized{display:flex;align-items:center;gap:12px}.chat-file-badge{min-width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:800;letter-spacing:.5px;background:rgba(122,168,255,.18);border:1px solid rgba(122,168,255,.28);color:#dbe8ff}.chat-file-card.standardized .chat-file-meta{flex:1;min-width:0}.chat-file-card.standardized .chat-file-links{display:flex;flex-wrap:wrap;gap:8px}
+
+/* admin stats + account preference polish */
+.admin-metric-grid {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+.metric-card {
+  padding:14px;
+  border-radius:16px;
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.08);
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.metric-card span,
+.metric-card small {
+  color:var(--muted);
+}
+.metric-card strong {
+  font-size:28px;
+  line-height:1;
+}
+.metric-bar {
+  width:100%;
+  height:8px;
+  border-radius:999px;
+  background:rgba(255,255,255,.08);
+  overflow:hidden;
+}
+.metric-bar i {
+  display:block;
+  height:100%;
+  border-radius:999px;
+  background:linear-gradient(90deg, rgba(122,168,255,.95), rgba(103,212,255,.95));
+}
+.compact-grid div strong {
+  font-size:14px;
+}
+@media (max-width: 768px) {
+  .admin-metric-grid {
+    grid-template-columns:1fr;
+  }
+}

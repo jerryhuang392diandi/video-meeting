@@ -17,6 +17,21 @@
 
 <section class="grid two">
   <div class="panel panel-glow">
+    <div class="section-head">
+      <h2>{{ '服务器概览' if lang == 'zh' else 'Server overview' }}</h2>
+      <span class="section-tag">Live</span>
+    </div>
+    <div class="metric-grid admin-metric-grid">
+      <div class="metric-card"><span>{{ 'CPU' if lang == 'zh' else 'CPU' }}</span><strong id="cpuMetric">{{ system_stats.cpu_percent }}%</strong><div class="metric-bar"><i id="cpuBar" style="width: {{ system_stats.cpu_percent }}%;"></i></div></div>
+      <div class="metric-card"><span>{{ '内存' if lang == 'zh' else 'Memory' }}</span><strong id="memoryMetric">{{ system_stats.memory_percent }}%</strong><div class="metric-bar"><i id="memoryBar" style="width: {{ system_stats.memory_percent }}%;"></i></div></div>
+      <div class="metric-card"><span>{{ '硬盘占用' if lang == 'zh' else 'Disk usage' }}</span><strong id="diskMetric">{{ system_stats.disk_percent }}%</strong><div class="metric-bar"><i id="diskBar" style="width: {{ system_stats.disk_percent }}%;"></i></div><small id="diskDetail">{{ system_stats.disk_used_text }} / {{ system_stats.disk_total_text }}</small></div>
+      <div class="metric-card"><span>{{ '累计服务器流量' if lang == 'zh' else 'Server traffic total' }}</span><strong id="trafficMetric">{{ system_stats.traffic_total_text }}</strong><small id="ifaceDetail">iface: {{ system_stats.iface }}</small></div>
+      <div class="metric-card"><span>{{ '在线会议' if lang == 'zh' else 'Active rooms' }}</span><strong id="roomMetric">{{ system_stats.active_room_count }}</strong></div>
+      <div class="metric-card"><span>{{ '在线连接' if lang == 'zh' else 'Active sockets' }}</span><strong id="socketMetric">{{ system_stats.active_socket_count }}</strong></div>
+    </div>
+  </div>
+
+  <div class="panel panel-glow">
     <h2>{{ t('users') }}</h2>
     <div class="muted" style="margin-bottom: 12px;">{{ t('traffic_management') }} · {{ t('traffic_turn_relay') }}</div>
     {% for u in users %}
@@ -175,6 +190,33 @@
     }
 
     updateCount();
+  })();
+
+  (function () {
+    async function refreshSystemStats() {
+      try {
+        const response = await fetch('/api/admin/system_stats', { credentials: 'same-origin' });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data || data.success === false) return;
+        const mapping = [
+          ['cpuMetric', `${data.cpu_percent}%`],
+          ['memoryMetric', `${data.memory_percent}%`],
+          ['diskMetric', `${data.disk_percent}%`],
+          ['trafficMetric', data.traffic_total_text],
+          ['roomMetric', String(data.active_room_count)],
+          ['socketMetric', String(data.active_socket_count)],
+        ];
+        mapping.forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.textContent = value; });
+        const cpuBar = document.getElementById('cpuBar'); if (cpuBar) cpuBar.style.width = `${data.cpu_percent}%`;
+        const memoryBar = document.getElementById('memoryBar'); if (memoryBar) memoryBar.style.width = `${data.memory_percent}%`;
+        const diskBar = document.getElementById('diskBar'); if (diskBar) diskBar.style.width = `${data.disk_percent}%`;
+        const diskDetail = document.getElementById('diskDetail'); if (diskDetail) diskDetail.textContent = `${data.disk_used_text} / ${data.disk_total_text}`;
+        const ifaceDetail = document.getElementById('ifaceDetail'); if (ifaceDetail) ifaceDetail.textContent = `iface: ${data.iface}`;
+      } catch (_) {}
+    }
+    refreshSystemStats();
+    setInterval(refreshSystemStats, 15000);
   })();
 </script>
 {% endblock %}

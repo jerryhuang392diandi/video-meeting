@@ -5,3 +5,4 @@ flask-login
 python-dotenv
 simple-websocket
 pillow
+psutil

@@ -1,4 +1,5 @@
 import io
+import mimetypes
 import os
 import secrets
 import shutil
@@ -19,6 +20,11 @@ from pathlib import Path
 from functools import wraps
 
 from flask import Flask, abort, after_this_request, jsonify, redirect, render_template, request, send_file, session, url_for
+
+try:
+    import psutil
+except Exception:
+    psutil = None
 from werkzeug.utils import secure_filename
 
 try:
@@ -206,7 +212,7 @@ TRANSLATIONS = {
         "reset_cycle": "重置周期",
         "traffic_guide": "用户指南",
         "traffic_guide_desc": "当前采用服务端 TURN relay 口径统计流量，前端只负责展示。",
-        "traffic_default_rule": "每个账号默认每 30 天赠送 10GB 流量，自注册日起滚动重置。",
+        "traffic_default_rule": "每个账号默认每 30 天赠送 3GB 流量，自注册日起滚动重置。",
         "traffic_admin_rule": "管理员可在后台调整用户月流量额度，用于充值或特殊授权。",
         "traffic_limit_reached": "你的本期流量额度已用完，请联系管理员。",
         "traffic_management": "流量管理",
@@ -230,7 +236,7 @@ TRANSLATIONS = {
         "guide_create_meeting_desc": "登录后在首页填写主持人名称并点击“立即创建”，系统会生成会议号、密码和邀请链接。",
         "guide_join_meeting_desc": "输入会议号与会议密码后即可加入会议，建议加入前先确认摄像头和麦克风权限已开启。",
         "guide_share_screen_desc": "进入会议后点击“共享屏幕”即可共享整个屏幕、窗口或浏览器标签页；停止共享后画面会自动恢复。",
-        "guide_traffic_rules_desc": "当前采用服务端 TURN relay 口径统计流量，每个账号默认每 30 天赠送 10GB，自注册日起滚动重置。",
+        "guide_traffic_rules_desc": "当前采用服务端 TURN relay 口径统计流量，每个账号默认每 30 天赠送 3GB，自注册日起滚动重置。",
         "guide_support_desc": "登录或开会遇到异常时，可联系平台客服获取账号、会议和流量相关支持。",
         "support_title": "客服支持",
         "support_phone": "客服电话",
@@ -382,7 +388,7 @@ TRANSLATIONS = {
         "reset_cycle": "Reset cycle",
         "traffic_guide": "User guide",
         "traffic_guide_desc": "Traffic is counted server-side from TURN relay traffic, and the frontend only displays the result.",
-        "traffic_default_rule": "Each account gets 10 GB every 30 days by default, rolling from the registration date.",
+        "traffic_default_rule": "Each account gets 3 GB every 30 days by default, rolling from the registration date.",
         "traffic_admin_rule": "Admins can adjust each user's monthly quota for recharge or special access.",
         "traffic_limit_reached": "Your traffic quota for this cycle has been used up. Please contact the administrator.",
         "traffic_management": "Traffic management",
@@ -406,7 +412,7 @@ TRANSLATIONS = {
         "guide_create_meeting_desc": "After login, fill in the host name on the home page and click Create now. The system will generate a room ID, password, and invite link.",
         "guide_join_meeting_desc": "Enter the room ID and room password to join. It is recommended to confirm camera and microphone permissions before joining.",
         "guide_share_screen_desc": "In a meeting, click Share screen to share the full screen, a window, or a browser tab. When sharing stops, the layout returns automatically.",
-        "guide_traffic_rules_desc": "Traffic is counted server-side using the TURN relay path. Each account gets 10 GB every 30 days by default, rolling from the registration date.",
+        "guide_traffic_rules_desc": "Traffic is counted server-side using the TURN relay path. Each account gets 3 GB every 30 days by default, rolling from the registration date.",
         "guide_support_desc": "If you run into login or meeting issues, contact platform support for account, meeting, and quota assistance.",
         "support_title": "Support",
         "support_phone": "Support phone",
@@ -438,13 +444,16 @@ class User(UserMixin, db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     is_active_user = db.Column(db.Boolean, default=True)
     session_version = db.Column(db.Integer, default=0)
-    monthly_quota_mb = db.Column(db.Float, default=10240.0)
+    monthly_quota_mb = db.Column(db.Float, default=3072.0)
     used_traffic_mb = db.Column(db.Float, default=0.0)
     traffic_cycle_start_at = db.Column(db.DateTime, nullable=True)
     display_name = db.Column(db.String(32), nullable=True)
     region = db.Column(db.String(64), nullable=True, default="Asia/Tokyo")
     preferred_locale = db.Column(db.String(16), nullable=True, default="auto")
     default_attachment_permission = db.Column(db.String(16), nullable=True, default="download")
+    default_danmaku_enabled = db.Column(db.Boolean, default=True)
+    auto_enable_camera = db.Column(db.Boolean, default=True)
+    auto_enable_microphone = db.Column(db.Boolean, default=True)
 
     meetings = db.relationship("Meeting", backref="host", lazy=True)
 
@@ -540,7 +549,7 @@ def ensure_user_columns():
     if "session_version" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN session_version INTEGER DEFAULT 0")
     if "monthly_quota_mb" not in cols:
-        cur.execute("ALTER TABLE users ADD COLUMN monthly_quota_mb FLOAT DEFAULT 10240")
+        cur.execute("ALTER TABLE users ADD COLUMN monthly_quota_mb FLOAT DEFAULT 3072")
     if "used_traffic_mb" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN used_traffic_mb FLOAT DEFAULT 0")
     if "traffic_cycle_start_at" not in cols:
@@ -553,6 +562,12 @@ def ensure_user_columns():
         cur.execute("ALTER TABLE users ADD COLUMN preferred_locale VARCHAR(16) DEFAULT 'auto'")
     if "default_attachment_permission" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN default_attachment_permission VARCHAR(16) DEFAULT 'download'")
+    if "default_danmaku_enabled" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN default_danmaku_enabled BOOLEAN DEFAULT 1")
+    if "auto_enable_camera" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN auto_enable_camera BOOLEAN DEFAULT 1")
+    if "auto_enable_microphone" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN auto_enable_microphone BOOLEAN DEFAULT 1")
     cur.execute("CREATE TABLE IF NOT EXISTS password_reset_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, username VARCHAR(64) NOT NULL, contact VARCHAR(128), note TEXT, status VARCHAR(16) DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)")
     conn.commit()
     conn.close()
@@ -621,7 +636,7 @@ def refresh_user_traffic_cycle(user, now=None):
         user.traffic_cycle_start_at = anchor
         changed = True
     if user.monthly_quota_mb is None:
-        user.monthly_quota_mb = 10240.0
+        user.monthly_quota_mb = 3072.0
         changed = True
     if user.used_traffic_mb is None:
         user.used_traffic_mb = 0.0
@@ -643,6 +658,74 @@ def format_mb(mb_value):
     if value >= 1024:
         return f"{value / 1024:.2f} GB"
     return f"{value:.0f} MB"
+
+
+def bool_from_form(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "on", "yes"}
+
+
+def room_user_marker_key(user_id, sid=None):
+    return f"user:{user_id}" if user_id else f"sid:{sid or ''}"
+
+
+def visible_chat_history_for_user(room, user_id, sid, is_room_host=False):
+    history = list(room.get("chat_history", []))
+    marker_key = room_user_marker_key(user_id, sid)
+    clear_index = int((room.get("chat_clear_markers") or {}).get(marker_key, 0) or 0)
+    visible = []
+    for idx, item in enumerate(history):
+        if idx < clear_index and not is_room_host:
+            continue
+        if item.get("mode") == "all":
+            visible.append(item)
+        elif is_room_host or item.get("senderUserId") == user_id or item.get("from") == sid:
+            visible.append(item)
+    return visible
+
+
+def get_system_metrics():
+    sync_network_traffic()
+    iface = _TRAFFIC_MONITOR.get("iface") or detect_traffic_interface()
+    cpu_percent = 0.0
+    memory_percent = 0.0
+    if psutil:
+        try:
+            cpu_percent = float(psutil.cpu_percent(interval=0.15))
+        except Exception:
+            cpu_percent = 0.0
+        try:
+            memory_percent = float(psutil.virtual_memory().percent)
+        except Exception:
+            memory_percent = 0.0
+    try:
+        disk = shutil.disk_usage(BASE_DIR)
+        disk_total = disk.total / (1024 * 1024)
+        disk_used = (disk.used) / (1024 * 1024)
+        disk_percent = (disk.used / disk.total * 100.0) if disk.total else 0.0
+    except Exception:
+        disk_total = disk_used = disk_percent = 0.0
+    traffic_total_mb = 0.0
+    try:
+        if psutil and iface:
+            counters = psutil.net_io_counters(pernic=True).get(iface)
+            if counters:
+                traffic_total_mb = (float(counters.bytes_sent) + float(counters.bytes_recv)) / (1024 * 1024)
+    except Exception:
+        traffic_total_mb = 0.0
+    return {
+        "cpu_percent": round(cpu_percent, 1),
+        "memory_percent": round(memory_percent, 1),
+        "disk_percent": round(disk_percent, 1),
+        "disk_used_text": format_mb(disk_used),
+        "disk_total_text": format_mb(disk_total),
+        "traffic_total_text": format_mb(traffic_total_mb),
+        "traffic_total_mb": round(traffic_total_mb, 2),
+        "iface": iface or "unknown",
+        "active_room_count": len(rooms),
+        "active_socket_count": len(sid_to_user),
+    }
 
 
 def detect_traffic_interface():
@@ -849,6 +932,7 @@ def ensure_runtime_room(meeting):
         "traffic_last_sync": time.time(),
         "danmaku_enabled": False,
         "chat_history": [],
+        "chat_clear_markers": {},
     }
     schedule_room_expiry(meeting.room_id, meeting.created_at.timestamp())
     return room
@@ -1041,6 +1125,9 @@ def account_page():
             region = (request.form.get("region") or "Asia/Tokyo").strip()[:64]
             preferred_locale = (request.form.get("preferred_locale") or "auto").strip()[:16].lower()
             default_attachment_permission = (request.form.get("default_attachment_permission") or "download").strip()[:16].lower()
+            default_danmaku_enabled = bool_from_form(request.form.get("default_danmaku_enabled"), True)
+            auto_enable_camera = bool_from_form(request.form.get("auto_enable_camera"), True)
+            auto_enable_microphone = bool_from_form(request.form.get("auto_enable_microphone"), True)
             if preferred_locale not in {"auto", "zh", "en"}:
                 preferred_locale = "auto"
             if default_attachment_permission not in {"view", "download"}:
@@ -1057,6 +1144,9 @@ def account_page():
                     fresh_user.region = region or "Asia/Tokyo"
                     fresh_user.preferred_locale = preferred_locale
                     fresh_user.default_attachment_permission = default_attachment_permission
+                    fresh_user.default_danmaku_enabled = default_danmaku_enabled
+                    fresh_user.auto_enable_camera = auto_enable_camera
+                    fresh_user.auto_enable_microphone = auto_enable_microphone
                     db.session.commit()
                     message = "保存成功" if session.get("lang", "zh") == "zh" else "Profile saved"
         elif action == "password":
@@ -1074,7 +1164,19 @@ def account_page():
                 disconnect_user_sockets(fresh_user.id, message=t("kicked"))
                 message = "密码已更新" if session.get("lang", "zh") == "zh" else "Password updated"
     fresh_user = db.session.get(User, current_user.id)
-    return render_template("account.html", user=fresh_user, message=message, error=error, preferred_display_name=preferred_display_name(fresh_user), region=(fresh_user.region or "Asia/Tokyo"), preferred_locale=(fresh_user.preferred_locale or "auto"), default_attachment_permission=(fresh_user.default_attachment_permission or "download"))
+    return render_template(
+        "account.html",
+        user=fresh_user,
+        message=message,
+        error=error,
+        preferred_display_name=preferred_display_name(fresh_user),
+        region=(fresh_user.region or "Asia/Tokyo"),
+        preferred_locale=(fresh_user.preferred_locale or "auto"),
+        default_attachment_permission=(fresh_user.default_attachment_permission or "download"),
+        default_danmaku_enabled=bool(getattr(fresh_user, "default_danmaku_enabled", True)),
+        auto_enable_camera=bool(getattr(fresh_user, "auto_enable_camera", True)),
+        auto_enable_microphone=bool(getattr(fresh_user, "auto_enable_microphone", True)),
+    )
 
 
 @app.route("/forgot-password", methods=["GET", "POST"])
@@ -1118,7 +1220,7 @@ def register():
     if User.query.filter_by(username=username).first():
         return render_template("register.html", error=t("username_exists"))
 
-    user = User(username=username, display_name=username, is_active_user=True, session_version=0, monthly_quota_mb=10240.0, used_traffic_mb=0.0, traffic_cycle_start_at=datetime.utcnow())
+    user = User(username=username, display_name=username, is_active_user=True, session_version=0, monthly_quota_mb=3072.0, used_traffic_mb=0.0, traffic_cycle_start_at=datetime.utcnow())
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
@@ -1199,6 +1301,7 @@ def api_create_room():
         "traffic_last_sync": time.time(),
         "danmaku_enabled": False,
         "chat_history": [],
+        "chat_clear_markers": {},
     }
     schedule_room_expiry(room_id, meeting.created_at.timestamp())
 
@@ -1247,6 +1350,9 @@ def room_page(room_id):
         traffic=traffic_summary_dict(current_user),
         turn_ice_servers=build_turn_ice_servers(),
         preferred_display_name=preferred_display_name(current_user),
+        default_danmaku_enabled=bool(getattr(current_user, "default_danmaku_enabled", True)),
+        auto_enable_camera=bool(getattr(current_user, "auto_enable_camera", True)),
+        auto_enable_microphone=bool(getattr(current_user, "auto_enable_microphone", True)),
     )
 
 
@@ -1559,13 +1665,8 @@ def on_join_room(data):
     db.session.add(participant)
     db.session.commit()
 
-    visible_chat_history = []
     is_room_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
-    for item in room.get("chat_history", []):
-        if item.get("mode") == "all":
-            visible_chat_history.append(item)
-        elif is_room_host or item.get("senderUserId") == current_user.id:
-            visible_chat_history.append(item)
+    visible_chat_history = visible_chat_history_for_user(room, current_user.id, sid, is_room_host=is_room_host)
 
     emit(
         "join_ok",
@@ -2098,6 +2199,7 @@ def on_meeting_chat_send(data):
         return
     event = {
         "id": secrets.token_hex(8),
+        "seq": len(room.get("chat_history", [])),
         "from": sid,
         "senderUserId": info.get("user_id"),
         "senderName": room["participants"].get(sid, {}).get("name") or info.get("name") or "Guest",
@@ -2136,9 +2238,11 @@ def on_meeting_chat_clear():
     is_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
     if is_host:
         room["chat_history"] = []
+        room["chat_clear_markers"] = {}
         shutil.rmtree(os.path.join(CHAT_UPLOAD_DIR, info["room_id"]), ignore_errors=True)
         socketio.emit("meeting_chat_cleared", {"by": sid, "scope": "all"}, room=info["room_id"])
     else:
+        room.setdefault("chat_clear_markers", {})[room_user_marker_key(info.get("user_id"), sid)] = len(room.get("chat_history", []))
         socketio.emit("meeting_chat_cleared", {"by": sid, "scope": "self"}, to=sid)
 
 
