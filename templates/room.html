@@ -354,6 +354,17 @@ function renderLayout() {
 
   cards.forEach(card => card.classList.remove('is-focused', 'is-sidebar'));
 
+  const shouldUseGrid = !currentSharerSid && cards.length <= 4 && !hiddenSidebar;
+  videoStage.classList.toggle('screen-share-mode', !!currentSharerSid);
+  videoStage.classList.toggle('grid-layout', shouldUseGrid);
+
+  if (shouldUseGrid) {
+    videoStage.classList.remove('focus-layout');
+    videoStage.classList.add('sidebar-hidden');
+    cards.forEach(card => videoMain.appendChild(card));
+    return;
+  }
+
   videoStage.classList.add('focus-layout');
   focusTarget.classList.add('is-focused');
   videoMain.appendChild(focusTarget);
@@ -365,7 +376,6 @@ function renderLayout() {
   });
 
   videoStage.classList.toggle('sidebar-hidden', hiddenSidebar || sidebarCards.length === 0);
-  videoStage.classList.toggle('screen-share-mode', !!currentSharerSid);
 }
 
 function focusParticipant(sid, opts = {}) {
@@ -427,7 +437,7 @@ function useLocalOutputStream(stream) {
   localVideo.srcObject = stream;
   const localCard = ensureCard('local', getDisplayName('local'), true);
   updatePlaceholder(localCard, !!stream?.getVideoTracks?.()[0]?.enabled);
-  replaceOutgoingTracks();
+  syncPeerMedia().catch(err => console.error(err));
   renderLayout();
 }
 
@@ -526,20 +536,46 @@ async function requestMedia(forceFacingMode = null, manualRequest = false) {
   }
 }
 
-function replaceOutgoingTracks() {
-  Object.values(peerConnections).forEach(pc => {
+async function syncPeerMedia(targetSid = null) {
+  const entries = targetSid
+    ? (peerConnections[targetSid] ? [[targetSid, peerConnections[targetSid]]] : [])
+    : Object.entries(peerConnections);
+  const tracks = Array.isArray(localStream?.getTracks?.()) ? localStream.getTracks() : [];
+  const renegotiateTasks = [];
+
+  entries.forEach(([sid, pc]) => {
+    if (!pc) return;
     const senders = pc.getSenders();
-    const vTrack = localStream?.getVideoTracks?.()[0];
-    const aTrack = localStream?.getAudioTracks?.()[0];
-    if (vTrack) {
-      const vs = senders.find(s => s.track && s.track.kind === 'video');
-      if (vs) vs.replaceTrack(vTrack);
-    }
-    if (aTrack) {
-      const as = senders.find(s => s.track && s.track.kind === 'audio');
-      if (as) as.replaceTrack(aTrack);
+    let addedTrack = false;
+
+    tracks.forEach((track) => {
+      const sender = senders.find((item) => item.track && item.track.kind === track.kind);
+      if (sender) {
+        sender.replaceTrack(track).catch((err) => console.error(err));
+      } else {
+        try {
+          pc.addTrack(track, localStream);
+          addedTrack = true;
+        } catch (err) {
+          console.error(err);
+        }
+      }
+    });
+
+    if (addedTrack && pc.signalingState === 'stable') {
+      renegotiateTasks.push((async () => {
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket.emit('signal', { target: sid, from: socket.id, description: pc.localDescription, senderName: USER_NAME });
+        } catch (err) {
+          console.error(err);
+        }
+      })());
     }
   });
+
+  if (renegotiateTasks.length) await Promise.allSettled(renegotiateTasks);
 }
 
 function ensurePeer(targetSid) {
@@ -1579,22 +1615,33 @@ document.getElementById('switchCameraBtn').onclick = async () => {
   currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
   await requestMedia(currentFacingMode, true);
 };
-document.getElementById('toggleMicBtn').onclick = () => {
-  const rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
-  if (!rawTrack) return;
+document.getElementById('toggleMicBtn').onclick = async () => {
+  let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
+  if (!rawTrack) {
+    await requestMedia(currentFacingMode, true);
+    rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
+    if (!rawTrack) return;
+  }
   rawTrack.enabled = !rawTrack.enabled;
   const localTrack = localStream?.getAudioTracks?.()[0];
   if (localTrack && localTrack !== rawTrack) localTrack.enabled = rawTrack.enabled;
   setStatus(rawTrack.enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
 };
-document.getElementById('toggleCameraBtn').onclick = () => {
-  const rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
+document.getElementById('toggleCameraBtn').onclick = async () => {
+  let rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
   const localCard = ensureCard('local', getDisplayName('local'), true);
-  if (!rawTrack) return;
+  if (!rawTrack) {
+    await requestMedia(currentFacingMode, true);
+    rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
+    if (!rawTrack) return;
+  }
   rawTrack.enabled = !rawTrack.enabled;
   const outputVideoTrack = localStream?.getVideoTracks?.()[0];
   if (outputVideoTrack && outputVideoTrack !== rawTrack) outputVideoTrack.enabled = rawTrack.enabled;
   updatePlaceholder(localCard, rawTrack.enabled);
+  if (rawTrack.enabled) {
+    await syncPeerMedia().catch(err => console.error(err));
+  }
   setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 };
 document.getElementById('shareScreenBtn').onclick = async () => {

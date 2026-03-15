@@ -2651,7 +2651,7 @@ video:-webkit-full-screen {
   }
 }
 
-/* ===== Desktop room UI refinement v6.4.5 ===== */
+/* ===== Desktop room UI balance v6.4.6 safe patch ===== */
 @media (min-width: 1180px) {
   .shell {
     max-width: 1560px;
@@ -2661,6 +2661,7 @@ video:-webkit-full-screen {
 
   .topbar.compact {
     align-items: flex-start;
+    gap: 14px;
     margin-bottom: 16px;
   }
 
@@ -2673,41 +2674,22 @@ video:-webkit-full-screen {
   }
 
   .room-grid-layout {
-    grid-template-columns: 290px minmax(0, 1fr);
-    gap: 16px;
-    align-items: stretch;
-  }
-
-  .room-grid-layout > .side-panel,
-  .room-grid-layout > .video-panel {
-    min-height: calc(100vh - 132px);
+    grid-template-columns: 296px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
   }
 
   .side-panel {
     position: sticky;
     top: 16px;
-    height: calc(100vh - 132px);
     max-height: calc(100vh - 132px);
     overflow: auto;
     padding: 18px;
     scrollbar-width: thin;
   }
 
-  .side-panel h2 {
-    margin-bottom: 14px;
-    font-size: 18px;
-  }
-
-  .mini-panel {
+  .side-panel .mini-panel {
     margin-top: 14px;
-    padding: 14px;
-    border-radius: 16px;
-    background: rgba(255,255,255,0.035);
-    border: 1px solid rgba(255,255,255,0.05);
-  }
-
-  .mini-panel label {
-    margin-top: 10px;
   }
 
   .button-grid-2 {
@@ -2722,52 +2704,13 @@ video:-webkit-full-screen {
   }
 
   .video-panel {
-    position: relative;
-    min-height: calc(100vh - 132px);
-    grid-template-columns: minmax(0, 1.22fr) minmax(410px, 460px) !important;
-    gap: 16px;
-    padding: 16px;
+    grid-template-columns: minmax(0, 1fr) 440px !important;
+    gap: 18px;
     align-items: stretch;
   }
 
-  .video-stage {
-    min-height: calc(100vh - 164px);
-    grid-template-columns: minmax(0, 1fr) 188px;
-    gap: 14px;
-    align-self: stretch;
-  }
-
-  .video-main {
-    min-height: calc(100vh - 164px);
-    gap: 14px;
-    align-content: start;
-  }
-
-  .video-main .video-card,
-  .video-stage.focus-layout .video-main .video-card,
-  .video-stage.screen-share-mode .video-main .video-card {
-    min-height: clamp(360px, 56vh, 680px);
-    max-height: none;
-  }
-
-  .video-sidebar {
-    max-height: calc(100vh - 164px);
-    padding-left: 2px;
-  }
-
-  .video-sidebar .video-card,
-  .video-sidebar .video-card video,
-  .video-sidebar .video-card .video-el {
-    min-height: 108px;
-    height: 108px;
-  }
-
   .chat-window {
-    min-height: calc(100vh - 164px);
-    height: calc(100vh - 164px);
-    max-height: calc(100vh - 164px);
     border-radius: 20px;
-    overflow: hidden;
   }
 
   .chat-header,
@@ -2778,36 +2721,65 @@ video:-webkit-full-screen {
     padding-right: 16px;
   }
 
-  .chat-header {
-    min-height: 82px;
-  }
-
-  .chat-header .row-compact {
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 8px;
-    max-width: 220px;
-  }
-
   .chat-messages {
-    padding: 14px 16px;
-  }
-
-  .chat-composer {
-    margin-top: auto;
+    padding-left: 16px;
+    padding-right: 16px;
   }
 }
 
 @media (min-width: 1180px) and (max-width: 1360px) {
   .room-grid-layout {
-    grid-template-columns: 272px minmax(0, 1fr);
+    grid-template-columns: 280px minmax(0, 1fr);
   }
 
   .video-panel {
     grid-template-columns: minmax(0, 1fr) 400px !important;
   }
+}
 
-  .video-stage {
-    grid-template-columns: minmax(0, 1fr) 168px;
+
+/* v6.4.7 safe meeting grid + delayed media fix */
+.video-stage.grid-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+.video-stage.grid-layout .video-main {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-content: stretch;
+}
+.video-stage.grid-layout .video-sidebar {
+  display: none !important;
+}
+.video-stage.grid-layout .video-card {
+  min-height: clamp(240px, 34vh, 360px);
+  max-height: clamp(240px, 34vh, 360px);
+  aspect-ratio: 16 / 9;
+}
+.video-stage.grid-layout .video-main:has(.video-card:nth-child(1):last-child) {
+  grid-template-columns: 1fr;
+}
+@media (min-width: 961px) {
+  .room-grid-layout { grid-template-columns: 280px minmax(0, 1fr); gap: 18px; }
+  .video-panel { grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; }
+  .side-panel { max-height: calc(100vh - 130px); overflow: auto; }
+  .video-stage { min-height: clamp(420px, 58vh, 640px); }
+  .video-main .video-card,
+  .video-stage.focus-layout .video-main .video-card,
+  .video-stage.screen-share-mode .video-main .video-card {
+    border-radius: 22px;
+    overflow: hidden;
+  }
+}
+@media (max-width: 1200px) and (min-width: 961px) {
+  .video-panel { grid-template-columns: minmax(0, 1fr) 350px; }
+}
+@media (max-width: 960px) {
+  .video-stage.grid-layout .video-main {
+    grid-template-columns: 1fr;
+  }
+  .video-stage.grid-layout .video-card {
+    min-height: clamp(220px, 34vh, 340px);
+    max-height: clamp(220px, 34vh, 340px);
   }
 }
