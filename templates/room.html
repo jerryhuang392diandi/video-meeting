@@ -163,9 +163,6 @@ const TEXT_DANMAKU_ON = {{ ('弹幕已开启' if lang == 'zh' else 'Danmaku enab
 const TEXT_DANMAKU_OFF = {{ ('弹幕已关闭' if lang == 'zh' else 'Danmaku disabled')|tojson }};
 const TEXT_PROFILE_UPDATED = {{ ('显示名称已更新' if lang == 'zh' else 'Display name updated')|tojson }};
 const TEXT_CHAT_WITHDRAWN = {{ ('此消息已撤回' if lang == 'zh' else 'This message was withdrawn')|tojson }};
-const TEXT_TRANSLATING = {{ ('翻译中...' if lang == 'zh' else 'Translating...')|tojson }};
-const TEXT_TRANSLATE_FAILED = {{ ('翻译失败，请稍后重试' if lang == 'zh' else 'Translation failed. Please try again later.')|tojson }};
-const PREFS = JSON.parse(localStorage.getItem('meeting_ui_prefs') || '{}');
 const TEXT_CHAT_CLEARED = {{ ('聊天记录已清空' if lang == 'zh' else 'Chat history cleared')|tojson }};
 const TEXT_TRANSLATE_OPEN = {{ ('已打开英文翻译页' if lang == 'zh' else 'Opened English translation view')|tojson }};
 const TEXT_COPY_SUCCESS = {{ ('文本已复制' if lang == 'zh' else 'Text copied')|tojson }};
@@ -794,8 +791,6 @@ let pendingAttachment = null;
 let danmakuEnabled = false;
 const CHAT_EMOJIS = ['😀','😄','😁','😂','😉','😊','😍','🥳','😎','🤔','👍','👏','🙌','🎉','❤️','🔥','🚀','🤝','🙏','📌'];
 
-function getUiPref(key, fallback) { return Object.prototype.hasOwnProperty.call(PREFS, key) ? PREFS[key] : fallback; }
-
 function escapeHtml(text) {
   return String(text || '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
@@ -852,8 +847,6 @@ function renderChatMessageState(item, data) {
   item.dataset.messageId = data.id || '';
   item.dataset.senderUserId = data.senderUserId || '';
   item.dataset.senderSid = data.from || '';
-  const translatedHtml = !withdrawn && data.translationEn ? `<div class="chat-translation"><span class="translation-label">EN</span>${escapeHtml(data.translationEn).replace(/\n/g, '<br>')}</div>` : '';
-  item.dataset.translationEn = data.translationEn || '';
   item.innerHTML = `
     <div class="chat-message-head">
       <strong>${escapeHtml(data.senderName || 'Guest')}</strong>
@@ -861,7 +854,6 @@ function renderChatMessageState(item, data) {
       <span>${escapeHtml(data.createdAt || '')}</span>
     </div>
     <div class="chat-message-body${withdrawn ? ' withdrawn' : ''}">${withdrawn ? TEXT_CHAT_WITHDRAWN : `${((data.mentions || []).map(m => `<span class="mention-badge">@${escapeHtml(String(m).replace(/^@/, ''))}</span>`).join(''))}${escapeHtml(data.message || '').replace(/\n/g, '<br>')}`}</div>
-    ${translatedHtml}
     ${withdrawn ? '' : buildAttachmentHtml(data.attachment)}
   `;
 }
@@ -890,36 +882,11 @@ async function copyText(text) {
   } catch (_) {}
 }
 
-async function translateToEnglish(item) {
-  if (!item) return;
-  const text = getMessageTextForTranslate(item);
+function translateToEnglish(text) {
   if (!text) return;
-  if (item.dataset.translationEn) {
-    const body = item.querySelector('.chat-translation');
-    if (body) { body.remove(); item.dataset.translationEn = ''; }
-    return;
-  }
-  setStatus(TEXT_TRANSLATING, 'warning');
-  try {
-    const response = await fetch('/api/translate-to-en', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ room_id: ROOM_ID, message_id: item.dataset.messageId, text })
-    });
-    const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.message || TEXT_TRANSLATE_FAILED);
-    item.dataset.translationEn = data.translation || '';
-    const translated = document.createElement('div');
-    translated.className = 'chat-translation';
-    translated.innerHTML = `<span class="translation-label">EN</span>${escapeHtml(data.translation || '').replace(/\n/g, '<br>')}`;
-    const existing = item.querySelector('.chat-translation');
-    if (existing) existing.remove();
-    item.querySelector('.chat-message-body')?.insertAdjacentElement('afterend', translated);
-    setStatus({{ ('已翻译为英语' if lang == 'zh' else 'Translated to English')|tojson }});
-  } catch (err) {
-    setStatus(err.message || TEXT_TRANSLATE_FAILED, 'error');
-  }
+  const url = `https://translate.google.com/?sl=auto&tl=en&text=${encodeURIComponent(text)}&op=translate`;
+  window.open(url, '_blank', 'noopener');
+  setStatus(TEXT_TRANSLATE_OPEN);
 }
 
 function openContextMenu(x, y, items) {
@@ -948,7 +915,7 @@ function openMessageContextMenu(event, item) {
   }
   if (text) {
     menu.push({ label: {{ ('复制文本' if lang == 'zh' else 'Copy text')|tojson }}, action: () => copyText(text) });
-    menu.push({ label: {{ ('翻译为英语' if lang == 'zh' else 'Translate to English')|tojson }}, action: () => translateToEnglish(item) });
+    menu.push({ label: {{ ('翻译为英语' if lang == 'zh' else 'Translate to English')|tojson }}, action: () => translateToEnglish(text) });
   }
   menu.push({ label: {{ ('清空聊天记录' if lang == 'zh' else 'Clear chat history')|tojson }}, danger: true, action: () => socket.emit('meeting_chat_clear') });
   openContextMenu(event.clientX, event.clientY, menu);
@@ -971,6 +938,44 @@ function showDanmaku(text) {
   node.style.animationDuration = `${8 + Math.floor(Math.random() * 6)}s`;
   danmakuLayer.appendChild(node);
   setTimeout(() => node.remove(), 15000);
+}
+
+
+async function fileToDataUrl(file) {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function compressImageFile(file) {
+  const imageUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const node = new Image();
+      node.onload = () => resolve(node);
+      node.onerror = reject;
+      node.src = imageUrl;
+    });
+    const maxSide = 1600;
+    const scale = Math.min(maxSide / img.width, maxSide / img.height, 1);
+    const width = Math.max(1, Math.round(img.width * scale));
+    const height = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.drawImage(img, 0, 0, width, height);
+    let mime = 'image/jpeg';
+    if (file.type === 'image/png' && file.size < 1024 * 1024) mime = 'image/png';
+    const quality = mime === 'image/png' ? undefined : 0.82;
+    const dataUrl = canvas.toDataURL(mime, quality);
+    return { type: mime, name: file.name, dataUrl };
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
 }
 
 function updateAttachmentPreview() {
@@ -1025,26 +1030,48 @@ function setChatCollapsed(collapsed) {
 
 function initChatUi() {
   enableChatDrag();
-  document.body.classList.toggle('density-compact', getUiPref('chatDensity', 'comfortable') === 'compact');
-  setChatCollapsed(!!getUiPref('chatCollapsedDefault', false));
+  setChatCollapsed(false);
   renderMentionPicker();
   setChatMode('all');
   document.querySelectorAll('.chat-mode-btn').forEach(btn => btn.addEventListener('click', () => setChatMode(btn.dataset.mode)));
   sendChatBtn?.addEventListener('click', sendChatMessage);
-  chatInput?.addEventListener('keydown', (e) => { if (getUiPref('enterToSend', true) && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } });
+  chatInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } });
   document.getElementById('mentionBtn')?.addEventListener('click', () => { renderMentionPicker(); mentionPicker.classList.toggle('hidden'); emojiPopover?.classList.add('hidden'); });
   document.getElementById('emojiBtn')?.addEventListener('click', () => { renderEmojiPicker(); emojiPopover?.classList.toggle('hidden'); mentionPicker.classList.add('hidden'); });
   document.getElementById('emojiCloseBtn')?.addEventListener('click', () => emojiPopover?.classList.add('hidden'));
-  chatMessages?.addEventListener('contextmenu', (event) => { const msg = event.target.closest('.chat-message'); if (msg) { openMessageContextMenu(event, msg); } else { openChatAreaContextMenu(event); } });
+  chatMessages?.addEventListener('contextmenu', openChatAreaContextMenu);
   document.addEventListener('click', (e) => { if (!e.target.closest('#emojiBtn') && !e.target.closest('#emojiPopover') && !e.target.closest('#mentionBtn') && !e.target.closest('#mentionPicker') && !e.target.closest('#chatContextMenu')) hideFloatingPanels(); });
   chatFileInput?.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    const limit = file.type.startsWith('video') ? 12 * 1024 * 1024 : 4 * 1024 * 1024;
-    if (file.size > limit) { setStatus(file.type.startsWith('video') ? '{{ '视频请控制在 12MB 以内' if lang == 'zh' else 'Please keep video files under 12MB' }}' : '{{ '图片请控制在 4MB 以内' if lang == 'zh' else 'Please keep images under 4MB' }}', 'warning'); e.target.value = ''; return; }
-    const dataUrl = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
-    pendingAttachment = { type: file.type, name: file.name, dataUrl };
-    updateAttachmentPreview();
-    e.target.value = '';
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      if (file.type.startsWith('image/')) {
+        const compressed = await compressImageFile(file);
+        if ((compressed.dataUrl || '').length > 6 * 1024 * 1024) {
+          setStatus({{ '图片压缩后仍然过大，请换一张更小的图片' if lang == 'zh' else 'The compressed image is still too large. Please choose a smaller image.'|tojson }}, 'warning');
+          return;
+        }
+        pendingAttachment = compressed;
+        updateAttachmentPreview();
+        setStatus({{ '图片已自动压缩，可发送' if lang == 'zh' else 'Image compressed and ready to send'|tojson }});
+      } else if (file.type.startsWith('video/')) {
+        const limit = 20 * 1024 * 1024;
+        if (file.size > limit) {
+          setStatus({{ '视频请控制在 20MB 以内，当前版本先不在浏览器中自动压缩视频' if lang == 'zh' else 'Please keep video files under 20MB. This version does not compress videos in the browser yet.'|tojson }}, 'warning');
+          return;
+        }
+        const dataUrl = await fileToDataUrl(file);
+        pendingAttachment = { type: file.type, name: file.name, dataUrl };
+        updateAttachmentPreview();
+      } else {
+        setStatus({{ '暂不支持该文件类型' if lang == 'zh' else 'This file type is not supported yet'|tojson }}, 'warning');
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus({{ '附件处理失败' if lang == 'zh' else 'Failed to process attachment'|tojson }}, 'error');
+    } finally {
+      e.target.value = '';
+    }
   });
   document.getElementById('toggleDanmakuBtn')?.addEventListener('click', () => socket.emit('toggle_danmaku', { enabled: !danmakuEnabled }));
   document.getElementById('chatHideBtn')?.addEventListener('click', () => setChatCollapsed(true));
@@ -1141,18 +1168,6 @@ socket.on('meeting_chat_retracted', (data) => {
     senderUserId: item.dataset.senderUserId || '' ,
     from: item.dataset.senderSid || ''
   });
-});
-
-socket.on('meeting_chat_translated', (data) => {
-  const item = data?.id ? chatMessages?.querySelector(`.chat-message[data-message-id="${data.id}"]`) : null;
-  if (!item || !data?.translation) return;
-  item.dataset.translationEn = data.translation;
-  const translated = document.createElement('div');
-  translated.className = 'chat-translation';
-  translated.innerHTML = `<span class="translation-label">EN</span>${escapeHtml(data.translation).replace(/
-/g, '<br>')}`;
-  item.querySelector('.chat-translation')?.remove();
-  item.querySelector('.chat-message-body')?.insertAdjacentElement('afterend', translated);
 });
 
 socket.on('join_error', (data) => {

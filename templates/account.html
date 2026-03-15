@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
-{% block title %}{{ '个人账户与偏好' if lang == 'zh' else 'Account & Preferences' }}{% endblock %}
+{% block title %}{{ '我的账户' if lang == 'zh' else 'My Account' }}{% endblock %}
 {% block content %}
 <header class="topbar compact">
   <div>
-    <div class="brand">{{ '个人账户与偏好' if lang == 'zh' else 'Account & Preferences' }}</div>
-    <div class="muted">{{ '管理用户名、会议显示名、登录密码和界面偏好' if lang == 'zh' else 'Manage username, meeting display name, password, and interface preferences' }}</div>
+    <div class="brand">{{ '我的账户' if lang == 'zh' else 'My Account' }}</div>
+    <div class="muted">{{ '管理用户名、会议显示名与登录密码' if lang == 'zh' else 'Manage username, meeting display name, and password' }}</div>
   </div>
   <div class="top-actions">
     <a class="chip" href="{{ url_for('index') }}">{{ t('back_home') }}</a>
@@ -35,48 +35,5 @@
       <button class="primary-btn" type="submit">{{ '更新密码' if lang == 'zh' else 'Update password' }}</button>
     </form>
   </div>
-
-  <div class="panel panel-glow">
-    <h2>{{ '界面偏好' if lang == 'zh' else 'Preferences' }}</h2>
-    <div class="muted mb-12">{{ '这些设置会保存在当前账号常用浏览器中。' if lang == 'zh' else 'These settings are saved in the browser you usually use with this account.' }}</div>
-    <div class="pref-grid">
-      <label>{{ '聊天默认展开' if lang == 'zh' else 'Chat open by default' }}<select id="prefChatCollapsed"><option value="false">{{ '是' if lang == 'zh' else 'Yes' }}</option><option value="true">{{ '否，默认收起' if lang == 'zh' else 'No, collapsed' }}</option></select></label>
-      <label>{{ 'Enter 发送消息' if lang == 'zh' else 'Enter sends message' }}<select id="prefEnterToSend"><option value="true">{{ '开启' if lang == 'zh' else 'On' }}</option><option value="false">{{ '关闭' if lang == 'zh' else 'Off' }}</option></select></label>
-      <label>{{ '聊天密度' if lang == 'zh' else 'Chat density' }}<select id="prefChatDensity"><option value="comfortable">{{ '标准' if lang == 'zh' else 'Comfortable' }}</option><option value="compact">{{ '紧凑' if lang == 'zh' else 'Compact' }}</option></select></label>
-      <label>{{ '默认语言' if lang == 'zh' else 'Preferred language' }}<select id="prefLanguage"><option value="zh">中文</option><option value="en">English</option></select></label>
-    </div>
-    <button class="primary-btn mt-12" type="button" id="savePrefsBtn">{{ '保存偏好' if lang == 'zh' else 'Save preferences' }}</button>
-    <div class="notice hidden" id="prefsSavedNotice">{{ '偏好已保存，会议室将在下次打开时生效。' if lang == 'zh' else 'Preferences saved. They will apply the next time you open a meeting room.' }}</div>
-  </div>
 </section>
-{% endblock %}
-
-{% block scripts %}
-<script>
-(function () {
-  const defaults = { chatCollapsedDefault: false, enterToSend: true, chatDensity: 'comfortable', language: {{ lang|tojson }} };
-  const stored = JSON.parse(localStorage.getItem('meeting_ui_prefs') || '{}');
-  const prefs = { ...defaults, ...stored };
-  document.getElementById('prefChatCollapsed').value = String(!!prefs.chatCollapsedDefault);
-  document.getElementById('prefEnterToSend').value = String(!!prefs.enterToSend);
-  document.getElementById('prefChatDensity').value = prefs.chatDensity || 'comfortable';
-  document.getElementById('prefLanguage').value = prefs.language || {{ lang|tojson }};
-  document.getElementById('savePrefsBtn')?.addEventListener('click', async () => {
-    const nextPrefs = {
-      chatCollapsedDefault: document.getElementById('prefChatCollapsed').value === 'true',
-      enterToSend: document.getElementById('prefEnterToSend').value === 'true',
-      chatDensity: document.getElementById('prefChatDensity').value,
-      language: document.getElementById('prefLanguage').value,
-    };
-    localStorage.setItem('meeting_ui_prefs', JSON.stringify(nextPrefs));
-    const note = document.getElementById('prefsSavedNotice');
-    note?.classList.remove('hidden');
-    if (nextPrefs.language && nextPrefs.language !== {{ lang|tojson }}) {
-      window.location.href = `/set-language/${nextPrefs.language}`;
-      return;
-    }
-    setTimeout(() => note?.classList.add('hidden'), 2200);
-  });
-})();
-</script>
 {% endblock %}
