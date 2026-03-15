@@ -41,7 +41,9 @@
         {% elif raw_url and (attachment.kind == 'audio') %}
           <audio src="{{ raw_url }}" controls></audio>
         {% elif raw_url and ((attachment.type or '') == 'application/pdf' or filename.lower().endswith('.pdf')) %}
-          <iframe src="{{ raw_url }}"></iframe>
+          <object data="{{ raw_url }}#toolbar=1&navpanes=1&scrollbar=1" type="application/pdf" style="width:100%;height:78vh;">
+            <iframe src="{{ raw_url }}#toolbar=1&navpanes=1&scrollbar=1"></iframe>
+          </object>
         {% elif raw_url and ((attachment.type or '').startswith('text/')) %}
           <iframe src="{{ raw_url }}"></iframe>
         {% else %}

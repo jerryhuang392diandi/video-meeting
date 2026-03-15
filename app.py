@@ -1713,6 +1713,32 @@ def _optimize_image_to_path(upload, original_name: str, dest_dir: str):
         return None
 
 
+def _normalize_attachment_content_type(filename: str, content_type: str | None) -> str:
+    suffix = (Path(filename or "").suffix or "").lower()
+    content_type = (content_type or "").strip().lower()
+    extension_map = {
+        ".pdf": "application/pdf",
+        ".txt": "text/plain; charset=utf-8",
+        ".doc": "application/msword",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".ppt": "application/vnd.ms-powerpoint",
+        ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ".xls": "application/vnd.ms-excel",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".zip": "application/zip",
+        ".rar": "application/vnd.rar",
+        ".7z": "application/x-7z-compressed",
+    }
+    if suffix in extension_map:
+        return extension_map[suffix]
+    guessed, _ = mimetypes.guess_type(filename or "")
+    if guessed:
+        if guessed.startswith("text/") and "charset" not in guessed:
+            return f"{guessed}; charset=utf-8"
+        return guessed
+    return content_type or "application/octet-stream"
+
+
 def _attachment_kind(filename: str, content_type: str) -> str:
     content_type = (content_type or "").lower()
     suffix = (Path(filename or "").suffix or "").lower()
@@ -1720,11 +1746,21 @@ def _attachment_kind(filename: str, content_type: str) -> str:
         return "image"
     if content_type.startswith("video/") or suffix in {".mp4", ".webm", ".mov", ".m4v"}:
         return "video"
-    if suffix in {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".txt"}:
+    if content_type.startswith("audio/"):
+        return "audio"
+    if content_type == "application/pdf" or suffix == ".pdf":
+        return "pdf"
+    if suffix in {".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".txt"}:
         return "document"
     if suffix in {".zip", ".rar", ".7z"}:
         return "archive"
     return "file"
+
+
+def _inline_content_disposition(filename: str) -> str:
+    safe_ascii = secure_filename(filename or "attachment") or "attachment"
+    quoted = quote(filename or safe_ascii)
+    return f"inline; filename=\"{safe_ascii}\"; filename*=UTF-8''{quoted}"
 
 
 def _find_attachment_by_token(room_id: str, token: str):
@@ -1787,7 +1823,7 @@ def api_chat_upload():
     original_size = upload.stream.tell()
     upload.stream.seek(0)
     original_name = secure_filename(upload.filename) or "attachment"
-    content_type = (upload.mimetype or "application/octet-stream").strip()
+    content_type = _normalize_attachment_content_type(original_name, (upload.mimetype or "application/octet-stream").strip())
     kind = _attachment_kind(original_name, content_type)
     size_limit = CHAT_MAX_UPLOAD_BYTES
     if kind == 'image':
@@ -1876,8 +1912,11 @@ def chat_attachment_raw(room_id, token):
     abs_path = _chat_attachment_abs_path(room_id, attachment)
     if not os.path.exists(abs_path):
         abort(404)
-    resp = send_file(abs_path, mimetype=attachment.get("type") or "application/octet-stream", as_attachment=False, download_name=filename)
-    resp.headers["Content-Disposition"] = f'inline; filename="{secure_filename(filename) or "attachment"}"'
+    mimetype = _normalize_attachment_content_type(filename, attachment.get("type") or "application/octet-stream")
+    resp = send_file(abs_path, mimetype=mimetype, as_attachment=False, conditional=True, download_name=filename)
+    resp.headers["Content-Disposition"] = _inline_content_disposition(filename)
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Cache-Control"] = "private, no-store, max-age=0"
     return resp
 
 
@@ -1895,7 +1934,7 @@ def chat_attachment_download(room_id, token):
     abs_path = _chat_attachment_abs_path(room_id, attachment)
     if not os.path.exists(abs_path):
         abort(404)
-    return send_file(abs_path, mimetype=attachment.get("type") or "application/octet-stream", as_attachment=True, download_name=filename)
+    return send_file(abs_path, mimetype=_normalize_attachment_content_type(filename, attachment.get("type") or "application/octet-stream"), as_attachment=True, conditional=True, download_name=filename)
 
 
 @app.post("/api/translate_message")
