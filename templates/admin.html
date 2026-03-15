@@ -4,7 +4,7 @@
 <header class="topbar compact">
   <div>
     <div class="brand">{{ t('admin_dashboard') }}</div>
-    <div class="muted">root / admin console</div>
+    <div class="muted">{{ t('root_admin_console') }}</div>
   </div>
   <div class="top-actions">
     <div class="lang-switch">
@@ -19,7 +19,7 @@
   <div class="panel panel-glow">
     <div class="section-head">
       <h2>{{ t('server_overview') }}</h2>
-      <span class="section-tag">Live</span>
+      <span class="section-tag">{{ t('live_tag') }}</span>
     </div>
     <div class="metric-grid admin-metric-grid">
       <div class="metric-card metric-chart-card"><div class="metric-ring" id="cpuRing" style="--pct: {{ system_stats.cpu_percent }};"><span>CPU</span><strong id="cpuMetric">{{ system_stats.cpu_percent }}%</strong></div><div class="metric-bar"><i id="cpuBar" style="width: {{ system_stats.cpu_percent }}%;"></i></div></div>
@@ -115,7 +115,7 @@
     <div class="list-item">
       <div>
         <div class="item-title">{{ r.room_id }}</div>
-        <div class="muted">{{ r.host_name }} · participants: {{ r.participant_count }}</div>
+        <div class="muted">{{ r.host_name }} · {{ t('participants_label')|lower if lang == 'en' else t('participants_label') }}: {{ r.participant_count }}</div>
       </div>
     </div>
   {% else %}
@@ -126,7 +126,7 @@
 <section class="panel panel-glow">
   <div class="section-head">
     <h2>{{ t('password_reset_requests') }}</h2>
-    <span class="section-tag">Support</span>
+    <span class="section-tag">{{ t('support_tag') }}</span>
   </div>
   <div class="list-panel">
     {% for item in reset_requests %}

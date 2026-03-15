@@ -31,7 +31,7 @@
       <select name="preferred_locale">
         <option value="auto" {% if preferred_locale == 'auto' %}selected{% endif %}>{{ t('auto_detect') }}</option>
         <option value="zh" {% if preferred_locale == 'zh' %}selected{% endif %}>{{ t('lang_zh') }}</option>
-        <option value="en" {% if preferred_locale == 'en' %}selected{% endif %}>English</option>
+        <option value="en" {% if preferred_locale == 'en' %}selected{% endif %}>{{ t('lang_en') }}</option>
       </select>
       <label>{{ t('default_chat_attachment_permission') }}</label>
       <select name="default_attachment_permission">

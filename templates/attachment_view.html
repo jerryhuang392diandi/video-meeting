@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ '附件查看' if lang == 'zh' else 'Attachment view' }}</title>
+  <title>{{ t('attachment_view') }}</title>
   <style>
     body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#081225;color:#eef4ff} 
     .wrap{max-width:980px;margin:0 auto;padding:24px} 
@@ -25,13 +25,13 @@
         <div class="badge">{{ (attachment.kind or attachment.name.split('.')[-1] if '.' in attachment.name else 'FILE')|upper }}</div>
         <div class="meta">
           <h1>{{ filename }}</h1>
-          <p>{{ '权限：可下载' if attachment.permission == 'download' and lang == 'zh' else ('权限：仅查看' if lang == 'zh' else ('Permission: Download allowed' if attachment.permission == 'download' else 'Permission: View only')) }}</p>
-          <p>{{ '大小' if lang == 'zh' else 'Size' }}：{{ '%.2f MB'|format((attachment.size or 0)/1024/1024) }}</p>
+          <p>{{ t('attachment_permission_download') if attachment.permission == 'download' else t('attachment_permission_view') }}</p>
+          <p>{{ t('size') }}：{{ '%.2f MB'|format((attachment.size or 0)/1024/1024) }}</p>
         </div>
       </div>
       <div class="actions">
-        {% if raw_url %}<a class="btn primary" href="{{ raw_url }}" target="_blank">{{ '新窗口查看' if lang == 'zh' else 'Open raw preview' }}</a>{% endif %}
-        {% if allow_download and download_url %}<a class="btn" href="{{ download_url }}">{{ '下载文件' if lang == 'zh' else 'Download file' }}</a>{% endif %}
+        {% if raw_url %}<a class="btn primary" href="{{ raw_url }}" target="_blank">{{ t('open_raw_preview') }}</a>{% endif %}
+        {% if allow_download and download_url %}<a class="btn" href="{{ download_url }}">{{ t('download_file') }}</a>{% endif %}
       </div>
       <div class="preview">
         {% if raw_url and (attachment.kind == 'image') %}
@@ -48,9 +48,9 @@
           <iframe src="{{ raw_url }}"></iframe>
         {% else %}
           <div class="note">
-            <div class="warn">{{ '当前文件类型使用统一文件卡片展示。' if lang == 'zh' else 'This file type is shown in a standardized file card.' }}</div>
-            <div>{{ '如果发送者设置为仅查看，且该文件类型不支持浏览器在线预览，则这里不会触发直接下载。' if lang == 'zh' else 'If the sender selected view-only and this file type is not previewable in the browser, this page will not trigger a direct download.' }}</div>
-            <div style="margin-top:10px;">{{ '可在线预览的类型：图片、视频、音频、PDF、文本。' if lang == 'zh' else 'Inline preview types: image, video, audio, PDF, and text.' }}</div>
+            <div class="warn">{{ t('attachment_card_notice') }}</div>
+            <div>{{ t('attachment_preview_notice') }}</div>
+            <div style="margin-top:10px;">{{ t('attachment_inline_types') }}</div>
           </div>
         {% endif %}
       </div>

@@ -35,7 +35,7 @@
     <div class="status-grid">
       <div><span>{{ t('admin_role') }}</span><strong>{{ t('yes') if current_user.is_admin else t('no') }}</strong></div>
       <div><span>{{ t('language') }}</span><strong>{{ t('lang_zh') if lang == 'zh' else t('lang_en') }}</strong></div>
-      <div><span>Mode</span><strong>Single-device</strong></div>
+      <div><span>{{ t('meeting_mode') }}</span><strong>{{ t('single_device_mode') }}</strong></div>
       <div><span>{{ t('status') }}</span><strong>{{ t('room_ready') }}</strong></div>
     </div>
   </div>
@@ -45,7 +45,7 @@
   <div class="panel panel-glow">
     <div class="section-head">
       <h2>{{ t('create_room') }}</h2>
-      <span class="section-tag">Host</span>
+      <span class="section-tag">{{ t('host_tag') }}</span>
     </div>
     <label>{{ t('host_name') }}</label>
     <input id="hostName" maxlength="32" value="{{ preferred_display_name }}" />
@@ -56,7 +56,7 @@
   <div class="panel panel-glow">
     <div class="section-head">
       <h2>{{ t('join_room') }}</h2>
-      <span class="section-tag">Guest</span>
+      <span class="section-tag">{{ t('guest_tag') }}</span>
     </div>
     <label>{{ t('display_name') }}</label>
     <input id="joinName" maxlength="32" value="{{ preferred_display_name }}" />

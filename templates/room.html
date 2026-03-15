@@ -35,7 +35,7 @@
     <input id="virtualBgInput" type="file" accept="image/*" class="hidden" />
     <div id="statusBox" class="notice">{{ t('room_ready') }}</div>
     <div class="mini-panel">
-      <div class="muted">{{ '个人资料' if lang == 'zh' else 'Profile' }}</div>
+      <div class="muted">{{ t('profile_section') }}</div>
       <label>{{ t('display_name') }}</label>
       <div class="row-compact">
         <input id="displayNameInput" maxlength="32" value="{{ preferred_display_name }}" />
@@ -43,21 +43,21 @@
       </div>
     </div>
     <div class="mini-panel">
-      <div class="muted">{{ '入会默认偏好' if lang == 'zh' else 'Join defaults' }}</div>
+      <div class="muted">{{ t('join_defaults') }}</div>
       <div class="status-grid compact-grid">
-        <div><span>{{ '弹幕显示' if lang == 'zh' else 'Danmaku display' }}</span><strong>{{ ('开启' if default_danmaku_enabled else '关闭') if lang == 'zh' else ('On' if default_danmaku_enabled else 'Off') }}</strong></div>
-        <div><span>{{ '摄像头' if lang == 'zh' else 'Camera' }}</span><strong>{{ ('开启' if auto_enable_camera else '关闭') if lang == 'zh' else ('On' if auto_enable_camera else 'Off') }}</strong></div>
-        <div><span>{{ '麦克风' if lang == 'zh' else 'Mic' }}</span><strong>{{ ('开启' if auto_enable_microphone else '关闭') if lang == 'zh' else ('On' if auto_enable_microphone else 'Off') }}</strong></div>
+        <div><span>{{ t('danmaku_display') }}</span><strong>{{ ('开启' if default_danmaku_enabled else '关闭') if lang == 'zh' else ('On' if default_danmaku_enabled else 'Off') }}</strong></div>
+        <div><span>{{ t('camera') }}</span><strong>{{ ('开启' if auto_enable_camera else '关闭') if lang == 'zh' else ('On' if auto_enable_camera else 'Off') }}</strong></div>
+        <div><span>{{ t('mic') }}</span><strong>{{ ('开启' if auto_enable_microphone else '关闭') if lang == 'zh' else ('On' if auto_enable_microphone else 'Off') }}</strong></div>
       </div>
-      <a class="ghost-btn wide-link mt-12" href="{{ url_for('account_page') }}">{{ '前往个人偏好' if lang == 'zh' else 'Open account preferences' }}</a>
+      <a class="ghost-btn wide-link mt-12" href="{{ url_for('account_page') }}">{{ t('open_account_preferences') }}</a>
     </div>
     <div class="mini-panel">
-      <div class="muted">{{ '快速切换会议' if lang == 'zh' else 'Quick switch room' }}</div>
+      <div class="muted">{{ t('quick_switch_room') }}</div>
       <label>{{ t('room_id') }}</label>
       <input id="switchRoomId" maxlength="6" value="{{ room_id }}" />
       <label>{{ t('room_password') }}</label>
       <input id="switchRoomPassword" maxlength="16" value="{{ room_password }}" />
-      <button class="ghost-btn wide-link mt-12" id="switchRoomBtn">{{ '切换会议' if lang == 'zh' else 'Switch room' }}</button>
+      <button class="ghost-btn wide-link mt-12" id="switchRoomBtn">{{ t('switch_room') }}</button>
     </div>
     <div class="mini-panel">
       <div class="muted">{{ t('invite_link') }}</div>
@@ -83,55 +83,55 @@
       <div id="videoSidebar" class="video-sidebar"></div>
     </div>
       <div id="danmakuLayer" class="danmaku-layer"></div>
-      <button id="chatShowBtn" class="chat-side-toggle chat-show-btn hidden" type="button">{{ '聊天' if lang == 'zh' else 'Chat' }} ◀</button>
+      <button id="chatShowBtn" class="chat-side-toggle chat-show-btn hidden" type="button">{{ t('chat_short') }} ◀</button>
     <div id="chatWindow" class="chat-window">
-      <button id="chatMobileHandle" class="chat-mobile-handle" type="button" aria-label="{{ '拖动聊天窗口' if lang == 'zh' else 'Drag chat panel' }}">
+      <button id="chatMobileHandle" class="chat-mobile-handle" type="button" aria-label="{{ t('drag_chat_panel') }}">
         <span></span>
       </button>
       <div id="chatHeader" class="chat-header">
         <div>
-          <strong>{{ '会议聊天' if lang == 'zh' else 'Meeting chat' }}</strong>
-          <div class="muted small-note">{{ '固定在右侧，可@成员，可切换公开/仅主持人' if lang == 'zh' else 'Fixed on the right, supports @mentions and public/host-only chat' }}</div>
+          <strong>{{ t('meeting_chat') }}</strong>
+          <div class="muted small-note">{{ t('meeting_chat_desc') }}</div>
         </div>
         <div class="row-compact">
-          <button class="card-btn" id="chatHideBtn">{{ '隐藏' if lang == 'zh' else 'Hide' }} →</button>
+          <button class="card-btn" id="chatHideBtn">{{ t('hide') }} →</button>
           <button class="card-btn" id="mentionBtn">@</button>
-          <button class="card-btn" id="clearChatBtn">{{ '清空' if lang == 'zh' else 'Clear' }}</button>
-          {% if is_host %}<button class="card-btn" id="toggleDanmakuBtn">{{ '弹幕' if lang == 'zh' else 'Danmaku' }}</button>{% endif %}
+          <button class="card-btn" id="clearChatBtn">{{ t('clear') }}</button>
+          {% if is_host %}<button class="card-btn" id="toggleDanmakuBtn">{{ t('danmaku_display') }}</button>{% endif %}
         </div>
       </div>
       <div class="chat-toolbar">
-        <button class="chat-mode-btn active" data-mode="all">{{ '所有人可见' if lang == 'zh' else 'Everyone' }}</button>
-        <button class="chat-mode-btn" data-mode="host">{{ '仅主持人可见' if lang == 'zh' else 'Host only' }}</button>
+        <button class="chat-mode-btn active" data-mode="all">{{ t('everyone_visible') }}</button>
+        <button class="chat-mode-btn" data-mode="host">{{ t('host_only') }}</button>
       </div>
       <div id="mentionPicker" class="picker-panel hidden"></div>
       <div id="chatMessages" class="chat-messages"></div>
       <div id="chatAttachmentPreview" class="chat-attachment-preview hidden"></div>
       <div class="chat-file-permission-row">
-        <label>{{ '附件权限' if lang == 'zh' else 'Attachment permission' }}</label>
+        <label>{{ t('attachment_permission') }}</label>
         <select id="chatAttachmentPermission">
-          <option value="download" {% if (current_user.default_attachment_permission or 'download') == 'download' %}selected{% endif %}>{{ '可下载' if lang == 'zh' else 'Download allowed' }}</option>
-          <option value="view" {% if (current_user.default_attachment_permission or '') == 'view' %}selected{% endif %}>{{ '仅查看' if lang == 'zh' else 'View only' }}</option>
+          <option value="download" {% if (current_user.default_attachment_permission or 'download') == 'download' %}selected{% endif %}>{{ t('download_allowed') }}</option>
+          <option value="view" {% if (current_user.default_attachment_permission or '') == 'view' %}selected{% endif %}>{{ t('view_only') }}</option>
         </select>
       </div>
       <div class="chat-composer">
         <div class="chat-input-row">
-          <textarea id="chatInput" rows="3" placeholder="{{ '输入消息，支持文本/表情/图片/视频/文档/压缩包' if lang == 'zh' else 'Type a message. Text, emoji, images, videos, documents, and archives are supported.' }}"></textarea>
+          <textarea id="chatInput" rows="3" placeholder="{{ t('chat_input_placeholder') }}"></textarea>
         </div>
         <div id="emojiPopover" class="emoji-popover hidden">
           <div class="emoji-popover-head">
-            <strong>{{ '选择表情' if lang == 'zh' else 'Choose emoji' }}</strong>
-            <button class="card-btn" id="emojiCloseBtn" type="button">{{ '收起' if lang == 'zh' else 'Close' }}</button>
+            <strong>{{ t('choose_emoji') }}</strong>
+            <button class="card-btn" id="emojiCloseBtn" type="button">{{ t('close') }}</button>
           </div>
           <div id="emojiPicker" class="emoji-picker"></div>
         </div>
         <div class="chat-actions">
           <div class="chat-actions-left">
-            <label class="ghost-btn attachment-btn">{{ '图片/视频' if lang == 'zh' else 'Media' }}<input id="chatMediaInput" type="file" accept="image/*,video/*,.heic,.heif,.avi,.3gp" class="hidden" /></label>
-            <label class="ghost-btn attachment-btn">{{ '文档/PPT/压缩包' if lang == 'zh' else 'Docs / PPT / Archive' }}<input id="chatDocInput" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,.rar,.7z" class="hidden" /></label>
-            <button class="ghost-btn" id="emojiBtn" type="button">😊 {{ '表情' if lang == 'zh' else 'Emoji' }}</button>
+            <label class="ghost-btn attachment-btn">{{ t('media_short') }}<input id="chatMediaInput" type="file" accept="image/*,video/*,.heic,.heif,.avi,.3gp" class="hidden" /></label>
+            <label class="ghost-btn attachment-btn">{{ t('docs_archive_short') }}<input id="chatDocInput" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,.rar,.7z" class="hidden" /></label>
+            <button class="ghost-btn" id="emojiBtn" type="button">😊 {{ t('emoji') }}</button>
           </div>
-          <button class="primary-btn slim-btn" id="sendChatBtn">{{ '发送' if lang == 'zh' else 'Send' }}</button>
+          <button class="primary-btn slim-btn" id="sendChatBtn">{{ t('send') }}</button>
         </div>
       </div>
     </div>
