@@ -2828,3 +2828,64 @@ video:-webkit-full-screen {
     max-height: clamp(220px, 34vh, 340px);
   }
 }
+
+/* v6.4.10 strict desktop meeting grid fix */
+@media (min-width: 961px) {
+  .video-panel {
+    align-items: start;
+  }
+
+  .video-stage.grid-layout {
+    min-height: clamp(520px, 70vh, 820px);
+  }
+
+  .video-stage.grid-layout .video-main {
+    display: grid;
+    grid-auto-flow: row;
+    grid-auto-rows: 1fr;
+    align-content: start;
+    gap: 16px;
+    min-height: 0;
+    height: auto;
+  }
+
+  .video-stage.grid-layout.grid-1 .video-main {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .video-stage.grid-layout.grid-2 .video-main {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .video-stage.grid-layout.grid-3 .video-main {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .video-stage.grid-layout .video-card {
+    width: 100%;
+    min-width: 0;
+    min-height: 0 !important;
+    max-height: none !important;
+    aspect-ratio: 16 / 9;
+    height: auto;
+  }
+
+  .video-stage.grid-layout .video-card,
+  .video-stage.grid-layout .video-card video,
+  .video-stage.grid-layout .video-card .video-el {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+
+  .video-stage.grid-layout .video-main:has(.video-card:nth-child(1):last-child) {
+    grid-template-columns: minmax(0, 1fr) !important;
+    max-width: min(980px, 100%);
+    margin: 0 auto;
+  }
+
+  .video-pager {
+    justify-content: center;
+    margin-top: 14px;
+  }
+}
