@@ -4,3 +4,4 @@ flask-sqlalchemy
 flask-login
 python-dotenv
 simple-websocket
+pillow

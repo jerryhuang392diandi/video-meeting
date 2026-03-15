@@ -2071,3 +2071,6 @@ video:-webkit-full-screen {
     min-width:0;
   }
 }
+
+
+.chat-file-card.standardized{display:flex;align-items:center;gap:12px}.chat-file-badge{min-width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:800;letter-spacing:.5px;background:rgba(122,168,255,.18);border:1px solid rgba(122,168,255,.28);color:#dbe8ff}.chat-file-card.standardized .chat-file-meta{flex:1;min-width:0}.chat-file-card.standardized .chat-file-links{display:flex;flex-wrap:wrap;gap:8px}

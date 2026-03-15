@@ -180,6 +180,10 @@ const TEXT_CHAT_CLEARED_SELF = {{ ('仅清空了你的聊天面板，主持人�
 const TEXT_CHAT_CLEARED_ALL = {{ ('主持人已清空所有人的聊天记录' if lang == 'zh' else 'The host cleared the chat history for everyone.')|tojson }};
 const TEXT_COPY_SUCCESS = {{ ('文本已复制' if lang == 'zh' else 'Text copied')|tojson }};
 const TEXT_UPLOAD_FAILED = {{ ('附件上传失败' if lang == 'zh' else 'Attachment upload failed')|tojson }};
+const TEXT_ATTACHMENT_LIMIT_IMAGE = {{ ('图片请控制在 8MB 以内，系统会自动压缩' if lang == 'zh' else 'Please keep images under 8MB; they will be compressed automatically')|tojson }};
+const TEXT_ATTACHMENT_LIMIT_VIDEO = {{ ('视频请控制在 20MB 以内' if lang == 'zh' else 'Please keep videos under 20MB')|tojson }};
+const TEXT_ATTACHMENT_LIMIT_FILE = {{ ('文档或压缩包请控制在 12MB 以内' if lang == 'zh' else 'Please keep documents or archives under 12MB')|tojson }};
+const TEXT_ROOM_STORAGE_LIMIT = {{ ('当前会议附件空间已接近上限，请先清理聊天或稍后再试' if lang == 'zh' else 'Meeting attachment storage is nearly full. Please clear chat or try later')|tojson }};
 
 const socket = io();
 const rtcConfig = { iceServers: {{ turn_ice_servers|tojson }}, iceTransportPolicy: 'relay' };
@@ -847,20 +851,39 @@ function hideFloatingPanels() {
   chatContextMenu?.classList.add('hidden');
 }
 
+function getAttachmentExt(name) {
+  const str = String(name || '');
+  const idx = str.lastIndexOf('.');
+  return idx >= 0 ? str.slice(idx + 1).toUpperCase() : 'FILE';
+}
+
+function getAttachmentBadge(attachment) {
+  const ext = getAttachmentExt(attachment?.name);
+  if ((attachment?.kind || '') === 'pdf') return 'PDF';
+  if ((attachment?.kind || '') === 'image') return 'IMG';
+  if ((attachment?.kind || '') === 'video') return 'VIDEO';
+  if ((attachment?.kind || '') === 'audio') return 'AUDIO';
+  return ext.slice(0, 6) || 'FILE';
+}
+
 function buildAttachmentHtml(attachment) {
   if (!attachment) return '';
   const name = escapeHtml(attachment.name || 'attachment');
   const permissionLabel = attachment.permission === 'download'
     ? {{ ('可下载' if lang == 'zh' else 'Download allowed')|tojson }}
     : {{ ('仅查看' if lang == 'zh' else 'View only')|tojson }};
-  if (attachment.viewUrl && attachment.kind === 'image') {
-    return `<div class="chat-attachment-block"><img class="chat-media" src="${attachment.viewUrl}" alt="${name}" /><div class="chat-file-meta"><span>${name}</span><span>${permissionLabel}</span></div>${attachment.downloadUrl ? `<div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">{{ '查看' if lang == 'zh' else 'View' }}</a><a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">{{ '下载' if lang == 'zh' else 'Download' }}</a></div>` : `<div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">{{ '查看' if lang == 'zh' else 'View' }}</a></div>`}</div>`;
+  const openLabel = attachment.permission === 'download'
+    ? {{ ('查看/打开' if lang == 'zh' else 'Open' )|tojson }}
+    : {{ ('查看' if lang == 'zh' else 'View' )|tojson }};
+  const rawUrl = attachment.rawUrl || '';
+  if (rawUrl && attachment.kind === 'image') {
+    return `<div class="chat-attachment-block"><img class="chat-media" src="${rawUrl}" alt="${name}" /><div class="chat-file-meta"><span>${name}</span><span>${permissionLabel}</span></div><div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">${openLabel}</a>${attachment.downloadUrl ? `<a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">{{ '下载' if lang == 'zh' else 'Download' }}</a>` : ''}</div></div>`;
   }
-  if (attachment.viewUrl && attachment.kind === 'video') {
-    return `<div class="chat-attachment-block"><video class="chat-media" src="${attachment.viewUrl}" controls playsinline></video><div class="chat-file-meta"><span>${name}</span><span>${permissionLabel}</span></div>${attachment.downloadUrl ? `<div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">{{ '查看' if lang == 'zh' else 'View' }}</a><a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">{{ '下载' if lang == 'zh' else 'Download' }}</a></div>` : `<div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">{{ '查看' if lang == 'zh' else 'View' }}</a></div>`}</div>`;
+  if (rawUrl && attachment.kind === 'video') {
+    return `<div class="chat-attachment-block"><video class="chat-media" src="${rawUrl}" controls playsinline></video><div class="chat-file-meta"><span>${name}</span><span>${permissionLabel}</span></div><div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">${openLabel}</a>${attachment.downloadUrl ? `<a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">{{ '下载' if lang == 'zh' else 'Download' }}</a>` : ''}</div></div>`;
   }
   if (attachment.viewUrl) {
-    return `<div class="chat-attachment-block chat-file-card"><div class="chat-file-meta"><strong>${name}</strong><span>${permissionLabel}</span></div><div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">{{ '打开文件' if lang == 'zh' else 'Open file' }}</a>${attachment.downloadUrl ? `<a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">{{ '下载' if lang == 'zh' else 'Download' }}</a>` : ''}</div></div>`;
+    return `<div class="chat-attachment-block chat-file-card standardized"><div class="chat-file-badge">${getAttachmentBadge(attachment)}</div><div class="chat-file-meta"><strong>${name}</strong><span>${permissionLabel}</span></div><div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">${openLabel}</a>${attachment.downloadUrl ? `<a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">{{ '下载' if lang == 'zh' else 'Download' }}</a>` : ''}</div></div>`;
   }
   return '';
 }
@@ -1088,7 +1111,15 @@ async function sendChatMessage() {
       attachmentPayload = await uploadPendingAttachment();
     } catch (err) {
       console.error(err);
-      setStatus(TEXT_UPLOAD_FAILED, 'error');
+      const msg = String(err?.message || '');
+      if (msg.includes('room_storage_limit') || msg.includes('server_storage_limit')) {
+        setStatus(TEXT_ROOM_STORAGE_LIMIT, 'warning');
+      } else if (msg.includes('file_too_large')) {
+        const file = pendingAttachment?.file;
+        setStatus(file?.type?.startsWith('image/') ? TEXT_ATTACHMENT_LIMIT_IMAGE : (file?.type?.startsWith('video/') ? TEXT_ATTACHMENT_LIMIT_VIDEO : TEXT_ATTACHMENT_LIMIT_FILE), 'warning');
+      } else {
+        setStatus(TEXT_UPLOAD_FAILED, 'error');
+      }
       return;
     }
   }
@@ -1226,9 +1257,11 @@ function initChatUi() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const limit = 25 * 1024 * 1024;
+      const isImage = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+      const limit = isImage ? (8 * 1024 * 1024) : (isVideo ? (20 * 1024 * 1024) : (12 * 1024 * 1024));
       if (file.size > limit) {
-        setStatus({{ ('单个附件请控制在 25MB 以内' if lang == 'zh' else 'Please keep each attachment under 25MB')|tojson }}, 'warning');
+        setStatus(isImage ? TEXT_ATTACHMENT_LIMIT_IMAGE : (isVideo ? TEXT_ATTACHMENT_LIMIT_VIDEO : TEXT_ATTACHMENT_LIMIT_FILE), 'warning');
         return;
       }
       const ext = (file.name.split('.').pop() || '').toLowerCase();

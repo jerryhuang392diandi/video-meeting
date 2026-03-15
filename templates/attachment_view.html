@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="{{ 'zh-CN' if lang == 'zh' else 'en' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ '附件查看' if lang == 'zh' else 'Attachment view' }}</title>
+  <style>
+    body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#081225;color:#eef4ff} 
+    .wrap{max-width:980px;margin:0 auto;padding:24px} 
+    .card{background:rgba(12,24,48,.96);border:1px solid rgba(255,255,255,.08);border-radius:22px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+    .head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+    .badge{min-width:64px;height:64px;border-radius:16px;display:flex;align-items:center;justify-content:center;background:rgba(122,168,255,.18);border:1px solid rgba(122,168,255,.28);font-weight:800}
+    .meta{flex:1;min-width:0}.meta h1{font-size:22px;margin:0 0 8px;word-break:break-word}.meta p{margin:4px 0;color:#b8c7e6}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 16px;border-radius:12px;text-decoration:none;border:1px solid rgba(255,255,255,.08);color:#eef4ff;background:rgba(255,255,255,.05)}
+    .btn.primary{background:linear-gradient(135deg,#7aa8ff,#67d4ff);color:#081225;border:none;font-weight:700}
+    .preview{margin-top:18px;border-radius:18px;overflow:hidden;background:#020814;border:1px solid rgba(255,255,255,.08);min-height:280px;display:flex;align-items:center;justify-content:center}
+    .preview iframe,.preview img,.preview video,.preview audio,.preview pre{width:100%;max-width:100%;border:0}.preview img,.preview video{display:block;max-height:78vh;object-fit:contain;background:#000}.preview iframe{height:78vh;background:#fff}.preview pre{margin:0;padding:18px;white-space:pre-wrap;word-break:break-word;color:#eaf2ff;background:#06111f;min-height:280px;box-sizing:border-box}
+    .note{padding:18px;color:#b8c7e6;line-height:1.7}.warn{color:#ffd6a6}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="head">
+        <div class="badge">{{ (attachment.kind or attachment.name.split('.')[-1] if '.' in attachment.name else 'FILE')|upper }}</div>
+        <div class="meta">
+          <h1>{{ filename }}</h1>
+          <p>{{ '权限：可下载' if attachment.permission == 'download' and lang == 'zh' else ('权限：仅查看' if lang == 'zh' else ('Permission: Download allowed' if attachment.permission == 'download' else 'Permission: View only')) }}</p>
+          <p>{{ '大小' if lang == 'zh' else 'Size' }}：{{ '%.2f MB'|format((attachment.size or 0)/1024/1024) }}</p>
+        </div>
+      </div>
+      <div class="actions">
+        {% if raw_url %}<a class="btn primary" href="{{ raw_url }}" target="_blank">{{ '新窗口查看' if lang == 'zh' else 'Open raw preview' }}</a>{% endif %}
+        {% if allow_download and download_url %}<a class="btn" href="{{ download_url }}">{{ '下载文件' if lang == 'zh' else 'Download file' }}</a>{% endif %}
+      </div>
+      <div class="preview">
+        {% if raw_url and (attachment.kind == 'image') %}
+          <img src="{{ raw_url }}" alt="{{ filename }}">
+        {% elif raw_url and (attachment.kind == 'video') %}
+          <video src="{{ raw_url }}" controls playsinline></video>
+        {% elif raw_url and (attachment.kind == 'audio') %}
+          <audio src="{{ raw_url }}" controls></audio>
+        {% elif raw_url and ((attachment.type or '') == 'application/pdf' or filename.lower().endswith('.pdf')) %}
+          <iframe src="{{ raw_url }}"></iframe>
+        {% elif raw_url and ((attachment.type or '').startswith('text/')) %}
+          <iframe src="{{ raw_url }}"></iframe>
+        {% else %}
+          <div class="note">
+            <div class="warn">{{ '当前文件类型使用统一文件卡片展示。' if lang == 'zh' else 'This file type is shown in a standardized file card.' }}</div>
+            <div>{{ '如果发送者设置为仅查看，且该文件类型不支持浏览器在线预览，则这里不会触发直接下载。' if lang == 'zh' else 'If the sender selected view-only and this file type is not previewable in the browser, this page will not trigger a direct download.' }}</div>
+            <div style="margin-top:10px;">{{ '可在线预览的类型：图片、视频、音频、PDF、文本。' if lang == 'zh' else 'Inline preview types: image, video, audio, PDF, and text.' }}</div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</body>
+</html>

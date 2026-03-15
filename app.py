@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import uuid
 from urllib.parse import quote, urlencode
 from urllib.request import urlopen, Request
 from urllib.error import URLError
@@ -19,6 +20,12 @@ from functools import wraps
 
 from flask import Flask, abort, after_this_request, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.utils import secure_filename
+
+try:
+    from PIL import Image, ImageOps
+except Exception:
+    Image = None
+    ImageOps = None
 from flask_login import (
     LoginManager,
     UserMixin,
@@ -54,7 +61,12 @@ sid_to_user = {}
 user_active_sids = {}
 CHAT_UPLOAD_DIR = os.path.join(INSTANCE_DIR, "chat_uploads")
 os.makedirs(CHAT_UPLOAD_DIR, exist_ok=True)
-CHAT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+CHAT_MAX_UPLOAD_BYTES = 12 * 1024 * 1024
+CHAT_IMAGE_MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+CHAT_VIDEO_MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+CHAT_ROOM_STORAGE_LIMIT_BYTES = 120 * 1024 * 1024
+CHAT_GLOBAL_STORAGE_LIMIT_BYTES = 512 * 1024 * 1024
+CHAT_IMAGE_MAX_DIMENSION = 1920
 ALLOWED_CHAT_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "mp4", "webm", "mov", "m4v", "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "txt", "zip", "rar", "7z"}
 
 TRANSLATIONS = {
@@ -772,6 +784,7 @@ def end_meeting_by_room_id(room_id, message_key=None):
         meeting = Meeting.query.filter_by(room_id=room_id).first()
         if not meeting:
             cancel_room_expiry(room_id)
+            shutil.rmtree(os.path.join(CHAT_UPLOAD_DIR, room_id), ignore_errors=True)
             rooms.pop(room_id, None)
             return
         if meeting.status != "ended":
@@ -912,6 +925,7 @@ def finalize_room_if_still_empty(room_id):
             meeting.ended_at = datetime.utcnow()
             db.session.commit()
 
+        shutil.rmtree(os.path.join(CHAT_UPLOAD_DIR, room_id), ignore_errors=True)
         rooms.pop(room_id, None)
 
 
@@ -1631,6 +1645,74 @@ def _allowed_chat_file(filename: str) -> bool:
     return bool(suffix and suffix in ALLOWED_CHAT_EXTENSIONS)
 
 
+def _dir_size_bytes(path: str) -> int:
+    total = 0
+    if not os.path.isdir(path):
+        return 0
+    for root, _, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.path.getsize(os.path.join(root, name))
+            except OSError:
+                continue
+    return total
+
+
+def _enforce_chat_storage_limits(room_id: str, incoming_size: int):
+    room_dir = os.path.join(CHAT_UPLOAD_DIR, room_id)
+    room_size = _dir_size_bytes(room_dir)
+    total_size = _dir_size_bytes(CHAT_UPLOAD_DIR)
+    if room_size + incoming_size > CHAT_ROOM_STORAGE_LIMIT_BYTES:
+        return "room_storage_limit"
+    if total_size + incoming_size > CHAT_GLOBAL_STORAGE_LIMIT_BYTES:
+        return "server_storage_limit"
+    return None
+
+
+def _optimize_image_to_path(upload, original_name: str, dest_dir: str):
+    if Image is None or ImageOps is None:
+        return None
+    suffix = (Path(original_name).suffix or '').lower()
+    if suffix == '.gif':
+        return None
+    upload.stream.seek(0)
+    try:
+        with Image.open(upload.stream) as img:
+            img = ImageOps.exif_transpose(img)
+            width, height = img.size
+            if max(width, height) > CHAT_IMAGE_MAX_DIMENSION:
+                img.thumbnail((CHAT_IMAGE_MAX_DIMENSION, CHAT_IMAGE_MAX_DIMENSION))
+            base_name = secure_filename(Path(original_name).stem) or 'image'
+            if img.mode in ('RGBA', 'LA', 'P') and suffix in {'.png', '.webp'}:
+                ext = '.webp'
+                content_type = 'image/webp'
+                final_name = f"{base_name}{ext}"
+                stored_name = f"{uuid.uuid4().hex}_{final_name}"
+                abs_path = os.path.join(dest_dir, stored_name)
+                img.save(abs_path, format='WEBP', quality=82, method=6)
+            else:
+                ext = '.jpg'
+                content_type = 'image/jpeg'
+                final_name = f"{base_name}{ext}"
+                stored_name = f"{uuid.uuid4().hex}_{final_name}"
+                abs_path = os.path.join(dest_dir, stored_name)
+                if img.mode not in ('RGB', 'L'):
+                    img = img.convert('RGB')
+                elif img.mode == 'L':
+                    img = img.convert('RGB')
+                img.save(abs_path, format='JPEG', quality=84, optimize=True, progressive=True)
+            return {
+                'path': abs_path,
+                'stored_name': stored_name,
+                'display_name': final_name[:120],
+                'content_type': content_type,
+                'size': os.path.getsize(abs_path),
+            }
+    except Exception:
+        upload.stream.seek(0)
+        return None
+
+
 def _attachment_kind(filename: str, content_type: str) -> str:
     content_type = (content_type or "").lower()
     suffix = (Path(filename or "").suffix or "").lower()
@@ -1656,6 +1738,33 @@ def _find_attachment_by_token(room_id: str, token: str):
     return room, None
 
 
+def _attachment_extension(filename: str) -> str:
+    return (Path(filename or "").suffix or "").lower()
+
+def _attachment_is_inline_previewable(attachment: dict | None) -> bool:
+    if not isinstance(attachment, dict):
+        return False
+    kind = str(attachment.get("kind") or "").lower()
+    ctype = str(attachment.get("type") or "").lower()
+    ext = _attachment_extension(str(attachment.get("name") or ""))
+    if kind in {"image", "video", "audio"}:
+        return True
+    if ctype.startswith("text/"):
+        return True
+    if ctype == "application/pdf" or ext == ".pdf":
+        return True
+    return False
+
+def _chat_attachment_abs_path(room_id: str, attachment: dict):
+    filename = attachment.get("name") or f"file-{attachment.get('token') or ''}"
+    return os.path.join(CHAT_UPLOAD_DIR, room_id, f"{attachment.get('token')}_{filename}")
+
+def _can_access_room_attachment(room: dict | None) -> bool:
+    if not room:
+        return False
+    allowed_user_ids = {info.get("user_id") for info in room.get("participants", {}).values() if info.get("user_id")}
+    return current_user.id in allowed_user_ids or current_user.id == room.get("host_user_id")
+
 @app.post("/api/chat_upload")
 @login_required
 def api_chat_upload():
@@ -1675,26 +1784,56 @@ def api_chat_upload():
     if not _allowed_chat_file(upload.filename):
         return jsonify({"ok": False, "error": "file_type_not_allowed"}), 400
     upload.stream.seek(0, os.SEEK_END)
-    size = upload.stream.tell()
+    original_size = upload.stream.tell()
     upload.stream.seek(0)
-    if size > CHAT_MAX_UPLOAD_BYTES:
-        return jsonify({"ok": False, "error": "file_too_large"}), 413
+    original_name = secure_filename(upload.filename) or "attachment"
+    content_type = (upload.mimetype or "application/octet-stream").strip()
+    kind = _attachment_kind(original_name, content_type)
+    size_limit = CHAT_MAX_UPLOAD_BYTES
+    if kind == 'image':
+        size_limit = CHAT_IMAGE_MAX_UPLOAD_BYTES
+    elif kind == 'video':
+        size_limit = CHAT_VIDEO_MAX_UPLOAD_BYTES
+    if original_size > size_limit:
+        return jsonify({"ok": False, "error": "file_too_large", "limit": size_limit}), 413
+    quota_error = _enforce_chat_storage_limits(room_id, original_size)
+    if quota_error:
+        return jsonify({"ok": False, "error": quota_error}), 507
+
     token = secrets.token_urlsafe(16)
-    original_name = secure_filename(upload.filename) or f"file-{token}"
     room_dir = os.path.join(CHAT_UPLOAD_DIR, room_id)
     os.makedirs(room_dir, exist_ok=True)
-    stored_name = f"{token}_{original_name}"
-    abs_path = os.path.join(room_dir, stored_name)
-    upload.save(abs_path)
-    content_type = (upload.mimetype or "application/octet-stream").strip()
+
+    optimized = _optimize_image_to_path(upload, original_name, room_dir) if kind == 'image' else None
+    if optimized:
+        if _enforce_chat_storage_limits(room_id, optimized['size']):
+            try:
+                os.remove(optimized['path'])
+            except OSError:
+                pass
+            return jsonify({"ok": False, "error": "room_storage_limit"}), 507
+        abs_path = optimized['path']
+        stored_name = os.path.basename(abs_path)
+        display_name = optimized['display_name']
+        content_type = optimized['content_type']
+        size = optimized['size']
+    else:
+        stored_name = f"{token}_{original_name}"
+        abs_path = os.path.join(room_dir, stored_name)
+        upload.stream.seek(0)
+        upload.save(abs_path)
+        size = os.path.getsize(abs_path)
+        display_name = original_name[:120]
+
     attachment = {
         "token": token,
         "type": content_type,
-        "kind": _attachment_kind(original_name, content_type),
-        "name": original_name[:120],
+        "kind": _attachment_kind(display_name, content_type),
+        "name": display_name,
         "size": int(size),
         "permission": permission,
         "viewUrl": url_for("chat_attachment_view", room_id=room_id, token=token),
+        "rawUrl": url_for("chat_attachment_raw", room_id=room_id, token=token) if _attachment_is_inline_previewable({"kind": _attachment_kind(display_name, content_type), "type": content_type, "name": display_name}) else None,
         "downloadUrl": url_for("chat_attachment_download", room_id=room_id, token=token) if permission == "download" else None,
     }
     return jsonify({"ok": True, "attachment": attachment})
@@ -1706,14 +1845,40 @@ def chat_attachment_view(room_id, token):
     room, attachment = _find_attachment_by_token(room_id, token)
     if not room or not attachment:
         abort(404)
-    allowed_user_ids = {info.get("user_id") for info in room.get("participants", {}).values() if info.get("user_id")}
-    if current_user.id not in allowed_user_ids and current_user.id != room.get("host_user_id"):
+    if not _can_access_room_attachment(room):
         abort(403)
     filename = attachment.get("name") or f"file-{token}"
-    abs_path = os.path.join(CHAT_UPLOAD_DIR, room_id, f"{token}_{filename}")
+    inline_previewable = _attachment_is_inline_previewable(attachment)
+    return render_template(
+        "attachment_view.html",
+        attachment=attachment,
+        room_id=room_id,
+        filename=filename,
+        inline_previewable=inline_previewable,
+        raw_url=url_for("chat_attachment_raw", room_id=room_id, token=token) if inline_previewable else None,
+        allow_download=(attachment.get("permission") == "download"),
+        download_url=url_for("chat_attachment_download", room_id=room_id, token=token) if attachment.get("permission") == "download" else None,
+        lang=(session.get("lang") or "zh"),
+    )
+
+
+@app.get("/chat_attachment/<room_id>/<token>/raw")
+@login_required
+def chat_attachment_raw(room_id, token):
+    room, attachment = _find_attachment_by_token(room_id, token)
+    if not room or not attachment:
+        abort(404)
+    if not _can_access_room_attachment(room):
+        abort(403)
+    if not _attachment_is_inline_previewable(attachment):
+        abort(403)
+    filename = attachment.get("name") or f"file-{token}"
+    abs_path = _chat_attachment_abs_path(room_id, attachment)
     if not os.path.exists(abs_path):
         abort(404)
-    return send_file(abs_path, mimetype=attachment.get("type") or "application/octet-stream", as_attachment=False, download_name=filename)
+    resp = send_file(abs_path, mimetype=attachment.get("type") or "application/octet-stream", as_attachment=False, download_name=filename)
+    resp.headers["Content-Disposition"] = f'inline; filename="{secure_filename(filename) or "attachment"}"'
+    return resp
 
 
 @app.get("/chat_attachment/<room_id>/<token>/download")
@@ -1722,13 +1887,12 @@ def chat_attachment_download(room_id, token):
     room, attachment = _find_attachment_by_token(room_id, token)
     if not room or not attachment:
         abort(404)
-    allowed_user_ids = {info.get("user_id") for info in room.get("participants", {}).values() if info.get("user_id")}
-    if current_user.id not in allowed_user_ids and current_user.id != room.get("host_user_id"):
+    if not _can_access_room_attachment(room):
         abort(403)
     if attachment.get("permission") != "download":
         abort(403)
     filename = attachment.get("name") or f"file-{token}"
-    abs_path = os.path.join(CHAT_UPLOAD_DIR, room_id, f"{token}_{filename}")
+    abs_path = _chat_attachment_abs_path(room_id, attachment)
     if not os.path.exists(abs_path):
         abort(404)
     return send_file(abs_path, mimetype=attachment.get("type") or "application/octet-stream", as_attachment=True, download_name=filename)
@@ -1791,6 +1955,7 @@ def on_meeting_chat_send(data):
                 "size": int(attachment.get("size") or 0),
                 "permission": permission,
                 "viewUrl": str(attachment.get("viewUrl") or "")[:500],
+                "rawUrl": str(attachment.get("rawUrl") or "")[:500],
                 "downloadUrl": str(attachment.get("downloadUrl") or "")[:500] if permission == "download" else None,
             }
         else:
