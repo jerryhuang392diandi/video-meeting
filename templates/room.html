@@ -82,6 +82,11 @@
       <div id="videoMain" class="video-main"></div>
       <div id="videoSidebar" class="video-sidebar"></div>
     </div>
+    <div id="videoPager" class="video-pager hidden" aria-label="{{ '分页参会者视图' if lang == 'zh' else 'Paged participant view' }}">
+      <button id="videoPrevPageBtn" class="ghost-btn pager-btn" type="button">{{ '上一页' if lang == 'zh' else 'Previous' }}</button>
+      <span id="videoPagerInfo" class="video-pager-info">1 / 1</span>
+      <button id="videoNextPageBtn" class="ghost-btn pager-btn" type="button">{{ '下一页' if lang == 'zh' else 'Next' }}</button>
+    </div>
       <div id="danmakuLayer" class="danmaku-layer"></div>
       <button id="chatShowBtn" class="chat-side-toggle chat-show-btn hidden" type="button">{{ t('chat_short') }} ◀</button>
     <div id="chatWindow" class="chat-window">
@@ -200,15 +205,22 @@ const TEXT_ROOM_STORAGE_LIMIT = {{ ('当前会议附件空间已接近上限，�
 
 const socket = io();
 const rtcConfig = { iceServers: {{ turn_ice_servers|tojson }}, iceTransportPolicy: 'relay' };
+const ROOM_TEST_PARAMS = new URLSearchParams(window.location.search);
+const TEST_GRID_COUNT = Math.max(0, Math.min(50, parseInt(ROOM_TEST_PARAMS.get('testgrid') || ROOM_TEST_PARAMS.get('fake') || '0', 10) || 0));
+const IS_GRID_TEST_MODE = TEST_GRID_COUNT > 0;
+const TEXT_TEST_GRID_ACTIVE = {{ ('当前为布局测试模式：已生成虚拟参会者，仅用于测试视频宫格与分页。' if lang == 'zh' else 'Layout test mode is active: fake participants were added for grid and pagination testing only.')|tojson }};
 
 let localStream = null;
 let rawCameraStream = null;
 let currentFacingMode = 'user';
 let peerConnections = {};
 let participantMeta = {};
+let fakeParticipantMeta = {};
 let focusedSid = 'local';
 let hiddenSidebar = false;
 let currentSharerSid = null;
+let currentGridPage = 0;
+const GRID_PAGE_SIZE = 9;
 let isSharingScreen = false;
 let activeRecorder = null;
 let recorderStream = null;
@@ -270,6 +282,10 @@ const chatAttachmentPermission = document.getElementById('chatAttachmentPermissi
 const chatComposer = document.querySelector('#chatWindow .chat-composer');
 const chatPermissionRow = document.querySelector('#chatWindow .chat-file-permission-row');
 const danmakuLayer = document.getElementById('danmakuLayer');
+const videoPager = document.getElementById('videoPager');
+const videoPrevPageBtn = document.getElementById('videoPrevPageBtn');
+const videoNextPageBtn = document.getElementById('videoNextPageBtn');
+const videoPagerInfo = document.getElementById('videoPagerInfo');
 
 function setStatus(msg, cls='') {
   if (!statusBox) return;
@@ -341,6 +357,26 @@ function updatePlaceholder(card, hasVideo) {
   card.classList.toggle('has-video', !!hasVideo);
 }
 
+function getGridColumns(cardCount) {
+  if (cardCount <= 1) return 1;
+  if (cardCount === 2) return 2;
+  if (cardCount <= 4) return 2;
+  return 3;
+}
+
+function updateVideoPager(totalCards, totalPages) {
+  if (!videoPager || !videoPrevPageBtn || !videoNextPageBtn || !videoPagerInfo) return;
+  const showPager = !currentSharerSid && totalCards > GRID_PAGE_SIZE && totalPages > 1;
+  videoPager.classList.toggle('hidden', !showPager);
+  if (!showPager) {
+    videoPagerInfo.textContent = '1 / 1';
+    return;
+  }
+  videoPagerInfo.textContent = `${currentGridPage + 1} / ${totalPages}`;
+  videoPrevPageBtn.disabled = currentGridPage <= 0;
+  videoNextPageBtn.disabled = currentGridPage >= totalPages - 1;
+}
+
 function renderLayout() {
   if (!videoMain || !videoSidebar || !videoStage) return;
   const cards = Array.from(document.querySelectorAll('.video-card'));
@@ -349,23 +385,37 @@ function renderLayout() {
   videoMain.innerHTML = '';
   videoSidebar.innerHTML = '';
 
+  cards.forEach(card => card.classList.remove('is-focused', 'is-sidebar'));
+  videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
+
+  const totalPages = Math.max(1, Math.ceil(cards.length / GRID_PAGE_SIZE));
+  currentGridPage = Math.min(currentGridPage, totalPages - 1);
+
   const focusTarget = document.getElementById('card-' + (focusedSid || 'local')) || document.getElementById('card-local') || cards[0];
   if (!focusTarget) return;
 
-  cards.forEach(card => card.classList.remove('is-focused', 'is-sidebar'));
+  const canUseGrid = !currentSharerSid && !hiddenSidebar;
+  const shouldUseGrid = canUseGrid && cards.length <= GRID_PAGE_SIZE;
+  const shouldUsePagedGrid = canUseGrid && cards.length > GRID_PAGE_SIZE;
 
-  const shouldUseGrid = !currentSharerSid && cards.length <= 4 && !hiddenSidebar;
   videoStage.classList.toggle('screen-share-mode', !!currentSharerSid);
-  videoStage.classList.toggle('grid-layout', shouldUseGrid);
+  videoStage.classList.toggle('grid-layout', shouldUseGrid || shouldUsePagedGrid);
+  videoStage.classList.toggle('focus-layout', !shouldUseGrid && !shouldUsePagedGrid);
 
-  if (shouldUseGrid) {
-    videoStage.classList.remove('focus-layout');
+  if (shouldUseGrid || shouldUsePagedGrid) {
     videoStage.classList.add('sidebar-hidden');
-    cards.forEach(card => videoMain.appendChild(card));
+    const visibleCards = shouldUsePagedGrid
+      ? cards.slice(currentGridPage * GRID_PAGE_SIZE, (currentGridPage + 1) * GRID_PAGE_SIZE)
+      : cards;
+    const gridCols = getGridColumns(visibleCards.length);
+    videoStage.classList.add(`grid-${gridCols}`);
+    if (shouldUsePagedGrid) videoStage.classList.add('paged-grid');
+    visibleCards.forEach(card => videoMain.appendChild(card));
+    updateVideoPager(cards.length, totalPages);
     return;
   }
 
-  videoStage.classList.add('focus-layout');
+  updateVideoPager(cards.length, totalPages);
   focusTarget.classList.add('is-focused');
   videoMain.appendChild(focusTarget);
 
@@ -386,7 +436,27 @@ function focusParticipant(sid, opts = {}) {
 }
 
 function updateParticipantCount() {
-  participantCountEl.textContent = 1 + Object.keys(participantMeta).length;
+  participantCountEl.textContent = 1 + Object.keys(participantMeta).length + Object.keys(fakeParticipantMeta).length;
+}
+
+function getFakeParticipantName(index) {
+  return {{ ('测试用户' if lang == 'zh' else 'Test User')|tojson }} + ' ' + String(index + 1);
+}
+
+function seedFakeParticipants() {
+  if (!IS_GRID_TEST_MODE) return;
+  fakeParticipantMeta = {};
+  for (let i = 0; i < TEST_GRID_COUNT; i += 1) {
+    const sid = `fake-${i + 1}`;
+    const name = getFakeParticipantName(i);
+    fakeParticipantMeta[sid] = { name };
+    const card = ensureCard(sid, name, false);
+    updatePlaceholder(card, false);
+  }
+  currentGridPage = 0;
+  renderLayout();
+  updateParticipantCount();
+  setStatus(TEXT_TEST_GRID_ACTIVE);
 }
 
 function stopStreamTracks(stream) {
@@ -607,6 +677,7 @@ function addRemoteParticipant(sid, name) {
   participantMeta[sid] = { name: name || sid };
   const card = ensureCard(sid, participantMeta[sid].name, false);
   updatePlaceholder(card, false);
+  currentGridPage = 0;
   renderLayout();
   updateParticipantCount();
 }
@@ -627,6 +698,9 @@ function removeRemoteVideo(sid) {
     hiddenSidebar = false;
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
   }
+  const totalCards = document.querySelectorAll('.video-card').length;
+  const totalPages = Math.max(1, Math.ceil(totalCards / GRID_PAGE_SIZE));
+  currentGridPage = Math.min(currentGridPage, totalPages - 1);
   renderLayout();
   updateParticipantCount();
 }
@@ -885,7 +959,9 @@ function escapeHtml(text) {
 
 function renderMentionPicker() {
   if (!mentionPicker) return;
-  const people = [{ sid: 'local', name: USER_NAME }].concat(Object.entries(participantMeta).map(([sid, info]) => ({ sid, name: info.name || sid })));
+  const people = [{ sid: 'local', name: USER_NAME }]
+    .concat(Object.entries(participantMeta).map(([sid, info]) => ({ sid, name: info.name || sid })))
+    .concat(Object.entries(fakeParticipantMeta).map(([sid, info]) => ({ sid, name: info.name || sid })));
   mentionPicker.innerHTML = people.map(person => `<button type="button" class="mention-option" data-name="${escapeHtml(person.name)}">@${escapeHtml(person.name)}</button>`).join('');
   mentionPicker.querySelectorAll('.mention-option').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1430,6 +1506,7 @@ function broadcastUiEvent(payload) {
 function cleanupMeetingSession() {
   if (hasLeftMeeting) return;
   hasLeftMeeting = true;
+  fakeParticipantMeta = {};
   try {
     if (activeRecorder && activeRecorder.state !== 'inactive') activeRecorder.stop();
   } catch (_) {}
@@ -1458,6 +1535,7 @@ socket.on('connect', async () => {
   renderLayout();
   if ((PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream) await requestMedia(currentFacingMode, false);
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
+  seedFakeParticipants();
 });
 
 socket.on('join_ok', async (data) => {
@@ -1466,6 +1544,7 @@ socket.on('join_ok', async (data) => {
   for (const p of data.participants) addRemoteParticipant(p.sid, p.name);
   (data.chat_history || []).forEach(item => appendChatMessage(item));
   focusParticipant('local');
+  if (IS_GRID_TEST_MODE) seedFakeParticipants();
   danmakuEnabled = !!data.danmaku_enabled;
   if (data && data.host_present === false && IS_HOST) {
     setStatus(TEXT_HOST_RETURNED_ROOM);
@@ -1482,6 +1561,7 @@ socket.on('participant_joined', async (data) => {
 
 socket.on('participant_left', (data) => {
   participantCountEl.textContent = data.participant_count;
+  if (currentGridPage > 0) currentGridPage = Math.max(0, currentGridPage - 1);
   removeRemoteVideo(data.sid);
   renderMentionPicker();
 });
@@ -1608,6 +1688,19 @@ document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement && screen.orientation?.unlock) {
     try { screen.orientation.unlock(); } catch (_) {}
   }
+});
+
+videoPrevPageBtn?.addEventListener('click', () => {
+  if (currentGridPage <= 0) return;
+  currentGridPage -= 1;
+  renderLayout();
+});
+videoNextPageBtn?.addEventListener('click', () => {
+  const totalCards = document.querySelectorAll('.video-card').length;
+  const totalPages = Math.max(1, Math.ceil(totalCards / GRID_PAGE_SIZE));
+  if (currentGridPage >= totalPages - 1) return;
+  currentGridPage += 1;
+  renderLayout();
 });
 
 document.getElementById('requestMediaBtn').onclick = () => requestMedia(currentFacingMode, true);

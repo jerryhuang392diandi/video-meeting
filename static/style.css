@@ -330,10 +330,15 @@ video {
 .video-main {
   min-height: 72vh;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  align-content: start;
+  align-content: stretch;
+  align-items: stretch;
 }
+.video-stage.grid-1 .video-main { grid-template-columns: minmax(0, 1fr); }
+.video-stage.grid-2 .video-main { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.video-stage.grid-3 .video-main { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.video-stage.paged-grid .video-main { align-content: start; }
 .video-sidebar {
   display: flex;
   flex-direction: column;
@@ -356,6 +361,15 @@ video {
 .video-stage.screen-share-mode .video-main .video-card {
   min-height: 76vh;
 }
+.video-stage.grid-layout .video-main .video-card {
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+}
+.video-stage.grid-layout .video-main .video-el,
+.video-stage.grid-layout .video-main video {
+  min-height: 0;
+  height: 100%;
+}
 .video-sidebar .video-card {
   min-height: 118px;
 }
@@ -363,6 +377,24 @@ video {
 .video-sidebar video {
   min-height: 118px;
   height: 118px;
+}
+.video-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+.video-pager.hidden { display: none; }
+.video-pager-info {
+  min-width: 72px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.pager-btn[disabled] {
+  opacity: .45;
+  cursor: not-allowed;
 }
 .video-toolbar {
   position: absolute;
@@ -410,6 +442,11 @@ video {
   .video-stage.sidebar-hidden {
     grid-template-columns: 1fr;
   }
+  .video-main,
+  .video-stage.grid-2 .video-main,
+  .video-stage.grid-3 .video-main {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .video-sidebar {
     flex-direction: row;
     overflow: auto;
@@ -423,6 +460,14 @@ video {
     min-height: 50vh;
   }
 }
+@media (max-width: 640px) {
+  .video-main,
+  .video-stage.grid-2 .video-main,
+  .video-stage.grid-3 .video-main {
+    grid-template-columns: 1fr;
+  }
+}
+
 
 .video-card:fullscreen,
 .video-card:-webkit-full-screen {
