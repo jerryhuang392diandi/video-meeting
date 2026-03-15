@@ -15,7 +15,7 @@
   </div>
 </header>
 
-<section class="grid two">
+<section class="grid two admin-top-grid">
   <div class="panel panel-glow">
     <div class="section-head">
       <h2>{{ t('server_overview') }}</h2>
@@ -31,31 +31,62 @@
     </div>
   </div>
 
-  <div class="panel panel-glow">
+  <div class="panel panel-glow admin-alert-panel">
+    <div class="section-head">
+      <h2>{{ t('pending_alerts') }}</h2>
+      <span class="section-tag">{{ t('support_tag') }}</span>
+    </div>
+    <div class="status-grid">
+      <div><span>{{ t('pending_reset_count') }}</span><strong id="pendingResetCount">{{ pending_reset_count }}</strong></div>
+      <div><span>{{ t('online_users_count') }}</span><strong id="onlineUserCount">{{ online_user_count }}</strong></div>
+      <div><span>{{ t('active_rooms') }}</span><strong id="activeRoomCountMini">{{ system_stats.active_room_count }}</strong></div>
+      <div><span>{{ t('processed_requests_cleanup') }}</span><strong>{{ processed_reset_count }}</strong></div>
+    </div>
+    <div id="adminLiveNotice" class="notice mt-12">{{ t('login_password_unavailable') }}</div>
+    <form method="post" action="{{ url_for('admin_cleanup_reset_requests') }}" class="mt-12">
+      <button class="ghost-btn danger" type="submit">{{ t('processed_requests_cleanup') }}</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel panel-glow">
+  <div class="section-head">
     <h2>{{ t('users') }}</h2>
-    <div class="muted" style="margin-bottom: 12px;">{{ t('traffic_management') }} · {{ t('traffic_turn_relay') }}</div>
-    {% for u in users %}
-    <div class="list-item stacked">
-      <div>
-        <div class="item-title">{{ u.username }}</div>
-        <div class="muted">ID {{ u.id }} · {{ t('admin_role') }}: {{ t('yes') if u.is_admin else t('no') }} · {{ t('status') }}: {{ t('enabled') if u.is_active_user else t('disabled') }}</div>
-        <div class="muted">{{ t('register_date') }}: <span class="local-datetime" data-utc="{{ utc_iso(u.created_at) }}">{{ u.created_at }}</span></div>
-        <div class="muted">{{ t('monthly_quota') }}: {{ traffic_summaries[u.id].monthly_quota_text }} · {{ t('used_traffic') }}: {{ traffic_summaries[u.id].used_traffic_text }} · {{ t('remaining_traffic') }}: {{ traffic_summaries[u.id].remaining_traffic_text }}</div>
-      </div>
+    <span class="section-tag">{{ t('traffic_management') }}</span>
+  </div>
+  <div class="muted" style="margin-bottom: 12px;">{{ t('traffic_turn_relay') }}</div>
+  {% for u in users %}
+  <div class="list-item stacked admin-user-card">
+    <div>
+      <div class="item-title">{{ u.username }}</div>
+      <div class="muted">ID {{ u.id }} · {{ t('admin_role') }}: {{ t('yes') if u.is_admin else t('no') }} · {{ t('status') }}: {{ t('enabled') if u.is_active_user else t('disabled') }}</div>
+      <div class="muted">{{ t('register_date') }}: <span class="local-datetime" data-utc="{{ utc_iso(u.created_at) }}">{{ u.created_at }}</span></div>
+      <div class="muted">{{ t('monthly_quota') }}: {{ traffic_summaries[u.id].monthly_quota_text }} · {{ t('used_traffic') }}: {{ traffic_summaries[u.id].used_traffic_text }} · {{ t('remaining_traffic') }}: {{ traffic_summaries[u.id].remaining_traffic_text }}</div>
+    </div>
+    <div class="admin-actions-grid">
+      {% if not u.is_admin %}
       <div class="row-compact wrap-actions">
-        {% if not u.is_admin %}
         <form method="post" action="{{ url_for('admin_disable_user', user_id=u.id) }}"><button class="ghost-btn" type="submit">{{ t('disable') }}</button></form>
         <form method="post" action="{{ url_for('admin_enable_user', user_id=u.id) }}"><button class="ghost-btn" type="submit">{{ t('enable') }}</button></form>
-        {% endif %}
-        <form method="post" action="{{ url_for('admin_set_user_quota', user_id=u.id) }}" class="row-compact">
-          <input type="number" name="monthly_quota_gb" min="0" step="0.5" value="{{ '%.2f'|format((u.monthly_quota_mb or 0) / 1024) }}" style="max-width: 110px;" />
-          <button class="ghost-btn" type="submit">{{ t('set_quota') }}</button>
-        </form>
+        <form method="post" action="{{ url_for('admin_kick_user', user_id=u.id) }}"><button class="ghost-btn danger" type="submit">{{ t('kick_user') }}</button></form>
       </div>
+      {% endif %}
+      <form method="post" action="{{ url_for('admin_set_user_quota', user_id=u.id) }}" class="row-compact">
+        <input type="number" name="monthly_quota_gb" min="0" step="0.5" value="{{ '%.2f'|format((u.monthly_quota_mb or 0) / 1024) }}" style="max-width: 110px;" />
+        <button class="ghost-btn" type="submit">{{ t('set_quota') }}</button>
+      </form>
+      {% if not u.is_admin %}
+      <form method="post" action="{{ url_for('admin_reset_user_password', user_id=u.id) }}" class="row-compact admin-reset-form">
+        <input type="text" name="new_password" minlength="4" maxlength="32" placeholder="{{ t('new_password_admin') }}" />
+        <button class="ghost-btn" type="submit">{{ t('reset_user_password') }}</button>
+      </form>
+      {% endif %}
     </div>
-    {% endfor %}
   </div>
+  {% endfor %}
+</section>
 
+<section class="grid two admin-mid-grid">
   <div class="panel panel-glow">
     <h2>{{ t('active_meetings') }}</h2>
     {% for m in active_meetings %}
@@ -70,6 +101,20 @@
         <button class="ghost-btn danger" type="submit" formaction="{{ url_for('admin_delete_meeting', meeting_id=m.id) }}" formmethod="post">{{ t('delete_record') }}</button>
       </div>
     </div>
+    {% else %}
+      <div class="notice">{{ t('no_online_rooms') }}</div>
+    {% endfor %}
+  </div>
+
+  <div class="panel panel-glow">
+    <h2>{{ t('online_rooms') }}</h2>
+    {% for r in online_rooms %}
+      <div class="list-item">
+        <div>
+          <div class="item-title">{{ r.room_id }}</div>
+          <div class="muted">{{ r.host_name }} · {{ t('participants_label')|lower if lang == 'en' else t('participants_label') }}: {{ r.participant_count }}</div>
+        </div>
+      </div>
     {% else %}
       <div class="notice">{{ t('no_online_rooms') }}</div>
     {% endfor %}
@@ -110,20 +155,6 @@
 </section>
 
 <section class="panel panel-glow">
-  <h2>{{ t('online_rooms') }}</h2>
-  {% for r in online_rooms %}
-    <div class="list-item">
-      <div>
-        <div class="item-title">{{ r.room_id }}</div>
-        <div class="muted">{{ r.host_name }} · {{ t('participants_label')|lower if lang == 'en' else t('participants_label') }}: {{ r.participant_count }}</div>
-      </div>
-    </div>
-  {% else %}
-    <div class="notice">{{ t('no_online_rooms') }}</div>
-  {% endfor %}
-</section>
-
-<section class="panel panel-glow">
   <div class="section-head">
     <h2>{{ t('password_reset_requests') }}</h2>
     <span class="section-tag">{{ t('support_tag') }}</span>
@@ -150,7 +181,8 @@
 {% endblock %}
 
 <style>
-.metric-chart-card{display:flex;flex-direction:column;gap:10px;align-items:center;justify-content:center;min-height:180px}.metric-ring{--pct:0;position:relative;width:118px;height:118px;border-radius:999px;display:grid;place-items:center;background:conic-gradient(rgba(98,196,255,.95) calc(var(--pct) * 1%), rgba(255,255,255,.08) 0)}.metric-ring::after{content:"";position:absolute;inset:10px;border-radius:999px;background:rgba(7,18,45,.96);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}.metric-ring span,.metric-ring strong{position:relative;z-index:1;display:block;text-align:center}.metric-ring span{font-size:12px;color:#9fb2d1}.metric-ring strong{font-size:22px;margin-top:2px}#ifaceDetail{text-transform:none}</style>
+.metric-chart-card{display:flex;flex-direction:column;gap:10px;align-items:center;justify-content:center;min-height:180px}.metric-ring{--pct:0;position:relative;width:118px;height:118px;border-radius:999px;display:grid;place-items:center;background:conic-gradient(rgba(98,196,255,.95) calc(var(--pct) * 1%), rgba(255,255,255,.08) 0)}.metric-ring::after{content:"";position:absolute;inset:10px;border-radius:999px;background:rgba(7,18,45,.96);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}.metric-ring span,.metric-ring strong{position:relative;z-index:1;display:block;text-align:center}.metric-ring span{font-size:12px;color:#9fb2d1}.metric-ring strong{font-size:22px;margin-top:2px}#ifaceDetail{text-transform:none}.admin-user-card{gap:18px}.admin-actions-grid{display:grid;gap:10px;width:100%}.admin-reset-form input{min-width:180px}.admin-alert-panel .status-grid strong{font-size:20px}
+</style>
 
 {% block scripts %}
 <script>
@@ -195,6 +227,9 @@
   })();
 
   (function () {
+    const liveNotice = document.getElementById('adminLiveNotice');
+    let lastPending = Number(document.getElementById('pendingResetCount')?.textContent || 0);
+
     async function refreshSystemStats() {
       try {
         const response = await fetch('/api/admin/system_stats', { credentials: 'same-origin' });
@@ -208,6 +243,7 @@
           ['trafficMetric', data.traffic_total_text],
           ['roomMetric', String(data.active_room_count)],
           ['socketMetric', String(data.active_socket_count)],
+          ['activeRoomCountMini', String(data.active_room_count)],
         ];
         mapping.forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.textContent = value; });
         const cpuBar = document.getElementById('cpuBar'); if (cpuBar) cpuBar.style.width = `${data.cpu_percent}%`;
@@ -220,8 +256,33 @@
         const ifaceDetail = document.getElementById('ifaceDetail'); if (ifaceDetail) ifaceDetail.textContent = `iface: ${data.iface}`;
       } catch (_) {}
     }
+
+    async function refreshAlerts() {
+      try {
+        const response = await fetch('/api/admin/alerts', { credentials: 'same-origin' });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data || data.success === false) return;
+        const pendingNode = document.getElementById('pendingResetCount');
+        const onlineNode = document.getElementById('onlineUserCount');
+        const roomMini = document.getElementById('activeRoomCountMini');
+        if (pendingNode) pendingNode.textContent = String(data.pending_reset_count || 0);
+        if (onlineNode) onlineNode.textContent = String(data.online_user_count || 0);
+        if (roomMini) roomMini.textContent = String(data.active_room_count || 0);
+        if (liveNotice && Number(data.pending_reset_count || 0) > lastPending) {
+          liveNotice.textContent = document.documentElement.lang === 'zh'
+            ? `有新的找回密码申请待处理：${data.pending_reset_count}`
+            : `New password reset requests are waiting: ${data.pending_reset_count}`;
+          liveNotice.classList.add('warning');
+        }
+        lastPending = Number(data.pending_reset_count || 0);
+      } catch (_) {}
+    }
+
     refreshSystemStats();
+    refreshAlerts();
     setInterval(refreshSystemStats, 15000);
+    setInterval(refreshAlerts, 10000);
   })();
 </script>
 {% endblock %}

@@ -279,6 +279,19 @@ TRANSLATIONS = {'zh': {'app_name': '西小电视频会议系统',
         'traffic_admin_rule': '管理员可在后台调整用户月流量额度，用于充值或特殊授权。',
         'traffic_limit_reached': '你的本期流量额度已用完，请联系管理员。',
         'traffic_management': '流量管理',
+        'kick_user': '踢出用户',
+        'reset_user_password': '重置密码',
+        'new_password_admin': '新密码',
+        'apply_reset': '应用重置',
+        'pending_alerts': '待处理提醒',
+        'pending_reset_count': '待处理申请',
+        'online_users_count': '在线用户',
+        'kick_reason': '原因',
+        'kick_reason_default': '管理员已将你移出系统。',
+        'kicked_by_admin': '你已被管理员移出系统。',
+        'password_reset_done': '密码已重置',
+        'processed_requests_cleanup': '清理已处理申请',
+        'login_password_unavailable': '系统不保存明文密码，管理员只能重置密码。',
         'set_quota': '设置额度',
         'save': '保存',
         'traffic_cycle_since_register': '自注册日起每 30 天重置',
@@ -1255,6 +1268,10 @@ def disconnect_user_sockets(user_id, exclude_sid=None, message=None):
             pass
 
 
+def online_user_count():
+    return sum(1 for _, sids in user_active_sids.items() if sids)
+
+
 def bind_user_socket(user_id, sid):
     if not user_id or not sid:
         return
@@ -1665,6 +1682,19 @@ def api_admin_system_stats():
     return jsonify({"success": True, **get_system_metrics()})
 
 
+
+@app.get("/api/admin/alerts")
+@login_required
+@admin_required
+def api_admin_alerts():
+    return jsonify({
+        "success": True,
+        "pending_reset_count": PasswordResetRequest.query.filter_by(status="pending").count(),
+        "active_room_count": sum(1 for m in Meeting.query.filter_by(status="active").all() if ensure_meeting_not_expired(m)),
+        "online_user_count": online_user_count(),
+    })
+
+
 @app.get("/admin")
 @login_required
 @admin_required
@@ -1712,6 +1742,44 @@ def admin_set_user_quota(user_id):
     db.session.commit()
     if user_quota_exceeded(user):
         disconnect_user_sockets(user.id, message=t("traffic_limit_reached"))
+    return redirect(url_for("admin_dashboard"))
+
+
+
+@app.post("/admin/user/<int:user_id>/kick")
+@login_required
+@admin_required
+def admin_kick_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.is_admin:
+        return redirect(url_for("admin_dashboard"))
+    user.session_version = (user.session_version or 0) + 1
+    db.session.commit()
+    disconnect_user_sockets(user.id, message=t("kicked_by_admin"))
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.post("/admin/user/<int:user_id>/reset-password")
+@login_required
+@admin_required
+def admin_reset_user_password(user_id):
+    user = User.query.get_or_404(user_id)
+    new_password = (request.form.get("new_password") or "").strip()
+    if len(new_password) < 4:
+        return redirect(url_for("admin_dashboard"))
+    user.set_password(new_password)
+    user.session_version = (user.session_version or 0) + 1
+    db.session.commit()
+    disconnect_user_sockets(user.id, message=t("password_reset_done"))
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.post("/admin/reset-requests/cleanup")
+@login_required
+@admin_required
+def admin_cleanup_reset_requests():
+    PasswordResetRequest.query.filter(PasswordResetRequest.status != "pending").delete(synchronize_session=False)
+    db.session.commit()
     return redirect(url_for("admin_dashboard"))
 
 

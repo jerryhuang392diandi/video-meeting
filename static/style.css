@@ -2119,3 +2119,59 @@ video:-webkit-full-screen {
     grid-template-columns:1fr;
   }
 }
+
+/* v6.3.4 desktop chat panel and admin action polish */
+@media (min-width: 1024px) {
+  .video-panel {
+    grid-template-columns: minmax(0, 1fr) minmax(460px, 520px) !important;
+    gap: 22px !important;
+    align-items: stretch !important;
+  }
+  #chatWindow.chat-window,
+  .chat-window {
+    position: relative !important;
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 780px !important;
+    height: min(88vh, 980px) !important;
+    max-height: min(88vh, 980px) !important;
+    overflow: hidden !important;
+  }
+  .chat-header,
+  .chat-toolbar,
+  .chat-composer,
+  .chat-file-permission-row {
+    flex: 0 0 auto !important;
+  }
+  .chat-messages {
+    flex: 1 1 auto !important;
+    min-height: 460px !important;
+    padding: 14px 18px 18px !important;
+    overflow-y: auto !important;
+  }
+  .chat-composer {
+    padding-top: 14px !important;
+    padding-bottom: 16px !important;
+  }
+  .chat-input-row textarea,
+  #chatInput {
+    min-height: 148px !important;
+    height: 148px !important;
+    max-height: 220px !important;
+    resize: vertical !important;
+  }
+}
+
+.admin-top-grid,
+.admin-mid-grid {
+  align-items: stretch;
+}
+.admin-alert-panel .notice {
+  margin-top: 0;
+}
+.admin-actions-grid .row-compact {
+  flex-wrap: wrap;
+}
+.admin-reset-form input {
+  flex: 1 1 180px;
+}
