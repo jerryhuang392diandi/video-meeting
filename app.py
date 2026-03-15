@@ -1102,7 +1102,11 @@ def end_meeting_by_room_id(room_id, message_key=None):
             lang = room.get("lang", "zh")
             message = tf(lang, message_key) if message_key else tf(lang, "meeting_closed")
             socketio.emit("force_leave", {"message": message}, room=room_id)
-
+def debug_log(tag, **kwargs):
+    try:
+        print(f"[DEBUG:{tag}] {kwargs}", flush=True)
+    except Exception:
+        pass
 
 def schedule_room_expiry(room_id, created_at_ts):
     room = rooms.get(room_id)
