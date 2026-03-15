@@ -377,9 +377,25 @@ function updateVideoPager(totalCards, totalPages) {
   videoNextPageBtn.disabled = currentGridPage >= totalPages - 1;
 }
 
+function getRenderableCards() {
+  const orderedSids = ['local', ...Object.keys(participantMeta), ...Object.keys(fakeParticipantMeta)];
+  const seen = new Set();
+  return orderedSids
+    .filter(sid => {
+      if (seen.has(sid)) return false;
+      seen.add(sid);
+      return true;
+    })
+    .map(sid => ensureCard(
+      sid,
+      sid === 'local' ? getDisplayName('local') : (fakeParticipantMeta[sid]?.name || getDisplayName(sid)),
+      sid === 'local'
+    ));
+}
+
 function renderLayout() {
   if (!videoMain || !videoSidebar || !videoStage) return;
-  const cards = Array.from(document.querySelectorAll('.video-card'));
+  const cards = getRenderableCards();
   if (!cards.length) return;
 
   videoMain.innerHTML = '';
@@ -389,7 +405,7 @@ function renderLayout() {
   videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
 
   const totalPages = Math.max(1, Math.ceil(cards.length / GRID_PAGE_SIZE));
-  currentGridPage = Math.min(currentGridPage, totalPages - 1);
+  currentGridPage = Math.max(0, Math.min(currentGridPage, totalPages - 1));
 
   const focusTarget = document.getElementById('card-' + (focusedSid || 'local')) || document.getElementById('card-local') || cards[0];
   if (!focusTarget) return;
@@ -404,9 +420,9 @@ function renderLayout() {
 
   if (shouldUseGrid || shouldUsePagedGrid) {
     videoStage.classList.add('sidebar-hidden');
-    const visibleCards = shouldUsePagedGrid
-      ? cards.slice(currentGridPage * GRID_PAGE_SIZE, (currentGridPage + 1) * GRID_PAGE_SIZE)
-      : cards;
+    const start = shouldUsePagedGrid ? currentGridPage * GRID_PAGE_SIZE : 0;
+    const end = shouldUsePagedGrid ? start + GRID_PAGE_SIZE : cards.length;
+    const visibleCards = cards.slice(start, end);
     const gridCols = getGridColumns(visibleCards.length);
     videoStage.classList.add(`grid-${gridCols}`);
     if (shouldUsePagedGrid) videoStage.classList.add('paged-grid');
@@ -1696,7 +1712,7 @@ videoPrevPageBtn?.addEventListener('click', () => {
   renderLayout();
 });
 videoNextPageBtn?.addEventListener('click', () => {
-  const totalCards = document.querySelectorAll('.video-card').length;
+  const totalCards = getRenderableCards().length;
   const totalPages = Math.max(1, Math.ceil(totalCards / GRID_PAGE_SIZE));
   if (currentGridPage >= totalPages - 1) return;
   currentGridPage += 1;

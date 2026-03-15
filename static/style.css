@@ -2889,3 +2889,72 @@ video:-webkit-full-screen {
     margin-top: 14px;
   }
 }
+
+
+/* v6.4.11 desktop paged grid polish */
+@media (min-width: 961px) {
+  .video-panel {
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 20px;
+    align-items: start;
+  }
+
+  .video-stage.grid-layout,
+  .video-stage.paged-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    min-height: 0 !important;
+  }
+
+  .video-stage.grid-layout .video-main,
+  .video-stage.paged-grid .video-main {
+    width: 100%;
+    margin: 0;
+    gap: 14px;
+    align-content: start;
+    justify-items: stretch;
+  }
+
+  .video-stage.grid-1 .video-main {
+    max-width: min(960px, 100%);
+    margin-inline: auto;
+  }
+
+  .video-stage.grid-2 .video-main {
+    max-width: min(1120px, 100%);
+    margin-inline: auto;
+  }
+
+  .video-stage.grid-3 .video-main {
+    max-width: min(1280px, 100%);
+    margin-inline: auto;
+  }
+
+  .video-stage.grid-layout .video-main .video-card,
+  .video-stage.paged-grid .video-main .video-card {
+    width: 100%;
+    min-height: 0 !important;
+    height: auto !important;
+    aspect-ratio: 16 / 10;
+    border-radius: 18px;
+  }
+
+  .video-pager {
+    justify-content: center;
+    margin: 10px 0 6px;
+    padding-inline: 8px;
+  }
+
+  .video-pager-info {
+    min-width: 54px;
+    font-size: 12px;
+  }
+
+  .pager-btn {
+    min-width: 88px;
+  }
+
+  .chat-window {
+    align-self: stretch;
+    margin-top: 4px;
+  }
+}
