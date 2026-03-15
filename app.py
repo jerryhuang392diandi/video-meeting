@@ -18,6 +18,7 @@ from pathlib import Path
 from functools import wraps
 
 from flask import Flask, abort, after_this_request, jsonify, redirect, render_template, request, send_file, session, url_for
+from werkzeug.utils import secure_filename
 from flask_login import (
     LoginManager,
     UserMixin,
@@ -51,6 +52,10 @@ MEETING_DURATION_SECONDS = 90 * 60
 rooms = {}
 sid_to_user = {}
 user_active_sids = {}
+CHAT_UPLOAD_DIR = os.path.join(INSTANCE_DIR, "chat_uploads")
+os.makedirs(CHAT_UPLOAD_DIR, exist_ok=True)
+CHAT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+ALLOWED_CHAT_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "mp4", "webm", "mov", "m4v", "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "txt", "zip", "rar", "7z"}
 
 TRANSLATIONS = {
     "zh": {
@@ -424,6 +429,9 @@ class User(UserMixin, db.Model):
     used_traffic_mb = db.Column(db.Float, default=0.0)
     traffic_cycle_start_at = db.Column(db.DateTime, nullable=True)
     display_name = db.Column(db.String(32), nullable=True)
+    region = db.Column(db.String(64), nullable=True, default="Asia/Tokyo")
+    preferred_locale = db.Column(db.String(16), nullable=True, default="auto")
+    default_attachment_permission = db.Column(db.String(16), nullable=True, default="download")
 
     meetings = db.relationship("Meeting", backref="host", lazy=True)
 
@@ -526,6 +534,12 @@ def ensure_user_columns():
         cur.execute("ALTER TABLE users ADD COLUMN traffic_cycle_start_at DATETIME")
     if "display_name" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN display_name VARCHAR(32)")
+    if "region" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN region VARCHAR(64) DEFAULT 'Asia/Tokyo'")
+    if "preferred_locale" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN preferred_locale VARCHAR(16) DEFAULT 'auto'")
+    if "default_attachment_permission" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN default_attachment_permission VARCHAR(16) DEFAULT 'download'")
     cur.execute("CREATE TABLE IF NOT EXISTS password_reset_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, username VARCHAR(64) NOT NULL, contact VARCHAR(128), note TEXT, status VARCHAR(16) DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)")
     conn.commit()
     conn.close()
@@ -1009,6 +1023,13 @@ def account_page():
         if action == "profile":
             username = (request.form.get("username") or "").strip()[:32]
             display_name = (request.form.get("display_name") or "").strip()[:32]
+            region = (request.form.get("region") or "Asia/Tokyo").strip()[:64]
+            preferred_locale = (request.form.get("preferred_locale") or "auto").strip()[:16].lower()
+            default_attachment_permission = (request.form.get("default_attachment_permission") or "download").strip()[:16].lower()
+            if preferred_locale not in {"auto", "zh", "en"}:
+                preferred_locale = "auto"
+            if default_attachment_permission not in {"view", "download"}:
+                default_attachment_permission = "download"
             if not username:
                 error = t("username_password_required")
             else:
@@ -1018,6 +1039,9 @@ def account_page():
                 else:
                     fresh_user.username = username
                     fresh_user.display_name = display_name or username
+                    fresh_user.region = region or "Asia/Tokyo"
+                    fresh_user.preferred_locale = preferred_locale
+                    fresh_user.default_attachment_permission = default_attachment_permission
                     db.session.commit()
                     message = "保存成功" if session.get("lang", "zh") == "zh" else "Profile saved"
         elif action == "password":
@@ -1035,7 +1059,7 @@ def account_page():
                 disconnect_user_sockets(fresh_user.id, message=t("kicked"))
                 message = "密码已更新" if session.get("lang", "zh") == "zh" else "Password updated"
     fresh_user = db.session.get(User, current_user.id)
-    return render_template("account.html", user=fresh_user, message=message, error=error, preferred_display_name=preferred_display_name(fresh_user))
+    return render_template("account.html", user=fresh_user, message=message, error=error, preferred_display_name=preferred_display_name(fresh_user), region=(fresh_user.region or "Asia/Tokyo"), preferred_locale=(fresh_user.preferred_locale or "auto"), default_attachment_permission=(fresh_user.default_attachment_permission or "download"))
 
 
 @app.route("/forgot-password", methods=["GET", "POST"])
@@ -1602,6 +1626,114 @@ def _translate_via_google(text: str, target_lang: str):
     return translated or text, detected
 
 
+def _allowed_chat_file(filename: str) -> bool:
+    suffix = (Path(filename or "").suffix or "").lower().lstrip(".")
+    return bool(suffix and suffix in ALLOWED_CHAT_EXTENSIONS)
+
+
+def _attachment_kind(filename: str, content_type: str) -> str:
+    content_type = (content_type or "").lower()
+    suffix = (Path(filename or "").suffix or "").lower()
+    if content_type.startswith("image/") or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}:
+        return "image"
+    if content_type.startswith("video/") or suffix in {".mp4", ".webm", ".mov", ".m4v"}:
+        return "video"
+    if suffix in {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".txt"}:
+        return "document"
+    if suffix in {".zip", ".rar", ".7z"}:
+        return "archive"
+    return "file"
+
+
+def _find_attachment_by_token(room_id: str, token: str):
+    room = rooms.get(room_id)
+    if not room:
+        return None, None
+    for item in room.get("chat_history", []):
+        attachment = item.get("attachment") if isinstance(item, dict) else None
+        if isinstance(attachment, dict) and attachment.get("token") == token:
+            return room, attachment
+    return room, None
+
+
+@app.post("/api/chat_upload")
+@login_required
+def api_chat_upload():
+    room_id = str(request.form.get("room_id") or "").strip()
+    permission = str(request.form.get("permission") or "download").strip().lower()
+    if permission not in {"view", "download"}:
+        permission = "download"
+    room = rooms.get(room_id)
+    if not room:
+        return jsonify({"ok": False, "error": "room_not_found"}), 404
+    allowed_user_ids = {info.get("user_id") for info in room.get("participants", {}).values() if info.get("user_id")}
+    if current_user.id not in allowed_user_ids and current_user.id != room.get("host_user_id"):
+        return jsonify({"ok": False, "error": "not_in_room"}), 403
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return jsonify({"ok": False, "error": "missing_file"}), 400
+    if not _allowed_chat_file(upload.filename):
+        return jsonify({"ok": False, "error": "file_type_not_allowed"}), 400
+    upload.stream.seek(0, os.SEEK_END)
+    size = upload.stream.tell()
+    upload.stream.seek(0)
+    if size > CHAT_MAX_UPLOAD_BYTES:
+        return jsonify({"ok": False, "error": "file_too_large"}), 413
+    token = secrets.token_urlsafe(16)
+    original_name = secure_filename(upload.filename) or f"file-{token}"
+    room_dir = os.path.join(CHAT_UPLOAD_DIR, room_id)
+    os.makedirs(room_dir, exist_ok=True)
+    stored_name = f"{token}_{original_name}"
+    abs_path = os.path.join(room_dir, stored_name)
+    upload.save(abs_path)
+    content_type = (upload.mimetype or "application/octet-stream").strip()
+    attachment = {
+        "token": token,
+        "type": content_type,
+        "kind": _attachment_kind(original_name, content_type),
+        "name": original_name[:120],
+        "size": int(size),
+        "permission": permission,
+        "viewUrl": url_for("chat_attachment_view", room_id=room_id, token=token),
+        "downloadUrl": url_for("chat_attachment_download", room_id=room_id, token=token) if permission == "download" else None,
+    }
+    return jsonify({"ok": True, "attachment": attachment})
+
+
+@app.get("/chat_attachment/<room_id>/<token>")
+@login_required
+def chat_attachment_view(room_id, token):
+    room, attachment = _find_attachment_by_token(room_id, token)
+    if not room or not attachment:
+        abort(404)
+    allowed_user_ids = {info.get("user_id") for info in room.get("participants", {}).values() if info.get("user_id")}
+    if current_user.id not in allowed_user_ids and current_user.id != room.get("host_user_id"):
+        abort(403)
+    filename = attachment.get("name") or f"file-{token}"
+    abs_path = os.path.join(CHAT_UPLOAD_DIR, room_id, f"{token}_{filename}")
+    if not os.path.exists(abs_path):
+        abort(404)
+    return send_file(abs_path, mimetype=attachment.get("type") or "application/octet-stream", as_attachment=False, download_name=filename)
+
+
+@app.get("/chat_attachment/<room_id>/<token>/download")
+@login_required
+def chat_attachment_download(room_id, token):
+    room, attachment = _find_attachment_by_token(room_id, token)
+    if not room or not attachment:
+        abort(404)
+    allowed_user_ids = {info.get("user_id") for info in room.get("participants", {}).values() if info.get("user_id")}
+    if current_user.id not in allowed_user_ids and current_user.id != room.get("host_user_id"):
+        abort(403)
+    if attachment.get("permission") != "download":
+        abort(403)
+    filename = attachment.get("name") or f"file-{token}"
+    abs_path = os.path.join(CHAT_UPLOAD_DIR, room_id, f"{token}_{filename}")
+    if not os.path.exists(abs_path):
+        abort(404)
+    return send_file(abs_path, mimetype=attachment.get("type") or "application/octet-stream", as_attachment=True, download_name=filename)
+
+
 @app.post("/api/translate_message")
 @login_required
 def api_translate_message():
@@ -1646,15 +1778,23 @@ def on_meeting_chat_send(data):
     message = (payload.get("message") or "").strip()[:1000]
     attachment = payload.get("attachment") or None
     if attachment and isinstance(attachment, dict):
-        data_url = str(attachment.get("dataUrl") or "")
-        if len(data_url) > 16 * 1024 * 1024:
-            attachment = None
-        else:
+        token = str(attachment.get("token") or "").strip()
+        if token:
+            permission = str(attachment.get("permission") or "download").strip().lower()
+            if permission not in {"view", "download"}:
+                permission = "download"
             attachment = {
-                "type": str(attachment.get("type") or "file")[:24],
-                "name": str(attachment.get("name") or "attachment")[:80],
-                "dataUrl": data_url,
+                "token": token,
+                "type": str(attachment.get("type") or "application/octet-stream")[:120],
+                "kind": str(attachment.get("kind") or "file")[:24],
+                "name": str(attachment.get("name") or "attachment")[:120],
+                "size": int(attachment.get("size") or 0),
+                "permission": permission,
+                "viewUrl": str(attachment.get("viewUrl") or "")[:500],
+                "downloadUrl": str(attachment.get("downloadUrl") or "")[:500] if permission == "download" else None,
             }
+        else:
+            attachment = None
     mode = (payload.get("mode") or "all").strip()
     mentions = payload.get("mentions") if isinstance(payload.get("mentions"), list) else []
     mentions = [str(x)[:64] for x in mentions[:12]]
@@ -1700,6 +1840,7 @@ def on_meeting_chat_clear():
     is_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
     if is_host:
         room["chat_history"] = []
+        shutil.rmtree(os.path.join(CHAT_UPLOAD_DIR, info["room_id"]), ignore_errors=True)
         socketio.emit("meeting_chat_cleared", {"by": sid, "scope": "all"}, room=info["room_id"])
     else:
         socketio.emit("meeting_chat_cleared", {"by": sid, "scope": "self"}, to=sid)

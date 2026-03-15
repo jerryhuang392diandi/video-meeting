@@ -98,9 +98,16 @@
       <div id="mentionPicker" class="picker-panel hidden"></div>
       <div id="chatMessages" class="chat-messages"></div>
       <div id="chatAttachmentPreview" class="chat-attachment-preview hidden"></div>
+      <div class="chat-file-permission-row">
+        <label>{{ '附件权限' if lang == 'zh' else 'Attachment permission' }}</label>
+        <select id="chatAttachmentPermission">
+          <option value="download" {% if (current_user.default_attachment_permission or 'download') == 'download' %}selected{% endif %}>{{ '可下载' if lang == 'zh' else 'Download allowed' }}</option>
+          <option value="view" {% if (current_user.default_attachment_permission or '') == 'view' %}selected{% endif %}>{{ '仅查看' if lang == 'zh' else 'View only' }}</option>
+        </select>
+      </div>
       <div class="chat-composer">
         <div class="chat-input-row">
-          <textarea id="chatInput" rows="3" placeholder="{{ '输入消息，支持文本/表情/图片/视频' if lang == 'zh' else 'Type a message. Text, emoji, image, and video are supported.' }}"></textarea>
+          <textarea id="chatInput" rows="3" placeholder="{{ '输入消息，支持文本/表情/图片/视频/文档/压缩包' if lang == 'zh' else 'Type a message. Text, emoji, images, videos, documents, and archives are supported.' }}"></textarea>
         </div>
         <div id="emojiPopover" class="emoji-popover hidden">
           <div class="emoji-popover-head">
@@ -111,7 +118,7 @@
         </div>
         <div class="chat-actions">
           <div class="chat-actions-left">
-            <label class="ghost-btn attachment-btn">{{ '图片/视频' if lang == 'zh' else 'Media' }}<input id="chatFileInput" type="file" accept="image/*,video/*" class="hidden" /></label>
+            <label class="ghost-btn attachment-btn">{{ '图片/视频/文档' if lang == 'zh' else 'Media / Docs' }}<input id="chatFileInput" type="file" accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,.rar,.7z" class="hidden" /></label>
             <button class="ghost-btn" id="emojiBtn" type="button">😊 {{ '表情' if lang == 'zh' else 'Emoji' }}</button>
           </div>
           <button class="primary-btn slim-btn" id="sendChatBtn">{{ '发送' if lang == 'zh' else 'Send' }}</button>
@@ -172,6 +179,7 @@ const TEXT_TRANSLATE_OPEN = {{ ('已打开翻译结果' if lang == 'zh' else 'Op
 const TEXT_CHAT_CLEARED_SELF = {{ ('仅清空了你的聊天面板，主持人仍可见历史消息' if lang == 'zh' else 'Only your chat panel was cleared. The host can still see the chat history.')|tojson }};
 const TEXT_CHAT_CLEARED_ALL = {{ ('主持人已清空所有人的聊天记录' if lang == 'zh' else 'The host cleared the chat history for everyone.')|tojson }};
 const TEXT_COPY_SUCCESS = {{ ('文本已复制' if lang == 'zh' else 'Text copied')|tojson }};
+const TEXT_UPLOAD_FAILED = {{ ('附件上传失败' if lang == 'zh' else 'Attachment upload failed')|tojson }};
 
 const socket = io();
 const rtcConfig = { iceServers: {{ turn_ice_servers|tojson }}, iceTransportPolicy: 'relay' };
@@ -240,6 +248,7 @@ const mentionPicker = document.getElementById('mentionPicker');
 const emojiPicker = document.getElementById('emojiPicker');
 const emojiPopover = document.getElementById('emojiPopover');
 const chatContextMenu = document.getElementById('chatContextMenu');
+const chatAttachmentPermission = document.getElementById('chatAttachmentPermission');
 const danmakuLayer = document.getElementById('danmakuLayer');
 
 function setStatus(msg, cls='') {
@@ -839,12 +848,19 @@ function hideFloatingPanels() {
 }
 
 function buildAttachmentHtml(attachment) {
-  if (!attachment || !attachment.dataUrl) return '';
-  if ((attachment.type || '').startsWith('image')) {
-    return `<div class="chat-attachment-block"><img class="chat-media" src="${attachment.dataUrl}" alt="${escapeHtml(attachment.name || 'image')}" /></div>`;
+  if (!attachment) return '';
+  const name = escapeHtml(attachment.name || 'attachment');
+  const permissionLabel = attachment.permission === 'download'
+    ? {{ ('可下载' if lang == 'zh' else 'Download allowed')|tojson }}
+    : {{ ('仅查看' if lang == 'zh' else 'View only')|tojson }};
+  if (attachment.viewUrl && attachment.kind === 'image') {
+    return `<div class="chat-attachment-block"><img class="chat-media" src="${attachment.viewUrl}" alt="${name}" /><div class="chat-file-meta"><span>${name}</span><span>${permissionLabel}</span></div>${attachment.downloadUrl ? `<div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">{{ '查看' if lang == 'zh' else 'View' }}</a><a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">{{ '下载' if lang == 'zh' else 'Download' }}</a></div>` : `<div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">{{ '查看' if lang == 'zh' else 'View' }}</a></div>`}</div>`;
   }
-  if ((attachment.type || '').startsWith('video')) {
-    return `<div class="chat-attachment-block"><video class="chat-media" src="${attachment.dataUrl}" controls playsinline></video></div>`;
+  if (attachment.viewUrl && attachment.kind === 'video') {
+    return `<div class="chat-attachment-block"><video class="chat-media" src="${attachment.viewUrl}" controls playsinline></video><div class="chat-file-meta"><span>${name}</span><span>${permissionLabel}</span></div>${attachment.downloadUrl ? `<div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">{{ '查看' if lang == 'zh' else 'View' }}</a><a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">{{ '下载' if lang == 'zh' else 'Download' }}</a></div>` : `<div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">{{ '查看' if lang == 'zh' else 'View' }}</a></div>`}</div>`;
+  }
+  if (attachment.viewUrl) {
+    return `<div class="chat-attachment-block chat-file-card"><div class="chat-file-meta"><strong>${name}</strong><span>${permissionLabel}</span></div><div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">{{ '打开文件' if lang == 'zh' else 'Open file' }}</a>${attachment.downloadUrl ? `<a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">{{ '下载' if lang == 'zh' else 'Download' }}</a>` : ''}</div></div>`;
   }
   return '';
 }
@@ -1029,10 +1045,15 @@ function updateAttachmentPreview() {
     return;
   }
   chatAttachmentPreview.classList.remove('hidden');
-  if ((pendingAttachment.type || '').startsWith('image')) {
-    chatAttachmentPreview.innerHTML = `<img class="chat-media" src="${pendingAttachment.dataUrl}" alt="preview" /><button class="ghost-btn" id="clearAttachmentBtn">{{ '移除附件' if lang == 'zh' else 'Remove attachment' }}</button>`;
+  const permissionText = (chatAttachmentPermission?.value || 'download') === 'download'
+    ? {{ ('接收方可下载' if lang == 'zh' else 'Recipients can download')|tojson }}
+    : {{ ('接收方仅可查看' if lang == 'zh' else 'Recipients can only view')|tojson }};
+  if ((pendingAttachment.type || '').startsWith('image') && pendingAttachment.previewUrl) {
+    chatAttachmentPreview.innerHTML = `<img class="chat-media" src="${pendingAttachment.previewUrl}" alt="preview" /><div class="chat-file-meta"><span>${escapeHtml(pendingAttachment.name || 'attachment')}</span><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ '移除附件' if lang == 'zh' else 'Remove attachment' }}</button>`;
+  } else if ((pendingAttachment.type || '').startsWith('video') && pendingAttachment.previewUrl) {
+    chatAttachmentPreview.innerHTML = `<video class="chat-media" src="${pendingAttachment.previewUrl}" controls playsinline></video><div class="chat-file-meta"><span>${escapeHtml(pendingAttachment.name || 'attachment')}</span><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ '移除附件' if lang == 'zh' else 'Remove attachment' }}</button>`;
   } else {
-    chatAttachmentPreview.innerHTML = `<video class="chat-media" src="${pendingAttachment.dataUrl}" controls playsinline></video><button class="ghost-btn" id="clearAttachmentBtn">{{ '移除附件' if lang == 'zh' else 'Remove attachment' }}</button>`;
+    chatAttachmentPreview.innerHTML = `<div class="chat-file-card"><div class="chat-file-meta"><strong>${escapeHtml(pendingAttachment.name || 'attachment')}</strong><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ '移除附件' if lang == 'zh' else 'Remove attachment' }}</button></div>`;
   }
   document.getElementById('clearAttachmentBtn').onclick = () => { pendingAttachment = null; updateAttachmentPreview(); };
 }
@@ -1046,15 +1067,37 @@ function extractMentions(text) {
   return Array.from(new Set((text.match(/@[\w一-龥.-]+/g) || []).map(x => x.replace(/^@/, ''))));
 }
 
+async function uploadPendingAttachment() {
+  if (!pendingAttachment?.file) return null;
+  const formData = new FormData();
+  formData.append('room_id', ROOM_ID);
+  formData.append('permission', chatAttachmentPermission?.value || 'download');
+  formData.append('file', pendingAttachment.file, pendingAttachment.name || pendingAttachment.file.name || 'attachment');
+  const resp = await fetch('/api/chat_upload', { method: 'POST', body: formData });
+  const data = await resp.json();
+  if (!resp.ok || !data.ok) throw new Error(data.error || 'upload_failed');
+  return data.attachment;
+}
+
 async function sendChatMessage() {
   const message = (chatInput.value || '').trim();
   if (!message && !pendingAttachment) return;
+  let attachmentPayload = null;
+  if (pendingAttachment) {
+    try {
+      attachmentPayload = await uploadPendingAttachment();
+    } catch (err) {
+      console.error(err);
+      setStatus(TEXT_UPLOAD_FAILED, 'error');
+      return;
+    }
+  }
   socket.emit('meeting_chat_send', {
     room_id: ROOM_ID,
     mode: activeChatMode,
     message,
     mentions: extractMentions(message),
-    attachment: pendingAttachment,
+    attachment: attachmentPayload,
   });
   chatInput.value = '';
   pendingAttachment = null;
@@ -1157,6 +1200,7 @@ function initChatUi() {
       socket.emit('meeting_chat_clear');
     }
   });
+  chatAttachmentPermission?.addEventListener('change', updateAttachmentPreview);
   sendChatBtn?.addEventListener('click', sendChatMessage);
   chatInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } });
   document.getElementById('mentionBtn')?.addEventListener('click', () => { renderMentionPicker(); mentionPicker.classList.toggle('hidden'); emojiPopover?.classList.add('hidden'); });
@@ -1182,27 +1226,24 @@ function initChatUi() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      if (file.type.startsWith('image/')) {
-        const compressed = await compressImageFile(file);
-        if ((compressed.dataUrl || '').length > 6 * 1024 * 1024) {
-          setStatus({{ ('图片压缩后仍然过大，请换一张更小的图片' if lang == 'zh' else 'The compressed image is still too large. Please choose a smaller image.')|tojson }}, 'warning');
-          return;
-        }
-        pendingAttachment = compressed;
-        updateAttachmentPreview();
-        setStatus({{ ('图片已自动压缩，可发送' if lang == 'zh' else 'Image compressed and ready to send')|tojson }});
-      } else if (file.type.startsWith('video/')) {
-        const limit = 20 * 1024 * 1024;
-        if (file.size > limit) {
-          setStatus({{ ('视频请控制在 20MB 以内，当前版本先不在浏览器中自动压缩视频' if lang == 'zh' else 'Please keep video files under 20MB. This version does not compress videos in the browser yet.')|tojson }}, 'warning');
-          return;
-        }
-        const dataUrl = await fileToDataUrl(file);
-        pendingAttachment = { type: file.type, name: file.name, dataUrl };
-        updateAttachmentPreview();
-      } else {
-        setStatus({{ ('暂不支持该文件类型' if lang == 'zh' else 'This file type is not supported yet')|tojson }}, 'warning');
+      const limit = 25 * 1024 * 1024;
+      if (file.size > limit) {
+        setStatus({{ ('单个附件请控制在 25MB 以内' if lang == 'zh' else 'Please keep each attachment under 25MB')|tojson }}, 'warning');
+        return;
       }
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      const allowed = ['png','jpg','jpeg','gif','webp','bmp','mp4','webm','mov','m4v','pdf','doc','docx','ppt','pptx','xls','xlsx','txt','zip','rar','7z'];
+      if (!allowed.includes(ext) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+        setStatus({{ ('暂不支持该文件类型' if lang == 'zh' else 'This file type is not supported yet')|tojson }}, 'warning');
+        return;
+      }
+      let previewUrl = '';
+      if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+        previewUrl = URL.createObjectURL(file);
+      }
+      pendingAttachment = { type: file.type || 'application/octet-stream', name: file.name, file, previewUrl };
+      updateAttachmentPreview();
+      setStatus({{ ('附件已准备好，可发送' if lang == 'zh' else 'Attachment is ready to send')|tojson }});
     } catch (err) {
       console.error(err);
       setStatus({{ ('附件处理失败' if lang == 'zh' else 'Failed to process attachment')|tojson }}, 'error');

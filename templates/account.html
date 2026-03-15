@@ -4,7 +4,7 @@
 <header class="topbar compact">
   <div>
     <div class="brand">{{ '我的账户' if lang == 'zh' else 'My Account' }}</div>
-    <div class="muted">{{ '管理用户名、会议显示名与登录密码' if lang == 'zh' else 'Manage username, meeting display name, and password' }}</div>
+    <div class="muted">{{ '管理用户名、会议显示名、地区与文件权限偏好' if lang == 'zh' else 'Manage username, meeting display name, region, and file permission preferences' }}</div>
   </div>
   <div class="top-actions">
     <a class="chip" href="{{ url_for('index') }}">{{ t('back_home') }}</a>
@@ -21,6 +21,23 @@
       <input name="username" maxlength="32" value="{{ user.username }}" required />
       <label>{{ t('display_name') }}</label>
       <input name="display_name" maxlength="32" value="{{ preferred_display_name }}" />
+      <label>{{ '地区 / 时区' if lang == 'zh' else 'Region / Time zone' }}</label>
+      <select name="region">
+        {% for item in ['Asia/Tokyo','Asia/Shanghai','Asia/Hong_Kong','Europe/London','America/Los_Angeles'] %}
+        <option value="{{ item }}" {% if region == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+      <label>{{ '翻译默认语言' if lang == 'zh' else 'Translation default' }}</label>
+      <select name="preferred_locale">
+        <option value="auto" {% if preferred_locale == 'auto' %}selected{% endif %}>{{ '自动检测' if lang == 'zh' else 'Auto detect' }}</option>
+        <option value="zh" {% if preferred_locale == 'zh' %}selected{% endif %}>中文</option>
+        <option value="en" {% if preferred_locale == 'en' %}selected{% endif %}>English</option>
+      </select>
+      <label>{{ '聊天附件默认权限' if lang == 'zh' else 'Default chat attachment permission' }}</label>
+      <select name="default_attachment_permission">
+        <option value="download" {% if default_attachment_permission == 'download' %}selected{% endif %}>{{ '可下载' if lang == 'zh' else 'Download allowed' }}</option>
+        <option value="view" {% if default_attachment_permission == 'view' %}selected{% endif %}>{{ '仅查看' if lang == 'zh' else 'View only' }}</option>
+      </select>
       <button class="primary-btn" type="submit">{{ t('save') }}</button>
     </form>
   </div>
