@@ -84,7 +84,6 @@
         <div class="row-compact">
           <button class="card-btn" id="chatHideBtn">{{ '隐藏' if lang == 'zh' else 'Hide' }} →</button>
           <button class="card-btn" id="mentionBtn">@</button>
-          <button class="card-btn" id="emojiBtn">😊</button>
           {% if is_host %}<button class="card-btn" id="toggleDanmakuBtn">{{ '弹幕' if lang == 'zh' else 'Danmaku' }}</button>{% endif %}
         </div>
       </div>
@@ -93,15 +92,20 @@
         <button class="chat-mode-btn" data-mode="host">{{ '仅主持人可见' if lang == 'zh' else 'Host only' }}</button>
       </div>
       <div id="mentionPicker" class="picker-panel hidden"></div>
-      <div id="emojiPicker" class="picker-panel hidden">😀 😄 😎 👍 🎉 ❤️ 🚀 👏 🤝 📌</div>
       <div id="chatMessages" class="chat-messages"></div>
       <div id="chatAttachmentPreview" class="chat-attachment-preview hidden"></div>
-      <div class="chat-input-row">
-        <textarea id="chatInput" rows="3" placeholder="{{ '输入消息，支持文本/表情/图片/视频' if lang == 'zh' else 'Type a message. Text, emoji, image, and video are supported.' }}"></textarea>
-      </div>
-      <div class="chat-actions">
-        <label class="ghost-btn attachment-btn">{{ '图片/视频' if lang == 'zh' else 'Media' }}<input id="chatFileInput" type="file" accept="image/*,video/*" class="hidden" /></label>
-        <button class="primary-btn slim-btn" id="sendChatBtn">{{ '发送' if lang == 'zh' else 'Send' }}</button>
+      <div class="chat-composer">
+        <div class="chat-input-row">
+          <textarea id="chatInput" rows="3" placeholder="{{ '输入消息，支持文本/表情/图片/视频' if lang == 'zh' else 'Type a message. Text, emoji, image, and video are supported.' }}"></textarea>
+        </div>
+        <div id="emojiPicker" class="picker-panel emoji-picker hidden"></div>
+        <div class="chat-actions">
+          <div class="chat-actions-left">
+            <label class="ghost-btn attachment-btn">{{ '图片/视频' if lang == 'zh' else 'Media' }}<input id="chatFileInput" type="file" accept="image/*,video/*" class="hidden" /></label>
+            <button class="ghost-btn" id="emojiBtn" type="button">😊 {{ '表情' if lang == 'zh' else 'Emoji' }}</button>
+          </div>
+          <button class="primary-btn slim-btn" id="sendChatBtn">{{ '发送' if lang == 'zh' else 'Send' }}</button>
+        </div>
       </div>
     </div>
   </main>
@@ -772,6 +776,7 @@ async function activateVirtualBackground() {
 let activeChatMode = 'all';
 let pendingAttachment = null;
 let danmakuEnabled = false;
+const CHAT_EMOJIS = ['😀','😄','😁','😂','😉','😊','😍','🥳','😎','🤔','👍','👏','🙌','🎉','❤️','🔥','🚀','🤝','🙏','📌'];
 
 function escapeHtml(text) {
   return String(text || '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -785,6 +790,18 @@ function renderMentionPicker() {
     btn.addEventListener('click', () => {
       chatInput.value = `${chatInput.value}${chatInput.value && !chatInput.value.endsWith(' ') ? ' ' : ''}@${btn.dataset.name} `;
       mentionPicker.classList.add('hidden');
+      chatInput.focus();
+    });
+  });
+}
+
+function renderEmojiPicker() {
+  if (!emojiPicker) return;
+  emojiPicker.innerHTML = CHAT_EMOJIS.map(emoji => `<button type="button" class="emoji-option" data-emoji="${emoji}">${emoji}</button>`).join('');
+  emojiPicker.querySelectorAll('.emoji-option').forEach(btn => {
+    btn.addEventListener('click', () => {
+      chatInput.value = `${chatInput.value}${btn.dataset.emoji}`;
+      emojiPicker.classList.add('hidden');
       chatInput.focus();
     });
   });
@@ -882,13 +899,13 @@ function initChatUi() {
   enableChatDrag();
   setChatCollapsed(false);
   renderMentionPicker();
+  renderEmojiPicker();
   setChatMode('all');
   document.querySelectorAll('.chat-mode-btn').forEach(btn => btn.addEventListener('click', () => setChatMode(btn.dataset.mode)));
   sendChatBtn?.addEventListener('click', sendChatMessage);
   chatInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } });
   document.getElementById('mentionBtn')?.addEventListener('click', () => { renderMentionPicker(); mentionPicker.classList.toggle('hidden'); emojiPicker.classList.add('hidden'); });
-  document.getElementById('emojiBtn')?.addEventListener('click', () => { emojiPicker.classList.toggle('hidden'); mentionPicker.classList.add('hidden'); });
-  emojiPicker?.addEventListener('click', (e) => { if (e.target.textContent.trim()) { chatInput.value += e.target.textContent.trim(); chatInput.focus(); } });
+  document.getElementById('emojiBtn')?.addEventListener('click', () => { renderEmojiPicker(); emojiPicker.classList.toggle('hidden'); mentionPicker.classList.add('hidden'); });
   chatFileInput?.addEventListener('change', async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const limit = file.type.startsWith('video') ? 12 * 1024 * 1024 : 4 * 1024 * 1024;
