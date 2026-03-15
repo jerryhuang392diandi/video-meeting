@@ -1097,8 +1097,18 @@ async function uploadPendingAttachment() {
   formData.append('permission', chatAttachmentPermission?.value || 'download');
   formData.append('file', pendingAttachment.file, pendingAttachment.name || pendingAttachment.file.name || 'attachment');
   const resp = await fetch('/api/chat_upload', { method: 'POST', body: formData });
-  const data = await resp.json();
-  if (!resp.ok || !data.ok) throw new Error(data.error || 'upload_failed');
+  const contentType = resp.headers.get('content-type') || '';
+  let data = null;
+  if (contentType.includes('application/json')) {
+    data = await resp.json();
+  } else {
+    const text = await resp.text().catch(() => '');
+    data = { ok: false, error: text || `http_${resp.status}` };
+  }
+  if (!resp.ok || !data.ok) {
+    const errorCode = data?.error || `http_${resp.status}`;
+    throw new Error(errorCode);
+  }
   return data.attachment;
 }
 
@@ -1114,9 +1124,13 @@ async function sendChatMessage() {
       const msg = String(err?.message || '');
       if (msg.includes('room_storage_limit') || msg.includes('server_storage_limit')) {
         setStatus(TEXT_ROOM_STORAGE_LIMIT, 'warning');
-      } else if (msg.includes('file_too_large')) {
+      } else if (msg.includes('file_too_large') || msg.includes('http_413')) {
         const file = pendingAttachment?.file;
-        setStatus(file?.type?.startsWith('image/') ? TEXT_ATTACHMENT_LIMIT_IMAGE : (file?.type?.startsWith('video/') ? TEXT_ATTACHMENT_LIMIT_VIDEO : TEXT_ATTACHMENT_LIMIT_FILE), 'warning');
+        const extra = msg.includes('http_413')
+          ? {{ ('（服务器或 Nginx 上传上限过小，请同步调大 client_max_body_size）' if lang == 'zh' else '(Server or Nginx upload limit is too small. Increase client_max_body_size as well.)')|tojson }}
+          : '';
+        const baseMsg = file?.type?.startsWith('image/') ? TEXT_ATTACHMENT_LIMIT_IMAGE : (file?.type?.startsWith('video/') ? TEXT_ATTACHMENT_LIMIT_VIDEO : TEXT_ATTACHMENT_LIMIT_FILE);
+        setStatus(`${baseMsg}${extra}`, 'warning');
       } else {
         setStatus(TEXT_UPLOAD_FAILED, 'error');
       }

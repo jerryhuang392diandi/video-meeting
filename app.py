@@ -1792,8 +1792,21 @@ def _attachment_is_inline_previewable(attachment: dict | None) -> bool:
     return False
 
 def _chat_attachment_abs_path(room_id: str, attachment: dict):
+    stored_name = str(attachment.get("storedName") or "").strip()
+    if stored_name:
+        return os.path.join(CHAT_UPLOAD_DIR, room_id, stored_name)
     filename = attachment.get("name") or f"file-{attachment.get('token') or ''}"
-    return os.path.join(CHAT_UPLOAD_DIR, room_id, f"{attachment.get('token')}_{filename}")
+    legacy_path = os.path.join(CHAT_UPLOAD_DIR, room_id, f"{attachment.get('token')}_{filename}")
+    if os.path.exists(legacy_path):
+        return legacy_path
+    token = str(attachment.get("token") or "").strip()
+    if token:
+        room_dir = os.path.join(CHAT_UPLOAD_DIR, room_id)
+        if os.path.isdir(room_dir):
+            for candidate in os.listdir(room_dir):
+                if candidate.startswith(f"{token}_"):
+                    return os.path.join(room_dir, candidate)
+    return legacy_path
 
 def _can_access_room_attachment(room: dict | None) -> bool:
     if not room:
@@ -1863,6 +1876,7 @@ def api_chat_upload():
 
     attachment = {
         "token": token,
+        "storedName": stored_name,
         "type": content_type,
         "kind": _attachment_kind(display_name, content_type),
         "name": display_name,
@@ -1988,6 +2002,7 @@ def on_meeting_chat_send(data):
                 permission = "download"
             attachment = {
                 "token": token,
+                "storedName": str(attachment.get("storedName") or "")[:180],
                 "type": str(attachment.get("type") or "application/octet-stream")[:120],
                 "kind": str(attachment.get("kind") or "file")[:24],
                 "name": str(attachment.get("name") or "attachment")[:120],
