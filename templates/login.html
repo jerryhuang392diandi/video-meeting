@@ -44,7 +44,7 @@
     <label>{{ t('password') }}</label>
     <input name="password" type="password" required />
     <button class="primary-btn" type="submit">{{ t('submit_login') }}</button>
-    <a class="text-link" href="{{ url_for('register') }}">{{ t('nav_register') }}</a>
+    <div class="auth-links-row"><a class="text-link" href="{{ url_for('register') }}">{{ t('nav_register') }}</a><a class="text-link" href="{{ url_for('forgot_password_page') }}">{{ '找回密码' if lang == 'zh' else 'Forgot password' }}</a></div>
   </form>
 </section>
 {% endblock %}

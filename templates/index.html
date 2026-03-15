@@ -11,6 +11,7 @@
       <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
     </div>
     <span class="user-pill">{{ t('current_user') }}: {{ current_user.username }}</span>
+    <a class="chip" href="{{ url_for('account_page') }}">{{ '我的账户' if lang == 'zh' else 'My Account' }}</a>
     <a class="chip" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
     {% if current_user.is_admin %}<a class="chip" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
     <a class="chip danger" href="{{ url_for('logout') }}">{{ t('nav_logout') }}</a>
@@ -47,7 +48,7 @@
       <span class="section-tag">Host</span>
     </div>
     <label>{{ t('host_name') }}</label>
-    <input id="hostName" maxlength="32" value="{{ current_user.username }}" />
+    <input id="hostName" maxlength="32" value="{{ preferred_display_name }}" />
     <button class="primary-btn" id="createBtn">{{ t('create_now') }}</button>
     <div id="createResult" class="result-box hidden"></div>
   </div>
@@ -58,7 +59,7 @@
       <span class="section-tag">Guest</span>
     </div>
     <label>{{ t('display_name') }}</label>
-    <input id="joinName" maxlength="32" value="{{ current_user.username }}" />
+    <input id="joinName" maxlength="32" value="{{ preferred_display_name }}" />
     <label>{{ t('room_id') }}</label>
     <input id="joinRoomId" maxlength="6" />
     <label>{{ t('room_password') }}</label>
@@ -71,6 +72,7 @@
   <div class="panel compact-panel">
     <h3>{{ t('quick_actions') }}</h3>
     <div class="link-stack">
+      <a class="ghost-btn wide-link" href="{{ url_for('account_page') }}">{{ '我的账户' if lang == 'zh' else 'My Account' }}</a>
       <a class="ghost-btn wide-link" href="{{ url_for('history') }}">{{ t('meeting_history') }}</a>
       {% if current_user.is_admin %}<a class="ghost-btn wide-link" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
       <a class="ghost-btn wide-link" href="{{ url_for('logout') }}">{{ t('nav_logout') }}</a>

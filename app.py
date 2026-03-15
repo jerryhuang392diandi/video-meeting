@@ -419,6 +419,7 @@ class User(UserMixin, db.Model):
     monthly_quota_mb = db.Column(db.Float, default=10240.0)
     used_traffic_mb = db.Column(db.Float, default=0.0)
     traffic_cycle_start_at = db.Column(db.DateTime, nullable=True)
+    display_name = db.Column(db.String(32), nullable=True)
 
     meetings = db.relationship("Meeting", backref="host", lazy=True)
 
@@ -456,6 +457,17 @@ class MeetingParticipant(db.Model):
     left_at = db.Column(db.DateTime, nullable=True)
 
 
+class PasswordResetRequest(db.Model):
+    __tablename__ = "password_reset_requests"
+
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(64), nullable=False, index=True)
+    contact = db.Column(db.String(128), nullable=True)
+    note = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(16), default="pending")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -469,6 +481,13 @@ def t(key: str) -> str:
 def tf(lang: str, key: str) -> str:
     return TRANSLATIONS.get(lang, TRANSLATIONS["zh"]).get(key, key)
 
+
+
+
+def preferred_display_name(user):
+    if not user:
+        return "Guest"
+    return (getattr(user, "display_name", None) or getattr(user, "username", None) or "Guest").strip()[:32] or "Guest"
 
 def utc_iso(dt):
     if not dt:
@@ -501,6 +520,9 @@ def ensure_user_columns():
         cur.execute("ALTER TABLE users ADD COLUMN used_traffic_mb FLOAT DEFAULT 0")
     if "traffic_cycle_start_at" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN traffic_cycle_start_at DATETIME")
+    if "display_name" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN display_name VARCHAR(32)")
+    cur.execute("CREATE TABLE IF NOT EXISTS password_reset_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, username VARCHAR(64) NOT NULL, contact VARCHAR(128), note TEXT, status VARCHAR(16) DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)")
     conn.commit()
     conn.close()
 
@@ -793,6 +815,7 @@ def ensure_runtime_room(meeting):
         "expiry_timer": None,
         "lang": session.get("lang", "zh"),
         "traffic_last_sync": time.time(),
+        "danmaku_enabled": False,
     }
     schedule_room_expiry(meeting.room_id, meeting.created_at.timestamp())
     return room
@@ -967,7 +990,65 @@ def index():
         return redirect(url_for("login"))
     sync_user_traffic(current_user.id)
     db.session.refresh(current_user)
-    return render_template("index.html", traffic=traffic_summary_dict(current_user))
+    return render_template("index.html", traffic=traffic_summary_dict(current_user), preferred_display_name=preferred_display_name(current_user))
+
+
+@app.route("/account", methods=["GET", "POST"])
+@login_required
+def account_page():
+    message = None
+    error = None
+    if request.method == "POST":
+        action = (request.form.get("action") or "profile").strip()
+        fresh_user = db.session.get(User, current_user.id)
+        if action == "profile":
+            username = (request.form.get("username") or "").strip()[:32]
+            display_name = (request.form.get("display_name") or "").strip()[:32]
+            if not username:
+                error = t("username_password_required")
+            else:
+                existing = User.query.filter(User.username == username, User.id != fresh_user.id).first()
+                if existing:
+                    error = t("username_exists")
+                else:
+                    fresh_user.username = username
+                    fresh_user.display_name = display_name or username
+                    db.session.commit()
+                    message = "保存成功" if session.get("lang", "zh") == "zh" else "Profile saved"
+        elif action == "password":
+            current_password = (request.form.get("current_password") or "").strip()
+            new_password = (request.form.get("new_password") or "").strip()
+            if not fresh_user.check_password(current_password):
+                error = t("invalid_login")
+            elif not new_password:
+                error = t("username_password_required")
+            else:
+                fresh_user.set_password(new_password)
+                fresh_user.session_version = (fresh_user.session_version or 0) + 1
+                db.session.commit()
+                session["session_version"] = fresh_user.session_version
+                disconnect_user_sockets(fresh_user.id, message=t("kicked"))
+                message = "密码已更新" if session.get("lang", "zh") == "zh" else "Password updated"
+    fresh_user = db.session.get(User, current_user.id)
+    return render_template("account.html", user=fresh_user, message=message, error=error, preferred_display_name=preferred_display_name(fresh_user))
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password_page():
+    message = None
+    error = None
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()[:64]
+        contact = (request.form.get("contact") or "").strip()[:128]
+        note = (request.form.get("note") or "").strip()[:500]
+        if not username:
+            error = t("username_password_required")
+        else:
+            req = PasswordResetRequest(username=username, contact=contact, note=note, status="pending")
+            db.session.add(req)
+            db.session.commit()
+            message = "找回密码申请已提交，请等待管理员联系。" if session.get("lang", "zh") == "zh" else "Password reset request submitted. Please wait for admin support."
+    return render_template("forgot_password.html", message=message, error=error)
 
 
 @app.route("/help")
@@ -993,7 +1074,7 @@ def register():
     if User.query.filter_by(username=username).first():
         return render_template("register.html", error=t("username_exists"))
 
-    user = User(username=username, is_active_user=True, session_version=0, monthly_quota_mb=10240.0, used_traffic_mb=0.0, traffic_cycle_start_at=datetime.utcnow())
+    user = User(username=username, display_name=username, is_active_user=True, session_version=0, monthly_quota_mb=10240.0, used_traffic_mb=0.0, traffic_cycle_start_at=datetime.utcnow())
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
@@ -1072,6 +1153,7 @@ def api_create_room():
         "expiry_timer": None,
         "lang": session.get("lang", "zh"),
         "traffic_last_sync": time.time(),
+        "danmaku_enabled": False,
     }
     schedule_room_expiry(room_id, meeting.created_at.timestamp())
 
@@ -1119,6 +1201,7 @@ def room_page(room_id):
         is_host=is_host,
         traffic=traffic_summary_dict(current_user),
         turn_ice_servers=build_turn_ice_servers(),
+        preferred_display_name=preferred_display_name(current_user),
     )
 
 
@@ -1237,6 +1320,7 @@ def admin_dashboard():
     meetings = Meeting.query.order_by(Meeting.created_at.desc(), Meeting.id.desc()).all()
     active_meetings = [m for m in meetings if m.status == "active"]
     history_meetings = [m for m in meetings if m.status != "active"]
+    reset_requests = PasswordResetRequest.query.order_by(PasswordResetRequest.created_at.desc()).limit(30).all()
     online_rooms = [
         {"room_id": rid, "participant_count": len(info["participants"]), "host_name": info["host_name"]}
         for rid, info in rooms.items()
@@ -1249,6 +1333,7 @@ def admin_dashboard():
         history_meetings=history_meetings,
         online_rooms=online_rooms,
         traffic_summaries={u.id: traffic_summary_dict(u) for u in users},
+        reset_requests=reset_requests,
     )
 
 
@@ -1350,6 +1435,18 @@ def admin_bulk_delete_meetings():
     db.session.commit()
     return redirect(url_for("admin_dashboard"))
 
+@app.post("/admin/reset-request/<int:request_id>/<status>")
+@login_required
+@admin_required
+def admin_update_reset_request(request_id, status):
+    reset_request = PasswordResetRequest.query.get_or_404(request_id)
+    if status not in {"pending", "resolved", "rejected"}:
+        status = "pending"
+    reset_request.status = status
+    db.session.commit()
+    return redirect(url_for("admin_dashboard"))
+
+
 @app.errorhandler(404)
 def not_found(_):
     return render_template("404.html"), 404
@@ -1364,7 +1461,7 @@ def forbidden(_):
 def on_join_room(data):
     room_id = (data.get("room_id") or "").strip()
     password = normalize_password(data.get("password") or "")
-    user_name = (data.get("user_name") or "Guest").strip()[:32] or "Guest"
+    user_name = (data.get("user_name") or preferred_display_name(current_user)).strip()[:32] or preferred_display_name(current_user)
 
     meeting = Meeting.query.filter_by(room_id=room_id).first()
     if not ensure_meeting_not_expired(meeting):
@@ -1425,6 +1522,7 @@ def on_join_room(data):
             "self_sid": sid,
             "participant_count": len(room["participants"]),
             "host_present": bool(room.get("host_present")),
+            "danmaku_enabled": bool(room.get("danmaku_enabled")),
         },
     )
     emit(
@@ -1440,6 +1538,99 @@ def on_join_room(data):
             {"host_present": True, "message": t("host_returned_room")},
             room=room_id,
         )
+
+
+@socketio.on("update_profile")
+def on_update_profile(data):
+    sid = request.sid
+    info = sid_to_user.get(sid)
+    if not info:
+        return
+    room_id = info["room_id"]
+    room = rooms.get(room_id)
+    if not room or sid not in room.get("participants", {}):
+        return
+    new_name = ((data or {}).get("name") or "").strip()[:32]
+    if not new_name:
+        return
+    room["participants"][sid]["name"] = new_name
+    info["name"] = new_name
+    participant = MeetingParticipant.query.filter_by(sid=sid).order_by(MeetingParticipant.id.desc()).first()
+    if participant:
+        participant.display_name = new_name
+    if current_user.is_authenticated:
+        user = db.session.get(User, current_user.id)
+        if user:
+            user.display_name = new_name
+    db.session.commit()
+    socketio.emit("participant_updated", {"sid": sid, "name": new_name}, room=room_id)
+
+
+@socketio.on("meeting_chat_send")
+def on_meeting_chat_send(data):
+    sync_network_traffic()
+    sid = request.sid
+    info = sid_to_user.get(sid)
+    if not info:
+        return
+    room_id = info["room_id"]
+    room = rooms.get(room_id)
+    if not room:
+        return
+    payload = data or {}
+    message = (payload.get("message") or "").strip()[:1000]
+    attachment = payload.get("attachment") or None
+    if attachment and isinstance(attachment, dict):
+        data_url = str(attachment.get("dataUrl") or "")
+        if len(data_url) > 16 * 1024 * 1024:
+            attachment = None
+        else:
+            attachment = {
+                "type": str(attachment.get("type") or "file")[:24],
+                "name": str(attachment.get("name") or "attachment")[:80],
+                "dataUrl": data_url,
+            }
+    mode = (payload.get("mode") or "all").strip()
+    mentions = payload.get("mentions") if isinstance(payload.get("mentions"), list) else []
+    mentions = [str(x)[:64] for x in mentions[:12]]
+    if not message and not attachment:
+        return
+    event = {
+        "id": secrets.token_hex(8),
+        "from": sid,
+        "senderName": room["participants"].get(sid, {}).get("name") or info.get("name") or "Guest",
+        "message": message,
+        "mode": "host" if mode == "host" else "all",
+        "mentions": mentions,
+        "attachment": attachment,
+        "createdAt": datetime.utcnow().strftime("%H:%M:%S"),
+    }
+    if event["mode"] == "host":
+        target_sids = {sid}
+        for participant_sid, participant_info in room.get("participants", {}).items():
+            if participant_info.get("user_id") == room.get("host_user_id"):
+                target_sids.add(participant_sid)
+        for target_sid in target_sids:
+            socketio.emit("meeting_chat_message", event, to=target_sid)
+    else:
+        socketio.emit("meeting_chat_message", event, room=room_id)
+
+
+@socketio.on("toggle_danmaku")
+def on_toggle_danmaku(data):
+    sid = request.sid
+    info = sid_to_user.get(sid)
+    if not info:
+        return
+    room_id = info["room_id"]
+    room = rooms.get(room_id)
+    meeting = Meeting.query.filter_by(room_id=room_id).first()
+    if not room or not meeting or not current_user.is_authenticated or current_user.id != meeting.host_user_id:
+        emit("host_action_error", {"message": t("host_only_action")})
+        return
+    enabled = bool((data or {}).get("enabled"))
+    room["danmaku_enabled"] = enabled
+    socketio.emit("room_ui_event", {"type": "danmaku_toggled", "enabled": enabled, "from": sid}, room=room_id)
 
 
 @socketio.on("signal")
