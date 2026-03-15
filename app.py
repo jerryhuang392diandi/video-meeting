@@ -44,6 +44,7 @@ DB_PATH = os.path.join(INSTANCE_DIR, "app.db")
 os.makedirs(INSTANCE_DIR, exist_ok=True)
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_hex(16))
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", f"sqlite:///{DB_PATH}")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -61,9 +62,9 @@ sid_to_user = {}
 user_active_sids = {}
 CHAT_UPLOAD_DIR = os.path.join(INSTANCE_DIR, "chat_uploads")
 os.makedirs(CHAT_UPLOAD_DIR, exist_ok=True)
-CHAT_MAX_UPLOAD_BYTES = 12 * 1024 * 1024
-CHAT_IMAGE_MAX_UPLOAD_BYTES = 8 * 1024 * 1024
-CHAT_VIDEO_MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+CHAT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+CHAT_IMAGE_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+CHAT_VIDEO_MAX_UPLOAD_BYTES = 120 * 1024 * 1024
 CHAT_ROOM_STORAGE_LIMIT_BYTES = 120 * 1024 * 1024
 CHAT_GLOBAL_STORAGE_LIMIT_BYTES = 512 * 1024 * 1024
 CHAT_IMAGE_MAX_DIMENSION = 1920
@@ -1793,19 +1794,25 @@ def _attachment_is_inline_previewable(attachment: dict | None) -> bool:
 
 def _chat_attachment_abs_path(room_id: str, attachment: dict):
     stored_name = str(attachment.get("storedName") or "").strip()
+    room_dir = os.path.join(CHAT_UPLOAD_DIR, room_id)
     if stored_name:
-        return os.path.join(CHAT_UPLOAD_DIR, room_id, stored_name)
+        direct = os.path.join(room_dir, stored_name)
+        if os.path.exists(direct):
+            return direct
+        for sub in ('media', 'docs'):
+            candidate = os.path.join(room_dir, sub, stored_name)
+            if os.path.exists(candidate):
+                return candidate
     filename = attachment.get("name") or f"file-{attachment.get('token') or ''}"
-    legacy_path = os.path.join(CHAT_UPLOAD_DIR, room_id, f"{attachment.get('token')}_{filename}")
+    legacy_path = os.path.join(room_dir, f"{attachment.get('token')}_{filename}")
     if os.path.exists(legacy_path):
         return legacy_path
     token = str(attachment.get("token") or "").strip()
-    if token:
-        room_dir = os.path.join(CHAT_UPLOAD_DIR, room_id)
-        if os.path.isdir(room_dir):
-            for candidate in os.listdir(room_dir):
+    if token and os.path.isdir(room_dir):
+        for root, _, files in os.walk(room_dir):
+            for candidate in files:
                 if candidate.startswith(f"{token}_"):
-                    return os.path.join(room_dir, candidate)
+                    return os.path.join(root, candidate)
     return legacy_path
 
 def _can_access_room_attachment(room: dict | None) -> bool:
@@ -1853,7 +1860,13 @@ def api_chat_upload():
     room_dir = os.path.join(CHAT_UPLOAD_DIR, room_id)
     os.makedirs(room_dir, exist_ok=True)
 
-    optimized = _optimize_image_to_path(upload, original_name, room_dir) if kind == 'image' else None
+    # Media and document uploads intentionally follow separate storage paths.
+    # Images/videos keep their original file bytes to maximize compatibility
+    # across browsers and mobile devices; documents continue to use the
+    # unified attachment card and preview/download rules.
+    optimized = None
+    if kind == 'image' and False:
+        optimized = _optimize_image_to_path(upload, original_name, room_dir)
     if optimized:
         if _enforce_chat_storage_limits(room_id, optimized['size']):
             try:
@@ -1867,8 +1880,11 @@ def api_chat_upload():
         content_type = optimized['content_type']
         size = optimized['size']
     else:
+        bucket = 'media' if kind in {'image', 'video', 'audio'} else 'docs'
+        target_dir = os.path.join(room_dir, bucket)
+        os.makedirs(target_dir, exist_ok=True)
         stored_name = f"{token}_{original_name}"
-        abs_path = os.path.join(room_dir, stored_name)
+        abs_path = os.path.join(target_dir, stored_name)
         upload.stream.seek(0)
         upload.save(abs_path)
         size = os.path.getsize(abs_path)
