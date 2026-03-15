@@ -79,7 +79,7 @@
       <div id="chatHeader" class="chat-header">
         <div>
           <strong>{{ '会议聊天' if lang == 'zh' else 'Meeting chat' }}</strong>
-          <div class="muted small-note">{{ '可拖动，可@成员，可切换公开/仅主持人' if lang == 'zh' else 'Draggable, supports @mentions and public/host-only chat' }}</div>
+          <div class="muted small-note">{{ '固定在右侧，可@成员，可切换公开/仅主持人' if lang == 'zh' else 'Fixed on the right, supports @mentions and public/host-only chat' }}</div>
         </div>
         <div class="row-compact">
           <button class="card-btn" id="chatHideBtn">{{ '隐藏' if lang == 'zh' else 'Hide' }} →</button>
@@ -299,12 +299,13 @@ function renderLayout() {
   focusTarget.classList.add('is-focused');
   videoMain.appendChild(focusTarget);
 
-  cards.filter(card => card !== focusTarget).forEach(card => {
+  const sidebarCards = cards.filter(card => card !== focusTarget);
+  sidebarCards.forEach(card => {
     card.classList.add('is-sidebar');
     videoSidebar.appendChild(card);
   });
 
-  videoStage.classList.toggle('sidebar-hidden', hiddenSidebar);
+  videoStage.classList.toggle('sidebar-hidden', hiddenSidebar || sidebarCards.length === 0);
   videoStage.classList.toggle('screen-share-mode', !!currentSharerSid);
 }
 
