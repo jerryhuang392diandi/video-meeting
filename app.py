@@ -1860,75 +1860,95 @@ def _can_access_room_attachment(room: dict | None) -> bool:
     return current_user.id in allowed_user_ids or current_user.id == room.get("host_user_id")
 
 def _api_chat_upload_impl(upload_mode: str = "any"):
-    room_id = str(request.form.get("room_id") or "").strip()
-    permission = str(request.form.get("permission") or "download").strip().lower()
-    if permission not in {"view", "download"}:
-        permission = "download"
-    room = rooms.get(room_id)
-    if not room:
-        return jsonify({"ok": False, "error": "room_not_found"}), 404
-    allowed_user_ids = {info.get("user_id") for info in room.get("participants", {}).values() if info.get("user_id")}
-    if current_user.id not in allowed_user_ids and current_user.id != room.get("host_user_id"):
-        return jsonify({"ok": False, "error": "not_in_room"}), 403
-    upload = request.files.get("file")
-    if not upload or not upload.filename:
-        return jsonify({"ok": False, "error": "missing_file"}), 400
+    try:
+        room_id = str(request.form.get("room_id") or "").strip()
+        permission = str(request.form.get("permission") or "download").strip().lower()
+        if permission not in {"view", "download"}:
+            permission = "download"
+        room = rooms.get(room_id)
+        if not room:
+            return jsonify({"ok": False, "error": "room_not_found"}), 404
+        allowed_user_ids = {info.get("user_id") for info in room.get("participants", {}).values() if info.get("user_id")}
+        if current_user.id not in allowed_user_ids and current_user.id != room.get("host_user_id"):
+            return jsonify({"ok": False, "error": "not_in_room"}), 403
+        upload = request.files.get("file")
+        if not upload or not upload.filename:
+            return jsonify({"ok": False, "error": "missing_file"}), 400
 
-    incoming_content_type = (upload.mimetype or "application/octet-stream").strip()
-    original_name = _build_safe_upload_name(upload.filename, incoming_content_type)
-    content_type = _normalize_attachment_content_type(original_name, incoming_content_type)
-    kind = _attachment_kind(original_name, content_type)
+        incoming_content_type = (upload.mimetype or upload.content_type or "application/octet-stream").split(';', 1)[0].strip().lower()
+        original_name = _build_safe_upload_name(upload.filename, incoming_content_type)
+        content_type = _normalize_attachment_content_type(original_name, incoming_content_type)
+        kind = _attachment_kind(original_name, content_type)
+        ext = (Path(original_name).suffix or '').lower()
 
-    if upload_mode == "media" and kind not in {"image", "video", "audio"}:
-        return jsonify({"ok": False, "error": "media_only_upload"}), 400
-    if upload_mode == "doc" and kind in {"image", "video", "audio"}:
-        return jsonify({"ok": False, "error": "document_only_upload"}), 400
+        if upload_mode == "media" and kind not in {"image", "video", "audio"}:
+            # 桌面端有些浏览器会把图片/视频传成 octet-stream，这里用扩展名兜底
+            if ext in {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.heic', '.heif'}:
+                kind = 'image'
+                content_type = _normalize_attachment_content_type(original_name, incoming_content_type)
+            elif ext in {'.mp4', '.webm', '.mov', '.m4v', '.avi', '.3gp'}:
+                kind = 'video'
+                content_type = _normalize_attachment_content_type(original_name, incoming_content_type)
+            else:
+                return jsonify({"ok": False, "error": "media_only_upload", "detail": incoming_content_type, "name": original_name}), 400
+        if upload_mode == "doc" and kind in {"image", "video", "audio"}:
+            return jsonify({"ok": False, "error": "document_only_upload"}), 400
 
-    if not _allowed_chat_file(upload.filename, incoming_content_type):
-        return jsonify({"ok": False, "error": "file_type_not_allowed", "detail": incoming_content_type}), 400
+        if not _allowed_chat_file(upload.filename, incoming_content_type):
+            return jsonify({"ok": False, "error": "file_type_not_allowed", "detail": incoming_content_type}), 400
 
-    upload.stream.seek(0, os.SEEK_END)
-    original_size = upload.stream.tell()
-    upload.stream.seek(0)
+        size_limit = CHAT_MAX_UPLOAD_BYTES
+        if kind == 'image':
+            size_limit = CHAT_IMAGE_MAX_UPLOAD_BYTES
+        elif kind == 'video':
+            size_limit = CHAT_VIDEO_MAX_UPLOAD_BYTES
 
-    size_limit = CHAT_MAX_UPLOAD_BYTES
-    if kind == 'image':
-        size_limit = CHAT_IMAGE_MAX_UPLOAD_BYTES
-    elif kind == 'video':
-        size_limit = CHAT_VIDEO_MAX_UPLOAD_BYTES
-    if original_size > size_limit:
-        return jsonify({"ok": False, "error": "file_too_large", "limit": size_limit}), 413
-    quota_error = _enforce_chat_storage_limits(room_id, original_size)
-    if quota_error:
-        return jsonify({"ok": False, "error": quota_error}), 507
+        token = secrets.token_urlsafe(16)
+        room_dir = os.path.join(CHAT_UPLOAD_DIR, room_id)
+        os.makedirs(room_dir, exist_ok=True)
 
-    token = secrets.token_urlsafe(16)
-    room_dir = os.path.join(CHAT_UPLOAD_DIR, room_id)
-    os.makedirs(room_dir, exist_ok=True)
+        bucket = 'media' if kind in {'image', 'video', 'audio'} else 'docs'
+        target_dir = os.path.join(room_dir, bucket)
+        os.makedirs(target_dir, exist_ok=True)
+        stored_name = f"{token}_{original_name}"
+        abs_path = os.path.join(target_dir, stored_name)
 
-    bucket = 'media' if kind in {'image', 'video', 'audio'} else 'docs'
-    target_dir = os.path.join(room_dir, bucket)
-    os.makedirs(target_dir, exist_ok=True)
-    stored_name = f"{token}_{original_name}"
-    abs_path = os.path.join(target_dir, stored_name)
-    upload.stream.seek(0)
-    upload.save(abs_path)
-    size = os.path.getsize(abs_path)
-    display_name = original_name[:120]
+        # 先落盘再取大小，避免某些桌面浏览器上传流 seek/tell 异常导致 500
+        upload.save(abs_path)
+        size = os.path.getsize(abs_path)
+        if size > size_limit:
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+            return jsonify({"ok": False, "error": "file_too_large", "limit": size_limit}), 413
+        quota_error = _enforce_chat_storage_limits(room_id, size)
+        if quota_error:
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+            return jsonify({"ok": False, "error": quota_error}), 507
 
-    attachment = {
-        "token": token,
-        "storedName": stored_name,
-        "type": content_type,
-        "kind": _attachment_kind(display_name, content_type),
-        "name": display_name,
-        "size": int(size),
-        "permission": permission,
-        "viewUrl": url_for("chat_attachment_view", room_id=room_id, token=token),
-        "rawUrl": url_for("chat_attachment_raw", room_id=room_id, token=token) if _attachment_is_inline_previewable({"kind": _attachment_kind(display_name, content_type), "type": content_type, "name": display_name}) else None,
-        "downloadUrl": url_for("chat_attachment_download", room_id=room_id, token=token) if permission == "download" else None,
-    }
-    return jsonify({"ok": True, "attachment": attachment})
+        display_name = original_name[:120]
+        attachment_kind = _attachment_kind(display_name, content_type)
+        inline_previewable = _attachment_is_inline_previewable({"kind": attachment_kind, "type": content_type, "name": display_name})
+        attachment = {
+            "token": token,
+            "storedName": stored_name,
+            "type": content_type,
+            "kind": attachment_kind,
+            "name": display_name,
+            "size": int(size),
+            "permission": permission,
+            "viewUrl": url_for("chat_attachment_view", room_id=room_id, token=token),
+            "rawUrl": url_for("chat_attachment_raw", room_id=room_id, token=token) if inline_previewable else None,
+            "downloadUrl": url_for("chat_attachment_download", room_id=room_id, token=token) if permission == "download" else None,
+        }
+        return jsonify({"ok": True, "attachment": attachment})
+    except Exception as exc:
+        app.logger.exception("chat upload failed")
+        return jsonify({"ok": False, "error": "upload_internal_error", "detail": str(exc)}), 500
 
 @app.post("/api/chat_upload")
 @login_required

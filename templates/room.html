@@ -1136,6 +1136,8 @@ async function sendChatMessage() {
         setStatus(`${baseMsg}${extra}`, 'warning');
       } else if (msg.includes('file_type_not_allowed')) {
         setStatus({{ ('该图片/视频格式被服务器拒绝，请换 jpg/png/mp4 或升级后重试' if lang == 'zh' else 'The server rejected this media format. Try jpg/png/mp4 or retry after upgrading.')|tojson }}, 'error');
+      } else if (msg.includes('upload_internal_error')) {
+        setStatus(TEXT_UPLOAD_FAILED + (msg ? ` (${msg})` : '') + {{ ('，后端已返回内部错误，请更新这一版后再试' if lang == 'zh' else ', the backend returned an internal error. Please try again with this build.')|tojson }}, 'error');
       } else {
         setStatus(TEXT_UPLOAD_FAILED + (msg ? ` (${msg})` : ''), 'error');
       }
