@@ -945,6 +945,7 @@ function renderChatMessageState(item, data) {
 
 function appendChatMessage(data) {
   if (!chatMessages || !data) return;
+  const shouldStickToBottom = isChatNearBottom() || String(data.senderUserId || '') === String({{ current_user.id|tojson }});
   let item = data.id ? chatMessages.querySelector(`.chat-message[data-message-id="${data.id}"]`) : null;
   if (!item) {
     item = document.createElement('div');
@@ -954,7 +955,11 @@ function appendChatMessage(data) {
     item.className = 'chat-message ' + (data.mode === 'host' ? 'host-only' : '');
   }
   renderChatMessageState(item, data);
-  if (!data.preserveScroll) chatMessages.scrollTop = chatMessages.scrollHeight;
+  if (!data.preserveScroll && shouldStickToBottom) {
+    requestAnimationFrame(() => {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+  }
   if (PREF_ENABLE_DANMAKU && danmakuEnabled && data.mode === 'all' && data.message && !data.withdrawn) showDanmaku(`${data.senderName}: ${data.message}`);
 }
 
@@ -1296,6 +1301,7 @@ function setChatCollapsed(collapsed) {
 function initChatUi() {
   normalizeChatLayout();
   enableChatDrag();
+  if (chatMessages) chatMessages.dataset.stuckBottom = '1';
   setChatCollapsed(false);
   renderMentionPicker();
   setChatMode('all');
@@ -1311,6 +1317,10 @@ function initChatUi() {
   document.getElementById('mentionBtn')?.addEventListener('click', () => { renderMentionPicker(); mentionPicker.classList.toggle('hidden'); emojiPopover?.classList.add('hidden'); });
   document.getElementById('emojiBtn')?.addEventListener('click', () => { renderEmojiPicker(); emojiPopover?.classList.toggle('hidden'); mentionPicker.classList.add('hidden'); });
   document.getElementById('emojiCloseBtn')?.addEventListener('click', () => emojiPopover?.classList.add('hidden'));
+  chatMessages?.addEventListener('scroll', () => {
+    chatMessages.dataset.stuckBottom = isChatNearBottom() ? '1' : '0';
+  }, { passive: true });
+
   chatMessages?.addEventListener('click', async (event) => {
     const btn = event.target.closest('.msg-action-btn');
     if (!btn) return;

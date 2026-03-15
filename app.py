@@ -1268,6 +1268,47 @@ def disconnect_user_sockets(user_id, exclude_sid=None, message=None):
             pass
 
 
+def remove_user_from_runtime_rooms(user_id, reason_message=None):
+    if not user_id:
+        return
+    for room_id, room in list(rooms.items()):
+        participant_sids = [sid for sid, info in list(room.get("participants", {}).items()) if info.get("user_id") == user_id]
+        if not participant_sids:
+            continue
+        for sid in participant_sids:
+            participant_info = room.get("participants", {}).pop(sid, None)
+            if sid_to_user.get(sid):
+                sid_to_user.pop(sid, None)
+            unbind_user_socket(user_id, sid)
+            try:
+                leave_room(room_id, sid=sid)
+            except Exception:
+                pass
+            participant = MeetingParticipant.query.filter_by(sid=sid).order_by(MeetingParticipant.id.desc()).first()
+            if participant and not participant.left_at:
+                participant.left_at = datetime.utcnow()
+            if participant_info:
+                socketio.emit(
+                    "participant_left",
+                    {
+                        "sid": sid,
+                        "name": participant_info.get("name") or "Guest",
+                        "participant_count": len(room.get("participants", {})),
+                    },
+                    room=room_id,
+                )
+        if user_id == room.get("host_user_id") and room.get("host_present"):
+            room["host_present"] = False
+            socketio.emit(
+                "host_presence_changed",
+                {"host_present": False, "message": reason_message or t("host_left_room")},
+                room=room_id,
+            )
+        if not room.get("participants"):
+            schedule_room_cleanup(room_id)
+    db.session.commit()
+
+
 def online_user_count():
     return sum(1 for _, sids in user_active_sids.items() if sids)
 
@@ -1753,9 +1794,11 @@ def admin_kick_user(user_id):
     user = User.query.get_or_404(user_id)
     if user.is_admin:
         return redirect(url_for("admin_dashboard"))
+    kick_message = t("kicked_by_admin")
     user.session_version = (user.session_version or 0) + 1
     db.session.commit()
-    disconnect_user_sockets(user.id, message=t("kicked_by_admin"))
+    remove_user_from_runtime_rooms(user.id, reason_message=kick_message)
+    disconnect_user_sockets(user.id, message=kick_message)
     return redirect(url_for("admin_dashboard"))
 
 
