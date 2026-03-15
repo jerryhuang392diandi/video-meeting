@@ -1114,15 +1114,27 @@ function enableChatDrag() {
   window.addEventListener('touchend', stopDrag);
   window.addEventListener('mouseup', stopDrag);
   window.addEventListener('resize', syncDefault);
+  window.addEventListener('resize', refreshChatCollapsedLayout);
   syncDefault();
+}
+
+
+function refreshChatCollapsedLayout() {
+  if (!chatWindow) return;
+  const collapsed = chatWindow.classList.contains('chat-collapsed');
+  document.querySelector('.video-panel')?.classList.toggle('chat-collapsed-layout', !!collapsed && !window.matchMedia('(max-width: 768px)').matches);
 }
 
 function setChatCollapsed(collapsed) {
   if (!chatWindow) return;
   const showBtn = document.getElementById('chatShowBtn');
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
   chatWindow.classList.toggle('chat-collapsed', !!collapsed);
-  document.querySelector('.video-panel')?.classList.toggle('chat-collapsed-layout', !!collapsed);
-  if (showBtn) showBtn.classList.toggle('hidden', !collapsed);
+  document.querySelector('.video-panel')?.classList.toggle('chat-collapsed-layout', !!collapsed && !isMobile);
+  if (showBtn) {
+    showBtn.classList.toggle('hidden', !collapsed);
+    showBtn.style.display = collapsed ? 'inline-flex' : 'none';
+  }
 }
 
 function initChatUi() {
