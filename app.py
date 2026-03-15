@@ -60,6 +60,13 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
+
+def debug_log(tag, **kwargs):
+    try:
+        print(f"[DEBUG:{tag}] {kwargs}", flush=True)
+    except Exception:
+        pass
+
 MAX_PARTICIPANTS = 6
 ROOM_EMPTY_GRACE_SECONDS = 20
 MEETING_DURATION_SECONDS = 90 * 60
@@ -1102,11 +1109,7 @@ def end_meeting_by_room_id(room_id, message_key=None):
             lang = room.get("lang", "zh")
             message = tf(lang, message_key) if message_key else tf(lang, "meeting_closed")
             socketio.emit("force_leave", {"message": message}, room=room_id)
-def debug_log(tag, **kwargs):
-    try:
-        print(f"[DEBUG:{tag}] {kwargs}", flush=True)
-    except Exception:
-        pass
+
 
 def schedule_room_expiry(room_id, created_at_ts):
     room = rooms.get(room_id)
@@ -1978,14 +1981,21 @@ def forbidden(_):
     return render_template("404.html", error_title="403", error_message="Forbidden"), 403
 
 
+@socketio.on("connect")
+def on_socket_connect():
+    debug_log('SOCKET_CONNECT', sid=request.sid, authenticated=getattr(current_user, "is_authenticated", False), current_user_id=getattr(current_user, "id", None), session_version=session.get('session_version'))
+
+
 @socketio.on("join_room")
 def on_join_room(data):
+    debug_log('SOCKET_JOIN_ROOM_BEGIN', sid=request.sid, current_user_id=getattr(current_user, "id", None), authenticated=getattr(current_user, "is_authenticated", False), session_version=session.get('session_version'), data=data)
     room_id = (data.get("room_id") or "").strip()
     password = normalize_password(data.get("password") or "")
     user_name = (data.get("user_name") or preferred_display_name(current_user)).strip()[:32] or preferred_display_name(current_user)
 
     meeting = Meeting.query.filter_by(room_id=room_id).first()
     if not ensure_meeting_not_expired(meeting):
+        debug_log('SOCKET_JOIN_ROOM_MEETING_MISSING', sid=request.sid, room_id=room_id)
         emit("join_error", {"message": t("meeting_not_found")})
         return
 
@@ -1993,24 +2003,29 @@ def on_join_room(data):
     room["lang"] = session.get("lang", "zh")
 
     if normalize_password(room["password"]) != password:
+        debug_log('SOCKET_JOIN_ROOM_BAD_PASSWORD', sid=request.sid, room_id=room_id)
         emit("join_error", {"message": t("wrong_password")})
         return
 
     sid = request.sid
     if len(room["participants"]) >= MAX_PARTICIPANTS and sid not in room["participants"]:
+        debug_log('SOCKET_JOIN_ROOM_FULL', sid=sid, room_id=room_id, participants=list(room['participants'].keys()))
         emit("join_error", {"message": f"{t('room_full')} ({MAX_PARTICIPANTS})"})
         return
 
     if not current_user.is_authenticated:
+        debug_log('SOCKET_JOIN_ROOM_NOT_AUTH', sid=sid, room_id=room_id)
         emit("join_error", {"message": t("invalid_login")})
         return
     fresh_user = db.session.get(User, current_user.id)
     if not fresh_user or not fresh_user.is_active_user or session.get("session_version") != fresh_user.session_version:
+        debug_log('SOCKET_JOIN_ROOM_SESSION_INVALID', sid=sid, room_id=room_id, fresh_user_id=getattr(fresh_user, "id", None), fresh_session_version=getattr(fresh_user, "session_version", None), browser_session_version=session.get("session_version"))
         emit("force_logout", {"message": t("kicked")})
         return
     sync_network_traffic()
     db.session.refresh(fresh_user)
     if user_quota_exceeded(fresh_user):
+        debug_log('SOCKET_JOIN_ROOM_TRAFFIC_DENY', sid=sid, room_id=room_id, user_id=fresh_user.id)
         emit("join_error", {"message": t("traffic_limit_reached")})
         return
 
@@ -2020,6 +2035,7 @@ def on_join_room(data):
     sid_to_user[sid] = {"room_id": room_id, "name": user_name, "user_id": current_user.id}
     bind_user_socket(current_user.id, sid)
     join_room(room_id)
+    debug_log('SOCKET_JOIN_ROOM_REGISTERED', sid=sid, room_id=room_id, user_id=current_user.id, room_participants=list(room['participants'].keys()), user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids}, sid_to_user_entry=sid_to_user.get(sid))
 
     host_returned = False
     if current_user.is_authenticated and current_user.id == room.get("host_user_id"):
@@ -2038,6 +2054,7 @@ def on_join_room(data):
     is_room_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
     visible_chat_history = visible_chat_history_for_user(room, current_user.id, sid, is_room_host=is_room_host)
 
+    debug_log('SOCKET_JOIN_ROOM_OK', sid=sid, room_id=room_id, participant_count=len(room["participants"]), host_present=bool(room.get("host_present")))
     emit(
         "join_ok",
         {
@@ -2707,8 +2724,10 @@ def on_host_end_meeting(data=None):
 @socketio.on("leave_room")
 def on_leave_room(*_args):
     sid = request.sid
+    debug_log('SOCKET_LEAVE_BEGIN', sid=sid, sid_info=sid_to_user.get(sid), current_user_id=getattr(current_user, "id", None))
     info = sid_to_user.pop(sid, None)
     if not info:
+        debug_log('SOCKET_LEAVE_NOINFO', sid=sid)
         return
     room_id = info["room_id"]
     unbind_user_socket(info.get("user_id"), sid)
@@ -2740,12 +2759,14 @@ def on_leave_room(*_args):
                 {"host_present": False, "message": t("host_left_room")},
                 room=room_id,
             )
+        debug_log('SOCKET_LEAVE_DONE', sid=sid, room_id=room_id, remaining_participants=list(room.get("participants", {}).keys()), user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids})
         if not room["participants"]:
             schedule_room_cleanup(room_id)
 
 
 @socketio.on("disconnect")
 def on_disconnect():
+    debug_log('SOCKET_DISCONNECT', sid=request.sid, sid_info=sid_to_user.get(request.sid), current_user_id=getattr(current_user, "id", None))
     on_leave_room()
 
 
