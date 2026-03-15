@@ -1257,9 +1257,9 @@ textarea {
   .chat-window {
     order: 2 !important;
     width: 100% !important;
-    min-height: 420px !important;
-    height: 52vh !important;
-    max-height: 62vh !important;
+    min-height: 520px !important;
+    height: 64vh !important;
+    max-height: none !important;
     border-radius: 18px !important;
   }
   .chat-window.chat-collapsed {
@@ -1292,11 +1292,21 @@ textarea {
     flex: 1 1 auto !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
-    padding: 12px !important;
-    gap: 12px !important;
+    padding: 14px 12px 16px !important;
+    gap: 14px !important;
   }
   .chat-message {
-    margin: 0 !important;
+    margin: 0 0 14px 0 !important;
+    padding: 12px 12px 14px !important;
+  }
+  .chat-message:last-child {
+    margin-bottom: 0 !important;
+  }
+  .chat-attachment-block {
+    margin: 10px 0 10px 0 !important;
+  }
+  .chat-media {
+    max-height: 220px !important;
   }
   .chat-input-row {
     padding-left: 12px !important;
@@ -1306,14 +1316,26 @@ textarea {
     min-height: 88px !important;
   }
   .chat-actions {
-    flex-wrap: wrap !important;
-    gap: 10px !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
   }
   .chat-actions-left {
-    width: 100% !important;
+    width: auto !important;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
   }
-  .chat-actions .primary-btn {
-    width: 100% !important;
+  .chat-actions .primary-btn,
+  #sendChatBtn {
+    width: auto !important;
+    min-width: 84px !important;
+    flex: 0 0 auto !important;
+    margin-top: 0 !important;
   }
   .emoji-popover {
     left: 12px !important;
