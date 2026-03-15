@@ -269,7 +269,6 @@ function ensureCard(sid, displayName = null, isLocal = false) {
     <div class="video-placeholder">${TEXT_NO_VIDEO}</div>
     <div class="video-label-stack">
       <div class="video-label">${displayName || getDisplayName(sid)}</div>
-      <div class="video-meeting-watermark">{{ ('会议ID ' if lang == 'zh' else 'Meeting ID ') }}${ROOM_ID}</div>
     </div>
   `;
 
