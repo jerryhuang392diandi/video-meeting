@@ -93,12 +93,19 @@
       </div>
       <div id="mentionPicker" class="picker-panel hidden"></div>
       <div id="chatMessages" class="chat-messages"></div>
+      <div id="chatContextMenu" class="chat-context-menu hidden"></div>
       <div id="chatAttachmentPreview" class="chat-attachment-preview hidden"></div>
       <div class="chat-composer">
         <div class="chat-input-row">
           <textarea id="chatInput" rows="3" placeholder="{{ '输入消息，支持文本/表情/图片/视频' if lang == 'zh' else 'Type a message. Text, emoji, image, and video are supported.' }}"></textarea>
         </div>
-        <div id="emojiPicker" class="picker-panel emoji-picker hidden"></div>
+        <div id="emojiPopover" class="emoji-popover hidden">
+          <div class="emoji-popover-head">
+            <strong>{{ '选择表情' if lang == 'zh' else 'Choose emoji' }}</strong>
+            <button class="card-btn" id="emojiCloseBtn" type="button">{{ '收起' if lang == 'zh' else 'Close' }}</button>
+          </div>
+          <div id="emojiPicker" class="emoji-picker"></div>
+        </div>
         <div class="chat-actions">
           <div class="chat-actions-left">
             <label class="ghost-btn attachment-btn">{{ '图片/视频' if lang == 'zh' else 'Media' }}<input id="chatFileInput" type="file" accept="image/*,video/*" class="hidden" /></label>
@@ -155,6 +162,10 @@ const IS_HOST = {{ 'true' if is_host else 'false' }};
 const TEXT_DANMAKU_ON = {{ ('弹幕已开启' if lang == 'zh' else 'Danmaku enabled')|tojson }};
 const TEXT_DANMAKU_OFF = {{ ('弹幕已关闭' if lang == 'zh' else 'Danmaku disabled')|tojson }};
 const TEXT_PROFILE_UPDATED = {{ ('显示名称已更新' if lang == 'zh' else 'Display name updated')|tojson }};
+const TEXT_CHAT_WITHDRAWN = {{ ('此消息已撤回' if lang == 'zh' else 'This message was withdrawn')|tojson }};
+const TEXT_CHAT_CLEARED = {{ ('聊天记录已清空' if lang == 'zh' else 'Chat history cleared')|tojson }};
+const TEXT_TRANSLATE_OPEN = {{ ('已打开英文翻译页' if lang == 'zh' else 'Opened English translation view')|tojson }};
+const TEXT_COPY_SUCCESS = {{ ('文本已复制' if lang == 'zh' else 'Text copied')|tojson }};
 
 const socket = io();
 const rtcConfig = { iceServers: {{ turn_ice_servers|tojson }}, iceTransportPolicy: 'relay' };
@@ -221,6 +232,8 @@ const chatFileInput = document.getElementById('chatFileInput');
 const chatAttachmentPreview = document.getElementById('chatAttachmentPreview');
 const mentionPicker = document.getElementById('mentionPicker');
 const emojiPicker = document.getElementById('emojiPicker');
+const emojiPopover = document.getElementById('emojiPopover');
+const chatContextMenu = document.getElementById('chatContextMenu');
 const danmakuLayer = document.getElementById('danmakuLayer');
 
 function setStatus(msg, cls='') {
@@ -801,37 +814,119 @@ function renderEmojiPicker() {
   emojiPicker.querySelectorAll('.emoji-option').forEach(btn => {
     btn.addEventListener('click', () => {
       chatInput.value = `${chatInput.value}${btn.dataset.emoji}`;
-      emojiPicker.classList.add('hidden');
       chatInput.focus();
     });
   });
 }
 
-function appendChatMessage(data) {
-  if (!chatMessages) return;
-  const item = document.createElement('div');
-  item.className = 'chat-message ' + (data.mode === 'host' ? 'host-only' : '');
-  const mentionBadges = (data.mentions || []).map(m => `<span class="mention-badge">@${escapeHtml(m.replace(/^@/, ''))}</span>`).join('');
-  let attachmentHtml = '';
-  if (data.attachment && data.attachment.dataUrl) {
-    if ((data.attachment.type || '').startsWith('image')) {
-      attachmentHtml = `<img class="chat-media" src="${data.attachment.dataUrl}" alt="${escapeHtml(data.attachment.name || 'image')}" />`;
-    } else if ((data.attachment.type || '').startsWith('video')) {
-      attachmentHtml = `<video class="chat-media" src="${data.attachment.dataUrl}" controls playsinline></video>`;
-    }
+function hideFloatingPanels() {
+  mentionPicker?.classList.add('hidden');
+  emojiPopover?.classList.add('hidden');
+  chatContextMenu?.classList.add('hidden');
+}
+
+function buildAttachmentHtml(attachment) {
+  if (!attachment || !attachment.dataUrl) return '';
+  if ((attachment.type || '').startsWith('image')) {
+    return `<div class="chat-attachment-block"><img class="chat-media" src="${attachment.dataUrl}" alt="${escapeHtml(attachment.name || 'image')}" /></div>`;
   }
+  if ((attachment.type || '').startsWith('video')) {
+    return `<div class="chat-attachment-block"><video class="chat-media" src="${attachment.dataUrl}" controls playsinline></video></div>`;
+  }
+  return '';
+}
+
+function getMessageTextForTranslate(item) {
+  return item?.dataset?.messageText || '';
+}
+
+function renderChatMessageState(item, data) {
+  const withdrawn = !!data.withdrawn;
+  item.dataset.withdrawn = withdrawn ? '1' : '0';
+  item.dataset.messageText = data.message || '';
+  item.dataset.messageId = data.id || '';
+  item.dataset.senderUserId = data.senderUserId || '';
+  item.dataset.senderSid = data.from || '';
   item.innerHTML = `
     <div class="chat-message-head">
       <strong>${escapeHtml(data.senderName || 'Guest')}</strong>
       <span>${data.mode === 'host' ? '{{ '仅主持人' if lang == 'zh' else 'Host only' }}' : '{{ '公开' if lang == 'zh' else 'Public' }}'}</span>
       <span>${escapeHtml(data.createdAt || '')}</span>
     </div>
-    <div class="chat-message-body">${mentionBadges}${escapeHtml(data.message || '').replace(/\n/g, '<br>')}</div>
-    ${attachmentHtml}
+    <div class="chat-message-body${withdrawn ? ' withdrawn' : ''}">${withdrawn ? TEXT_CHAT_WITHDRAWN : `${((data.mentions || []).map(m => `<span class="mention-badge">@${escapeHtml(String(m).replace(/^@/, ''))}</span>`).join(''))}${escapeHtml(data.message || '').replace(/\n/g, '<br>')}`}</div>
+    ${withdrawn ? '' : buildAttachmentHtml(data.attachment)}
   `;
-  chatMessages.appendChild(item);
+}
+
+function appendChatMessage(data) {
+  if (!chatMessages || !data) return;
+  let item = data.id ? chatMessages.querySelector(`.chat-message[data-message-id="${data.id}"]`) : null;
+  if (!item) {
+    item = document.createElement('div');
+    item.className = 'chat-message ' + (data.mode === 'host' ? 'host-only' : '');
+    item.addEventListener('contextmenu', (event) => openMessageContextMenu(event, item));
+    chatMessages.appendChild(item);
+  } else {
+    item.className = 'chat-message ' + (data.mode === 'host' ? 'host-only' : '');
+  }
+  renderChatMessageState(item, data);
   chatMessages.scrollTop = chatMessages.scrollHeight;
-  if (danmakuEnabled && data.mode === 'all' && data.message) showDanmaku(`${data.senderName}: ${data.message}`);
+  if (danmakuEnabled && data.mode === 'all' && data.message && !data.withdrawn) showDanmaku(`${data.senderName}: ${data.message}`);
+}
+
+async function copyText(text) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus(TEXT_COPY_SUCCESS);
+  } catch (_) {}
+}
+
+function translateToEnglish(text) {
+  if (!text) return;
+  const url = `https://translate.google.com/?sl=auto&tl=en&text=${encodeURIComponent(text)}&op=translate`;
+  window.open(url, '_blank', 'noopener');
+  setStatus(TEXT_TRANSLATE_OPEN);
+}
+
+function openContextMenu(x, y, items) {
+  if (!chatContextMenu) return;
+  chatContextMenu.innerHTML = items.map((item, idx) => `<button type="button" class="context-item${item.danger ? ' danger' : ''}" data-idx="${idx}">${item.label}</button>`).join('');
+  chatContextMenu.style.left = `${x}px`;
+  chatContextMenu.style.top = `${y}px`;
+  chatContextMenu.classList.remove('hidden');
+  chatContextMenu.querySelectorAll('.context-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const picked = items[Number(btn.dataset.idx)];
+      hideFloatingPanels();
+      picked?.action?.();
+    });
+  });
+}
+
+function openMessageContextMenu(event, item) {
+  event.preventDefault();
+  const text = getMessageTextForTranslate(item);
+  const isWithdrawn = item.dataset.withdrawn === '1';
+  const canRetract = !isWithdrawn && (String(item.dataset.senderUserId || '') === String({{ current_user.id|tojson }}) || IS_HOST === true || IS_HOST === 'true');
+  const menu = [];
+  if (canRetract) {
+    menu.push({ label: {{ ('撤回消息' if lang == 'zh' else 'Retract message')|tojson }}, danger: true, action: () => socket.emit('meeting_chat_retract', { id: item.dataset.messageId }) });
+  }
+  if (text) {
+    menu.push({ label: {{ ('复制文本' if lang == 'zh' else 'Copy text')|tojson }}, action: () => copyText(text) });
+    menu.push({ label: {{ ('翻译为英语' if lang == 'zh' else 'Translate to English')|tojson }}, action: () => translateToEnglish(text) });
+  }
+  menu.push({ label: {{ ('清空聊天记录' if lang == 'zh' else 'Clear chat history')|tojson }}, danger: true, action: () => socket.emit('meeting_chat_clear') });
+  openContextMenu(event.clientX, event.clientY, menu);
+}
+
+function openChatAreaContextMenu(event) {
+  if (event.target.closest('.chat-message')) return;
+  event.preventDefault();
+  openContextMenu(event.clientX, event.clientY, [
+    { label: {{ ('清空聊天记录' if lang == 'zh' else 'Clear chat history')|tojson }}, danger: true, action: () => socket.emit('meeting_chat_clear') }
+  ]);
 }
 
 function showDanmaku(text) {
@@ -899,13 +994,15 @@ function initChatUi() {
   enableChatDrag();
   setChatCollapsed(false);
   renderMentionPicker();
-  renderEmojiPicker();
   setChatMode('all');
   document.querySelectorAll('.chat-mode-btn').forEach(btn => btn.addEventListener('click', () => setChatMode(btn.dataset.mode)));
   sendChatBtn?.addEventListener('click', sendChatMessage);
   chatInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } });
-  document.getElementById('mentionBtn')?.addEventListener('click', () => { renderMentionPicker(); mentionPicker.classList.toggle('hidden'); emojiPicker.classList.add('hidden'); });
-  document.getElementById('emojiBtn')?.addEventListener('click', () => { renderEmojiPicker(); emojiPicker.classList.toggle('hidden'); mentionPicker.classList.add('hidden'); });
+  document.getElementById('mentionBtn')?.addEventListener('click', () => { renderMentionPicker(); mentionPicker.classList.toggle('hidden'); emojiPopover?.classList.add('hidden'); });
+  document.getElementById('emojiBtn')?.addEventListener('click', () => { renderEmojiPicker(); emojiPopover?.classList.toggle('hidden'); mentionPicker.classList.add('hidden'); });
+  document.getElementById('emojiCloseBtn')?.addEventListener('click', () => emojiPopover?.classList.add('hidden'));
+  chatMessages?.addEventListener('contextmenu', openChatAreaContextMenu);
+  document.addEventListener('click', (e) => { if (!e.target.closest('#emojiBtn') && !e.target.closest('#emojiPopover') && !e.target.closest('#mentionBtn') && !e.target.closest('#mentionPicker') && !e.target.closest('#chatContextMenu')) hideFloatingPanels(); });
   chatFileInput?.addEventListener('change', async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const limit = file.type.startsWith('video') ? 12 * 1024 * 1024 : 4 * 1024 * 1024;
@@ -959,7 +1056,9 @@ socket.on('connect', async () => {
 
 socket.on('join_ok', async (data) => {
   participantCountEl.textContent = data.participant_count;
+  chatMessages.innerHTML = '';
   for (const p of data.participants) addRemoteParticipant(p.sid, p.name);
+  (data.chat_history || []).forEach(item => appendChatMessage(item));
   focusParticipant('local');
   danmakuEnabled = !!data.danmaku_enabled;
   if (data && data.host_present === false && IS_HOST) {
@@ -992,6 +1091,23 @@ socket.on('participant_updated', (data) => {
 });
 
 socket.on('meeting_chat_message', (data) => appendChatMessage(data));
+socket.on('meeting_chat_cleared', () => { if (chatMessages) chatMessages.innerHTML = ''; setStatus(TEXT_CHAT_CLEARED); hideFloatingPanels(); });
+socket.on('meeting_chat_retracted', (data) => {
+  const item = data?.id ? chatMessages?.querySelector(`.chat-message[data-message-id="${data.id}"]`) : null;
+  if (!item) return;
+  renderChatMessageState(item, {
+    id: data.id,
+    senderName: data.senderName || item.querySelector('strong')?.textContent || 'Guest',
+    mode: item.classList.contains('host-only') ? 'host' : 'all',
+    createdAt: item.querySelector('.chat-message-head span:last-child')?.textContent || '',
+    message: '',
+    mentions: [],
+    attachment: null,
+    withdrawn: true,
+    senderUserId: item.dataset.senderUserId || '' ,
+    from: item.dataset.senderSid || ''
+  });
+});
 
 socket.on('join_error', (data) => {
   alert(data.message || 'Join failed');

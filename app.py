@@ -816,6 +816,7 @@ def ensure_runtime_room(meeting):
         "lang": session.get("lang", "zh"),
         "traffic_last_sync": time.time(),
         "danmaku_enabled": False,
+        "chat_history": [],
     }
     schedule_room_expiry(meeting.room_id, meeting.created_at.timestamp())
     return room
@@ -1154,6 +1155,7 @@ def api_create_room():
         "lang": session.get("lang", "zh"),
         "traffic_last_sync": time.time(),
         "danmaku_enabled": False,
+        "chat_history": [],
     }
     schedule_room_expiry(room_id, meeting.created_at.timestamp())
 
@@ -1514,6 +1516,14 @@ def on_join_room(data):
     db.session.add(participant)
     db.session.commit()
 
+    visible_chat_history = []
+    is_room_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
+    for item in room.get("chat_history", []):
+        if item.get("mode") == "all":
+            visible_chat_history.append(item)
+        elif is_room_host or item.get("senderUserId") == current_user.id:
+            visible_chat_history.append(item)
+
     emit(
         "join_ok",
         {
@@ -1523,6 +1533,7 @@ def on_join_room(data):
             "participant_count": len(room["participants"]),
             "host_present": bool(room.get("host_present")),
             "danmaku_enabled": bool(room.get("danmaku_enabled")),
+            "chat_history": visible_chat_history,
         },
     )
     emit(
@@ -1598,13 +1609,18 @@ def on_meeting_chat_send(data):
     event = {
         "id": secrets.token_hex(8),
         "from": sid,
+        "senderUserId": info.get("user_id"),
         "senderName": room["participants"].get(sid, {}).get("name") or info.get("name") or "Guest",
         "message": message,
         "mode": "host" if mode == "host" else "all",
         "mentions": mentions,
         "attachment": attachment,
         "createdAt": datetime.utcnow().strftime("%H:%M:%S"),
+        "withdrawn": False,
     }
+    room.setdefault("chat_history", []).append(event)
+    if len(room["chat_history"]) > 200:
+        room["chat_history"] = room["chat_history"][-200:]
     if event["mode"] == "host":
         target_sids = {sid}
         for participant_sid, participant_info in room.get("participants", {}).items():
@@ -1616,6 +1632,49 @@ def on_meeting_chat_send(data):
         socketio.emit("meeting_chat_message", event, room=room_id)
 
 
+
+
+@socketio.on("meeting_chat_clear")
+def on_meeting_chat_clear():
+    sid = request.sid
+    info = sid_to_user.get(sid)
+    if not info:
+        return
+    room = rooms.get(info["room_id"])
+    if not room:
+        return
+    room["chat_history"] = []
+    socketio.emit("meeting_chat_cleared", {"by": sid}, room=info["room_id"])
+
+
+@socketio.on("meeting_chat_retract")
+def on_meeting_chat_retract(data):
+    sid = request.sid
+    info = sid_to_user.get(sid)
+    if not info:
+        return
+    room = rooms.get(info["room_id"])
+    if not room:
+        return
+    message_id = str((data or {}).get("id") or "")[:32]
+    if not message_id:
+        return
+    is_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
+    for item in room.get("chat_history", []):
+        if item.get("id") != message_id:
+            continue
+        if item.get("senderUserId") != info.get("user_id") and item.get("from") != sid and not is_host:
+            return
+        item["withdrawn"] = True
+        item["message"] = ""
+        item["mentions"] = []
+        item["attachment"] = None
+        socketio.emit(
+            "meeting_chat_retracted",
+            {"id": message_id, "senderName": item.get("senderName") or "Guest"},
+            room=info["room_id"],
+        )
+        return
 @socketio.on("toggle_danmaku")
 def on_toggle_danmaku(data):
     sid = request.sid
