@@ -13,7 +13,7 @@
       <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
     </div>
     <span class="user-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
-    <a class="chip" href="{{ url_for('account_page') }}">{{ '我的账户' if lang == 'zh' else 'My Account' }}</a>
+    <a class="chip" href="{{ url_for('account_page') }}">{{ '个人账户与偏好' if lang == 'zh' else 'Account & Preferences' }}</a>
     <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
   </div>
 </header>
@@ -940,6 +940,44 @@ function showDanmaku(text) {
   setTimeout(() => node.remove(), 15000);
 }
 
+
+async function fileToDataUrl(file) {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function compressImageFile(file) {
+  const imageUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const node = new Image();
+      node.onload = () => resolve(node);
+      node.onerror = reject;
+      node.src = imageUrl;
+    });
+    const maxSide = 1600;
+    const scale = Math.min(maxSide / img.width, maxSide / img.height, 1);
+    const width = Math.max(1, Math.round(img.width * scale));
+    const height = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.drawImage(img, 0, 0, width, height);
+    let mime = 'image/jpeg';
+    if (file.type === 'image/png' && file.size < 1024 * 1024) mime = 'image/png';
+    const quality = mime === 'image/png' ? undefined : 0.82;
+    const dataUrl = canvas.toDataURL(mime, quality);
+    return { type: mime, name: file.name, dataUrl };
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
+
 function updateAttachmentPreview() {
   if (!chatAttachmentPreview) return;
   if (!pendingAttachment) {
@@ -1004,13 +1042,36 @@ function initChatUi() {
   chatMessages?.addEventListener('contextmenu', openChatAreaContextMenu);
   document.addEventListener('click', (e) => { if (!e.target.closest('#emojiBtn') && !e.target.closest('#emojiPopover') && !e.target.closest('#mentionBtn') && !e.target.closest('#mentionPicker') && !e.target.closest('#chatContextMenu')) hideFloatingPanels(); });
   chatFileInput?.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    const limit = file.type.startsWith('video') ? 12 * 1024 * 1024 : 4 * 1024 * 1024;
-    if (file.size > limit) { setStatus(file.type.startsWith('video') ? '{{ '视频请控制在 12MB 以内' if lang == 'zh' else 'Please keep video files under 12MB' }}' : '{{ '图片请控制在 4MB 以内' if lang == 'zh' else 'Please keep images under 4MB' }}', 'warning'); e.target.value = ''; return; }
-    const dataUrl = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
-    pendingAttachment = { type: file.type, name: file.name, dataUrl };
-    updateAttachmentPreview();
-    e.target.value = '';
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      if (file.type.startsWith('image/')) {
+        const compressed = await compressImageFile(file);
+        if ((compressed.dataUrl || '').length > 6 * 1024 * 1024) {
+          setStatus({{ ('图片压缩后仍然过大，请换一张更小的图片' if lang == 'zh' else 'The compressed image is still too large. Please choose a smaller image.')|tojson }}, 'warning');
+          return;
+        }
+        pendingAttachment = compressed;
+        updateAttachmentPreview();
+        setStatus({{ ('图片已自动压缩，可发送' if lang == 'zh' else 'Image compressed and ready to send')|tojson }});
+      } else if (file.type.startsWith('video/')) {
+        const limit = 20 * 1024 * 1024;
+        if (file.size > limit) {
+          setStatus({{ ('视频请控制在 20MB 以内，当前版本先不在浏览器中自动压缩视频' if lang == 'zh' else 'Please keep video files under 20MB. This version does not compress videos in the browser yet.')|tojson }}, 'warning');
+          return;
+        }
+        const dataUrl = await fileToDataUrl(file);
+        pendingAttachment = { type: file.type, name: file.name, dataUrl };
+        updateAttachmentPreview();
+      } else {
+        setStatus({{ ('暂不支持该文件类型' if lang == 'zh' else 'This file type is not supported yet')|tojson }}, 'warning');
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus({{ ('附件处理失败' if lang == 'zh' else 'Failed to process attachment')|tojson }}, 'error');
+    } finally {
+      e.target.value = '';
+    }
   });
   document.getElementById('toggleDanmakuBtn')?.addEventListener('click', () => socket.emit('toggle_danmaku', { enabled: !danmakuEnabled }));
   document.getElementById('chatHideBtn')?.addEventListener('click', () => setChatCollapsed(true));

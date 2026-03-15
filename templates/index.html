@@ -11,7 +11,7 @@
       <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
     </div>
     <span class="user-pill">{{ t('current_user') }}: {{ current_user.username }}</span>
-    <a class="chip" href="{{ url_for('account_page') }}">{{ '我的账户' if lang == 'zh' else 'My Account' }}</a>
+    <a class="chip" href="{{ url_for('account_page') }}">{{ '个人账户与偏好' if lang == 'zh' else 'Account & Preferences' }}</a>
     <a class="chip" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
     {% if current_user.is_admin %}<a class="chip" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
     <a class="chip danger" href="{{ url_for('logout') }}">{{ t('nav_logout') }}</a>
@@ -72,7 +72,7 @@
   <div class="panel compact-panel">
     <h3>{{ t('quick_actions') }}</h3>
     <div class="link-stack">
-      <a class="ghost-btn wide-link" href="{{ url_for('account_page') }}">{{ '我的账户' if lang == 'zh' else 'My Account' }}</a>
+      <a class="ghost-btn wide-link" href="{{ url_for('account_page') }}">{{ '个人账户与偏好' if lang == 'zh' else 'Account & Preferences' }}</a>
       <a class="ghost-btn wide-link" href="{{ url_for('history') }}">{{ t('meeting_history') }}</a>
       {% if current_user.is_admin %}<a class="ghost-btn wide-link" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
       <a class="ghost-btn wide-link" href="{{ url_for('logout') }}">{{ t('nav_logout') }}</a>
