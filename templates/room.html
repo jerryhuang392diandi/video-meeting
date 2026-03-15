@@ -93,7 +93,6 @@
       </div>
       <div id="mentionPicker" class="picker-panel hidden"></div>
       <div id="chatMessages" class="chat-messages"></div>
-      <div id="chatContextMenu" class="chat-context-menu hidden"></div>
       <div id="chatAttachmentPreview" class="chat-attachment-preview hidden"></div>
       <div class="chat-composer">
         <div class="chat-input-row">
@@ -115,6 +114,7 @@
         </div>
       </div>
     </div>
+    <div id="chatContextMenu" class="chat-context-menu hidden"></div>
   </main>
 </section>
 {% endblock %}
@@ -870,7 +870,7 @@ function appendChatMessage(data) {
     item.className = 'chat-message ' + (data.mode === 'host' ? 'host-only' : '');
   }
   renderChatMessageState(item, data);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
+  if (!data.preserveScroll) chatMessages.scrollTop = chatMessages.scrollHeight;
   if (danmakuEnabled && data.mode === 'all' && data.message && !data.withdrawn) showDanmaku(`${data.senderName}: ${data.message}`);
 }
 
@@ -882,18 +882,38 @@ async function copyText(text) {
   } catch (_) {}
 }
 
-function translateToEnglish(text) {
-  if (!text) return;
-  const url = `https://translate.google.com/?sl=auto&tl=en&text=${encodeURIComponent(text)}&op=translate`;
-  window.open(url, '_blank', 'noopener');
-  setStatus(TEXT_TRANSLATE_OPEN);
+async function translateToEnglish(item, text) {
+  if (!text || !item) return;
+  let box = item.querySelector('.chat-translation');
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'chat-translation';
+    item.appendChild(box);
+  }
+  box.textContent = {{ ('翻译中…' if lang == 'zh' else 'Translating...')|tojson }};
+  try {
+    const resp = await fetch('/api/translate_to_english', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'translate_failed');
+    box.innerHTML = `<div class="chat-translation-label">${escapeHtml({{ ('英文翻译' if lang == 'zh' else 'English translation')|tojson }})}</div><div>${escapeHtml(data.translation || '')}</div>`;
+    setStatus({{ ('翻译已显示在消息下方' if lang == 'zh' else 'Translation shown below the message')|tojson }});
+  } catch (err) {
+    box.textContent = {{ ('翻译失败，请稍后重试' if lang == 'zh' else 'Translation failed. Please try again later.')|tojson }};
+    setStatus(box.textContent, 'warning');
+  }
 }
 
 function openContextMenu(x, y, items) {
   if (!chatContextMenu) return;
   chatContextMenu.innerHTML = items.map((item, idx) => `<button type="button" class="context-item${item.danger ? ' danger' : ''}" data-idx="${idx}">${item.label}</button>`).join('');
-  chatContextMenu.style.left = `${x}px`;
-  chatContextMenu.style.top = `${y}px`;
+  const maxX = Math.max(12, window.innerWidth - 220);
+  const maxY = Math.max(12, window.innerHeight - 220);
+  chatContextMenu.style.left = `${Math.min(Math.max(12, x), maxX)}px`;
+  chatContextMenu.style.top = `${Math.min(Math.max(12, y), maxY)}px`;
   chatContextMenu.classList.remove('hidden');
   chatContextMenu.querySelectorAll('.context-item').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -906,6 +926,7 @@ function openContextMenu(x, y, items) {
 
 function openMessageContextMenu(event, item) {
   event.preventDefault();
+  event.stopPropagation();
   const text = getMessageTextForTranslate(item);
   const isWithdrawn = item.dataset.withdrawn === '1';
   const canRetract = !isWithdrawn && (String(item.dataset.senderUserId || '') === String({{ current_user.id|tojson }}) || IS_HOST === true || IS_HOST === 'true');
@@ -915,7 +936,7 @@ function openMessageContextMenu(event, item) {
   }
   if (text) {
     menu.push({ label: {{ ('复制文本' if lang == 'zh' else 'Copy text')|tojson }}, action: () => copyText(text) });
-    menu.push({ label: {{ ('翻译为英语' if lang == 'zh' else 'Translate to English')|tojson }}, action: () => translateToEnglish(text) });
+    menu.push({ label: {{ ('翻译为英语' if lang == 'zh' else 'Translate to English')|tojson }}, action: () => translateToEnglish(item, text) });
   }
   menu.push({ label: {{ ('清空聊天记录' if lang == 'zh' else 'Clear chat history')|tojson }}, danger: true, action: () => socket.emit('meeting_chat_clear') });
   openContextMenu(event.clientX, event.clientY, menu);
@@ -924,6 +945,7 @@ function openMessageContextMenu(event, item) {
 function openChatAreaContextMenu(event) {
   if (event.target.closest('.chat-message')) return;
   event.preventDefault();
+  event.stopPropagation();
   openContextMenu(event.clientX, event.clientY, [
     { label: {{ ('清空聊天记录' if lang == 'zh' else 'Clear chat history')|tojson }}, danger: true, action: () => socket.emit('meeting_chat_clear') }
   ]);

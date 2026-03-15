@@ -8,7 +8,10 @@ import subprocess
 import tempfile
 import threading
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
+from urllib.request import urlopen, Request
+from urllib.error import URLError
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
@@ -36,7 +39,7 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_hex(16))
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", f"sqlite:///{DB_PATH}")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", max_http_buffer_size=50_000_000)
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
@@ -1575,6 +1578,25 @@ def on_update_profile(data):
             user.display_name = new_name
     db.session.commit()
     socketio.emit("participant_updated", {"sid": sid, "name": new_name}, room=room_id)
+
+
+@app.post("/api/translate_to_english")
+@login_required
+def api_translate_to_english():
+    payload = request.get_json(silent=True) or {}
+    text = str(payload.get("text") or "").strip()[:2000]
+    if not text:
+        return jsonify({"ok": False, "error": "empty_text"}), 400
+    try:
+        query = urlencode({"client": "gtx", "sl": "auto", "tl": "en", "dt": "t", "q": text})
+        req = Request(f"https://translate.googleapis.com/translate_a/single?{query}", headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(req, timeout=8) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+        data = json.loads(raw)
+        translated = "".join(part[0] for part in (data[0] or []) if isinstance(part, list) and part and part[0])
+        return jsonify({"ok": True, "translation": translated or text})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
 
 
 @socketio.on("meeting_chat_send")
