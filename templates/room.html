@@ -84,6 +84,7 @@
         <div class="row-compact">
           <button class="card-btn" id="chatHideBtn">{{ '隐藏' if lang == 'zh' else 'Hide' }} →</button>
           <button class="card-btn" id="mentionBtn">@</button>
+          <button class="card-btn" id="clearChatBtn">{{ '清空' if lang == 'zh' else 'Clear' }}</button>
           {% if is_host %}<button class="card-btn" id="toggleDanmakuBtn">{{ '弹幕' if lang == 'zh' else 'Danmaku' }}</button>{% endif %}
         </div>
       </div>
@@ -842,8 +843,10 @@ function getMessageTextForTranslate(item) {
 
 function renderChatMessageState(item, data) {
   const withdrawn = !!data.withdrawn;
+  const text = data.message || '';
+  const canRetract = !withdrawn && (String(data.senderUserId || '') === String({{ current_user.id|tojson }}) || IS_HOST === true || IS_HOST === 'true');
   item.dataset.withdrawn = withdrawn ? '1' : '0';
-  item.dataset.messageText = data.message || '';
+  item.dataset.messageText = text;
   item.dataset.messageId = data.id || '';
   item.dataset.senderUserId = data.senderUserId || '';
   item.dataset.senderSid = data.from || '';
@@ -853,8 +856,13 @@ function renderChatMessageState(item, data) {
       <span>${data.mode === 'host' ? '{{ '仅主持人' if lang == 'zh' else 'Host only' }}' : '{{ '公开' if lang == 'zh' else 'Public' }}'}</span>
       <span>${escapeHtml(data.createdAt || '')}</span>
     </div>
-    <div class="chat-message-body${withdrawn ? ' withdrawn' : ''}">${withdrawn ? TEXT_CHAT_WITHDRAWN : `${((data.mentions || []).map(m => `<span class="mention-badge">@${escapeHtml(String(m).replace(/^@/, ''))}</span>`).join(''))}${escapeHtml(data.message || '').replace(/\n/g, '<br>')}`}</div>
+    <div class="chat-message-body${withdrawn ? ' withdrawn' : ''}">${withdrawn ? TEXT_CHAT_WITHDRAWN : `${((data.mentions || []).map(m => `<span class="mention-badge">@${escapeHtml(String(m).replace(/^@/, ''))}</span>`).join(''))}${escapeHtml(text).replace(/\n/g, '<br>')}`}</div>
     ${withdrawn ? '' : buildAttachmentHtml(data.attachment)}
+    <div class="chat-message-actions">
+      ${text ? `<button type="button" class="msg-action-btn" data-action="copy">{{ '复制' if lang == 'zh' else 'Copy' }}</button>` : ''}
+      ${text ? `<button type="button" class="msg-action-btn" data-action="translate">{{ '译英' if lang == 'zh' else 'Translate' }}</button>` : ''}
+      ${canRetract ? `<button type="button" class="msg-action-btn danger" data-action="retract">{{ '撤回' if lang == 'zh' else 'Retract' }}</button>` : ''}
+    </div>
   `;
 }
 
@@ -864,7 +872,6 @@ function appendChatMessage(data) {
   if (!item) {
     item = document.createElement('div');
     item.className = 'chat-message ' + (data.mode === 'host' ? 'host-only' : '');
-    item.addEventListener('contextmenu', (event) => openMessageContextMenu(event, item));
     chatMessages.appendChild(item);
   } else {
     item.className = 'chat-message ' + (data.mode === 'host' ? 'host-only' : '');
@@ -1056,13 +1063,32 @@ function initChatUi() {
   renderMentionPicker();
   setChatMode('all');
   document.querySelectorAll('.chat-mode-btn').forEach(btn => btn.addEventListener('click', () => setChatMode(btn.dataset.mode)));
+  document.getElementById('clearChatBtn')?.addEventListener('click', () => {
+    if (confirm({{ ('确认清空当前会议聊天记录？' if lang == 'zh' else 'Clear the current meeting chat history?')|tojson }})) {
+      socket.emit('meeting_chat_clear');
+    }
+  });
   sendChatBtn?.addEventListener('click', sendChatMessage);
   chatInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } });
   document.getElementById('mentionBtn')?.addEventListener('click', () => { renderMentionPicker(); mentionPicker.classList.toggle('hidden'); emojiPopover?.classList.add('hidden'); });
   document.getElementById('emojiBtn')?.addEventListener('click', () => { renderEmojiPicker(); emojiPopover?.classList.toggle('hidden'); mentionPicker.classList.add('hidden'); });
   document.getElementById('emojiCloseBtn')?.addEventListener('click', () => emojiPopover?.classList.add('hidden'));
-  chatMessages?.addEventListener('contextmenu', openChatAreaContextMenu);
-  document.addEventListener('click', (e) => { if (!e.target.closest('#emojiBtn') && !e.target.closest('#emojiPopover') && !e.target.closest('#mentionBtn') && !e.target.closest('#mentionPicker') && !e.target.closest('#chatContextMenu')) hideFloatingPanels(); });
+  chatMessages?.addEventListener('click', async (event) => {
+    const btn = event.target.closest('.msg-action-btn');
+    if (!btn) return;
+    const item = btn.closest('.chat-message');
+    if (!item) return;
+    const action = btn.dataset.action;
+    const text = getMessageTextForTranslate(item);
+    if (action === 'copy') {
+      await copyText(text);
+    } else if (action === 'translate') {
+      await translateToEnglish(item, text);
+    } else if (action === 'retract') {
+      socket.emit('meeting_chat_retract', { id: item.dataset.messageId });
+    }
+  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#emojiBtn') && !e.target.closest('#emojiPopover') && !e.target.closest('#mentionBtn') && !e.target.closest('#mentionPicker')) hideFloatingPanels(); });
   chatFileInput?.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
