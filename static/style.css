@@ -2283,3 +2283,103 @@ video:-webkit-full-screen {
     padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
+
+
+/* v6.3.6 chat scroll and attachment preview fix */
+@media (min-width: 769px) {
+  .video-panel {
+    overflow: hidden !important;
+    align-items: stretch !important;
+  }
+  .chat-window {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    height: min(88vh, 980px) !important;
+    max-height: min(88vh, 980px) !important;
+    overflow: hidden !important;
+  }
+  .chat-header,
+  .chat-toolbar,
+  #mentionPicker,
+  .chat-composer {
+    flex: 0 0 auto !important;
+  }
+  .chat-messages {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+  }
+  .chat-composer {
+    position: relative !important;
+    bottom: auto !important;
+    margin-top: 0 !important;
+    z-index: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+    background: rgba(8,16,32,.96) !important;
+    box-shadow: none !important;
+  }
+  .chat-file-permission-row,
+  .chat-attachment-preview,
+  .chat-input-row,
+  .chat-actions {
+    flex: 0 0 auto !important;
+  }
+  .chat-attachment-preview {
+    order: 1 !important;
+    padding: 0 16px 0 !important;
+    max-height: 168px !important;
+    overflow-y: auto !important;
+  }
+  .chat-file-permission-row {
+    order: 2 !important;
+    padding: 0 16px !important;
+  }
+  .chat-input-row {
+    order: 3 !important;
+    padding: 0 16px !important;
+  }
+  .chat-actions {
+    order: 4 !important;
+  }
+  .chat-attachment-preview .chat-media {
+    max-height: 120px !important;
+    width: auto !important;
+  }
+  .chat-attachment-preview .chat-file-card,
+  .chat-attachment-preview > img,
+  .chat-attachment-preview > video {
+    margin-bottom: 8px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .chat-window {
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+  .chat-messages {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  .chat-composer {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  .chat-attachment-preview {
+    max-height: 132px !important;
+    overflow-y: auto !important;
+    padding: 0 12px !important;
+  }
+  .chat-attachment-preview .chat-media {
+    max-height: 96px !important;
+  }
+}

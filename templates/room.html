@@ -267,6 +267,8 @@ const emojiPicker = document.getElementById('emojiPicker');
 const emojiPopover = document.getElementById('emojiPopover');
 const chatContextMenu = document.getElementById('chatContextMenu');
 const chatAttachmentPermission = document.getElementById('chatAttachmentPermission');
+const chatComposer = document.querySelector('#chatWindow .chat-composer');
+const chatPermissionRow = document.querySelector('#chatWindow .chat-file-permission-row');
 const danmakuLayer = document.getElementById('danmakuLayer');
 
 function setStatus(msg, cls='') {
@@ -1084,11 +1086,28 @@ async function compressImageFile(file) {
   }
 }
 
+function isChatNearBottom() {
+  if (!chatMessages) return true;
+  const remaining = chatMessages.scrollHeight - chatMessages.clientHeight - chatMessages.scrollTop;
+  return remaining < 40;
+}
+
+function keepChatViewportStable(wasNearBottom) {
+  if (!chatMessages) return;
+  requestAnimationFrame(() => {
+    if (wasNearBottom) {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+  });
+}
+
 function updateAttachmentPreview() {
   if (!chatAttachmentPreview) return;
+  const wasNearBottom = isChatNearBottom();
   if (!pendingAttachment) {
     chatAttachmentPreview.classList.add('hidden');
     chatAttachmentPreview.innerHTML = '';
+    keepChatViewportStable(wasNearBottom);
     return;
   }
   chatAttachmentPreview.classList.remove('hidden');
@@ -1103,6 +1122,7 @@ function updateAttachmentPreview() {
     chatAttachmentPreview.innerHTML = `<div class="chat-file-card"><div class="chat-file-meta"><strong>${escapeHtml(pendingAttachment.name || 'attachment')}</strong><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ '移除附件' if lang == 'zh' else 'Remove attachment' }}</button></div>`;
   }
   document.getElementById('clearAttachmentBtn').onclick = () => { pendingAttachment = null; updateAttachmentPreview(); };
+  keepChatViewportStable(wasNearBottom);
 }
 
 function setChatMode(mode) {
@@ -1176,6 +1196,16 @@ async function sendChatMessage() {
   chatInput.value = '';
   pendingAttachment = null;
   updateAttachmentPreview();
+}
+
+function normalizeChatLayout() {
+  if (!chatWindow || !chatComposer) return;
+  if (chatAttachmentPreview && chatAttachmentPreview.parentElement !== chatComposer) {
+    chatComposer.insertBefore(chatAttachmentPreview, chatComposer.firstChild);
+  }
+  if (chatPermissionRow && chatPermissionRow.parentElement !== chatComposer) {
+    chatComposer.insertBefore(chatPermissionRow, chatComposer.firstChild);
+  }
 }
 
 function enableChatDrag() {
@@ -1264,6 +1294,7 @@ function setChatCollapsed(collapsed) {
 }
 
 function initChatUi() {
+  normalizeChatLayout();
   enableChatDrag();
   setChatCollapsed(false);
   renderMentionPicker();
