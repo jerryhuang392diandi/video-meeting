@@ -1269,9 +1269,21 @@ function initChatUi() {
   renderMentionPicker();
   setChatMode('all');
   document.querySelectorAll('.chat-mode-btn').forEach(btn => btn.addEventListener('click', () => setChatMode(btn.dataset.mode)));
-  document.getElementById('clearChatBtn')?.addEventListener('click', () => {
-    if (confirm({{ ('确认清空当前会议聊天记录？' if lang == 'zh' else 'Clear the current meeting chat history?')|tojson }})) {
-      socket.emit('meeting_chat_clear');
+  document.getElementById('clearChatBtn')?.addEventListener('click', async () => {
+    if (!confirm({{ ('确认清空当前会议聊天记录？' if lang == 'zh' else 'Clear the current meeting chat history?')|tojson }})) return;
+    try {
+      const response = await fetch('/api/chat_clear', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ room_id: ROOM_ID })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.success === false) {
+        setStatus(data?.message || {{ ('清空失败' if lang == 'zh' else 'Failed to clear chat')|tojson }}, 'error');
+      }
+    } catch (error) {
+      setStatus(error?.message || {{ ('清空失败' if lang == 'zh' else 'Failed to clear chat')|tojson }}, 'error');
     }
   });
   chatAttachmentPermission?.addEventListener('change', updateAttachmentPreview);

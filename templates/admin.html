@@ -29,6 +29,29 @@
       <div class="metric-card"><span>{{ '在线会议' if lang == 'zh' else 'Active rooms' }}</span><strong id="roomMetric">{{ system_stats.active_room_count }}</strong></div>
       <div class="metric-card"><span>{{ '在线连接' if lang == 'zh' else 'Active sockets' }}</span><strong id="socketMetric">{{ system_stats.active_socket_count }}</strong></div>
     </div>
+    <div class="admin-chart-grid">
+      <div class="admin-chart-card">
+        <div class="admin-ring-chart" id="cpuRing" data-label="{{ system_stats.cpu_percent }}%" style="--pct: {{ system_stats.cpu_percent }};"></div>
+        <div>
+          <strong>{{ 'CPU 占用' if lang == 'zh' else 'CPU load' }}</strong>
+          <div class="muted small-note">{{ '实时处理器压力' if lang == 'zh' else 'Live processor pressure' }}</div>
+        </div>
+      </div>
+      <div class="admin-chart-card">
+        <div class="admin-ring-chart" id="memoryRing" data-label="{{ system_stats.memory_percent }}%" style="--pct: {{ system_stats.memory_percent }};"></div>
+        <div>
+          <strong>{{ '内存占用' if lang == 'zh' else 'Memory load' }}</strong>
+          <div class="muted small-note">{{ '系统内存使用率' if lang == 'zh' else 'Current memory utilization' }}</div>
+        </div>
+      </div>
+      <div class="admin-chart-card">
+        <div class="admin-ring-chart" id="diskRing" data-label="{{ system_stats.disk_percent }}%" style="--pct: {{ system_stats.disk_percent }};"></div>
+        <div>
+          <strong>{{ '磁盘占用' if lang == 'zh' else 'Disk usage' }}</strong>
+          <div class="muted small-note">{{ '可用容量与存储压力' if lang == 'zh' else 'Capacity and storage pressure' }}</div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="panel panel-glow">
@@ -213,6 +236,9 @@
         const diskBar = document.getElementById('diskBar'); if (diskBar) diskBar.style.width = `${data.disk_percent}%`;
         const diskDetail = document.getElementById('diskDetail'); if (diskDetail) diskDetail.textContent = `${data.disk_used_text} / ${data.disk_total_text}`;
         const ifaceDetail = document.getElementById('ifaceDetail'); if (ifaceDetail) ifaceDetail.textContent = `iface: ${data.iface}`;
+        const cpuRing = document.getElementById('cpuRing'); if (cpuRing) { cpuRing.style.setProperty('--pct', data.cpu_percent); cpuRing.dataset.label = `${data.cpu_percent}%`; }
+        const memoryRing = document.getElementById('memoryRing'); if (memoryRing) { memoryRing.style.setProperty('--pct', data.memory_percent); memoryRing.dataset.label = `${data.memory_percent}%`; }
+        const diskRing = document.getElementById('diskRing'); if (diskRing) { diskRing.style.setProperty('--pct', data.disk_percent); diskRing.dataset.label = `${data.disk_percent}%`; }
       } catch (_) {}
     }
     refreshSystemStats();

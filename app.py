@@ -670,13 +670,25 @@ def room_user_marker_key(user_id, sid=None):
     return f"user:{user_id}" if user_id else f"sid:{sid or ''}"
 
 
+def current_chat_seq(room):
+    history = list(room.get("chat_history", []))
+    if history:
+        try:
+            return max(int(item.get("seq", 0) or 0) for item in history)
+        except Exception:
+            pass
+    counter = int(room.get("chat_seq_counter", 0) or 0)
+    return counter - 1
+
+
 def visible_chat_history_for_user(room, user_id, sid, is_room_host=False):
     history = list(room.get("chat_history", []))
     marker_key = room_user_marker_key(user_id, sid)
-    clear_index = int((room.get("chat_clear_markers") or {}).get(marker_key, 0) or 0)
+    clear_seq = int((room.get("chat_clear_markers") or {}).get(marker_key, -1) or -1)
     visible = []
-    for idx, item in enumerate(history):
-        if idx < clear_index and not is_room_host:
+    for item in history:
+        item_seq = int(item.get("seq", 0) or 0)
+        if item_seq <= clear_seq and not is_room_host:
             continue
         if item.get("mode") == "all":
             visible.append(item)
@@ -930,9 +942,10 @@ def ensure_runtime_room(meeting):
         "expiry_timer": None,
         "lang": session.get("lang", "zh"),
         "traffic_last_sync": time.time(),
-        "danmaku_enabled": False,
+        "danmaku_enabled": bool(getattr(meeting.host, "default_danmaku_enabled", False)),
         "chat_history": [],
         "chat_clear_markers": {},
+        "chat_seq_counter": 0,
     }
     schedule_room_expiry(meeting.room_id, meeting.created_at.timestamp())
     return room
@@ -1299,9 +1312,10 @@ def api_create_room():
         "expiry_timer": None,
         "lang": session.get("lang", "zh"),
         "traffic_last_sync": time.time(),
-        "danmaku_enabled": False,
+        "danmaku_enabled": bool(getattr(meeting.host, "default_danmaku_enabled", False)),
         "chat_history": [],
         "chat_clear_markers": {},
+        "chat_seq_counter": 0,
     }
     schedule_room_expiry(room_id, meeting.created_at.timestamp())
 
@@ -1364,6 +1378,41 @@ def api_traffic_summary():
     if user_quota_exceeded(current_user):
         disconnect_user_sockets(current_user.id, message=t("traffic_limit_reached"))
     return jsonify({"success": True, **traffic_summary_dict(current_user)})
+
+
+@app.post("/api/chat_clear")
+@login_required
+def api_chat_clear():
+    payload = request.get_json(silent=True) or {}
+    room_id = str(payload.get("room_id") or "").strip()
+    if not room_id:
+        return jsonify({"success": False, "message": t("meeting_not_found")}), 404
+    room = rooms.get(room_id)
+    if not room:
+        return jsonify({"success": False, "message": t("meeting_not_found")}), 404
+
+    is_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
+    if is_host:
+        room["chat_history"] = []
+        room["chat_clear_markers"] = {}
+        room["chat_seq_counter"] = 0
+        room["chat_seq_counter"] = 0
+        shutil.rmtree(os.path.join(CHAT_UPLOAD_DIR, room_id), ignore_errors=True)
+        socketio.emit("meeting_chat_cleared", {"by": f"user:{current_user.id}", "scope": "all"}, room=room_id)
+        return jsonify({"success": True, "scope": "all"})
+
+    marker_key = room_user_marker_key(current_user.id, None)
+    room.setdefault("chat_clear_markers", {})[marker_key] = current_chat_seq(room)
+    for active_sid in list(user_active_sids.get(current_user.id, set())):
+        socketio.emit("meeting_chat_cleared", {"by": f"user:{current_user.id}", "scope": "self"}, to=active_sid)
+    return jsonify({"success": True, "scope": "self"})
+
+
+@app.get("/api/admin/system_stats")
+@login_required
+@admin_required
+def api_admin_system_stats():
+    return jsonify({"success": True, **get_system_metrics()})
 
 
 @app.get("/history")
@@ -1485,6 +1534,7 @@ def admin_dashboard():
         online_rooms=online_rooms,
         traffic_summaries={u.id: traffic_summary_dict(u) for u in users},
         reset_requests=reset_requests,
+        system_stats=get_system_metrics(),
     )
 
 
@@ -2197,9 +2247,10 @@ def on_meeting_chat_send(data):
     mentions = [str(x)[:64] for x in mentions[:12]]
     if not message and not attachment:
         return
+    next_seq = int(room.get("chat_seq_counter", 0) or 0)
     event = {
         "id": secrets.token_hex(8),
-        "seq": len(room.get("chat_history", [])),
+        "seq": next_seq,
         "from": sid,
         "senderUserId": info.get("user_id"),
         "senderName": room["participants"].get(sid, {}).get("name") or info.get("name") or "Guest",
@@ -2211,6 +2262,7 @@ def on_meeting_chat_send(data):
         "withdrawn": False,
     }
     room.setdefault("chat_history", []).append(event)
+    room["chat_seq_counter"] = next_seq + 1
     if len(room["chat_history"]) > 200:
         room["chat_history"] = room["chat_history"][-200:]
     if event["mode"] == "host":
@@ -2239,10 +2291,11 @@ def on_meeting_chat_clear():
     if is_host:
         room["chat_history"] = []
         room["chat_clear_markers"] = {}
+        room["chat_seq_counter"] = 0
         shutil.rmtree(os.path.join(CHAT_UPLOAD_DIR, info["room_id"]), ignore_errors=True)
         socketio.emit("meeting_chat_cleared", {"by": sid, "scope": "all"}, room=info["room_id"])
     else:
-        room.setdefault("chat_clear_markers", {})[room_user_marker_key(info.get("user_id"), sid)] = len(room.get("chat_history", []))
+        room.setdefault("chat_clear_markers", {})[room_user_marker_key(info.get("user_id"), sid)] = current_chat_seq(room)
         socketio.emit("meeting_chat_cleared", {"by": sid, "scope": "self"}, to=sid)
 
 
