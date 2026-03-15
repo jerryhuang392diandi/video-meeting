@@ -118,7 +118,8 @@
         </div>
         <div class="chat-actions">
           <div class="chat-actions-left">
-            <label class="ghost-btn attachment-btn">{{ '图片/视频/文档' if lang == 'zh' else 'Media / Docs' }}<input id="chatFileInput" type="file" accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,.rar,.7z" class="hidden" /></label>
+            <label class="ghost-btn attachment-btn">{{ '图片/视频' if lang == 'zh' else 'Media' }}<input id="chatMediaInput" type="file" accept="image/*,video/*,.heic,.heif,.avi,.3gp" class="hidden" /></label>
+            <label class="ghost-btn attachment-btn">{{ '文档/PPT/压缩包' if lang == 'zh' else 'Docs / PPT / Archive' }}<input id="chatDocInput" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,.rar,.7z" class="hidden" /></label>
             <button class="ghost-btn" id="emojiBtn" type="button">😊 {{ '表情' if lang == 'zh' else 'Emoji' }}</button>
           </div>
           <button class="primary-btn slim-btn" id="sendChatBtn">{{ '发送' if lang == 'zh' else 'Send' }}</button>
@@ -246,7 +247,8 @@ const chatHeader = document.getElementById('chatHeader');
 const chatMessages = document.getElementById('chatMessages');
 const chatInput = document.getElementById('chatInput');
 const sendChatBtn = document.getElementById('sendChatBtn');
-const chatFileInput = document.getElementById('chatFileInput');
+const chatMediaInput = document.getElementById('chatMediaInput');
+const chatDocInput = document.getElementById('chatDocInput');
 const chatAttachmentPreview = document.getElementById('chatAttachmentPreview');
 const mentionPicker = document.getElementById('mentionPicker');
 const emojiPicker = document.getElementById('emojiPicker');
@@ -1096,7 +1098,8 @@ async function uploadPendingAttachment() {
   formData.append('room_id', ROOM_ID);
   formData.append('permission', chatAttachmentPermission?.value || 'download');
   formData.append('file', pendingAttachment.file, pendingAttachment.name || pendingAttachment.file.name || 'attachment');
-  const resp = await fetch('/api/chat_upload', { method: 'POST', body: formData });
+  const endpoint = pendingAttachment.uploadKind === 'media' ? '/api/chat_upload_media' : '/api/chat_upload_doc';
+  const resp = await fetch(endpoint, { method: 'POST', body: formData });
   const contentType = resp.headers.get('content-type') || '';
   let data = null;
   if (contentType.includes('application/json')) {
@@ -1131,8 +1134,10 @@ async function sendChatMessage() {
           : '';
         const baseMsg = file?.type?.startsWith('image/') ? TEXT_ATTACHMENT_LIMIT_IMAGE : (file?.type?.startsWith('video/') ? TEXT_ATTACHMENT_LIMIT_VIDEO : TEXT_ATTACHMENT_LIMIT_FILE);
         setStatus(`${baseMsg}${extra}`, 'warning');
+      } else if (msg.includes('file_type_not_allowed')) {
+        setStatus({{ ('该图片/视频格式被服务器拒绝，请换 jpg/png/mp4 或升级后重试' if lang == 'zh' else 'The server rejected this media format. Try jpg/png/mp4 or retry after upgrading.')|tojson }}, 'error');
       } else {
-        setStatus(TEXT_UPLOAD_FAILED, 'error');
+        setStatus(TEXT_UPLOAD_FAILED + (msg ? ` (${msg})` : ''), 'error');
       }
       return;
     }
@@ -1267,36 +1272,50 @@ function initChatUi() {
     }
   });
   document.addEventListener('click', (e) => { if (!e.target.closest('#emojiBtn') && !e.target.closest('#emojiPopover') && !e.target.closest('#mentionBtn') && !e.target.closest('#mentionPicker')) hideFloatingPanels(); });
-  chatFileInput?.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0];
+  const prepareAttachment = async (file, uploadKind) => {
     if (!file) return;
     try {
       const isImage = file.type.startsWith('image/');
       const isVideo = file.type.startsWith('video/');
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      const mediaAllowed = ['png','jpg','jpeg','gif','webp','bmp','heic','heif','mp4','webm','mov','m4v','avi','3gp'];
+      const docAllowed = ['pdf','doc','docx','ppt','pptx','xls','xlsx','txt','zip','rar','7z'];
+      if (uploadKind === 'media') {
+        if ((!mediaAllowed.includes(ext)) && !isImage && !isVideo) {
+          setStatus({{ ('暂不支持该图片或视频格式' if lang == 'zh' else 'This media format is not supported yet')|tojson }}, 'warning');
+          return;
+        }
+      } else {
+        if (!docAllowed.includes(ext)) {
+          setStatus({{ ('暂不支持该文档类型' if lang == 'zh' else 'This document type is not supported yet')|tojson }}, 'warning');
+          return;
+        }
+      }
       const limit = isImage ? (25 * 1024 * 1024) : (isVideo ? (120 * 1024 * 1024) : (25 * 1024 * 1024));
       if (file.size > limit) {
         setStatus(isImage ? TEXT_ATTACHMENT_LIMIT_IMAGE : (isVideo ? TEXT_ATTACHMENT_LIMIT_VIDEO : TEXT_ATTACHMENT_LIMIT_FILE), 'warning');
         return;
       }
-      const ext = (file.name.split('.').pop() || '').toLowerCase();
-      const allowed = ['png','jpg','jpeg','gif','webp','bmp','mp4','webm','mov','m4v','pdf','doc','docx','ppt','pptx','xls','xlsx','txt','zip','rar','7z'];
-      if (!allowed.includes(ext) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-        setStatus({{ ('暂不支持该文件类型' if lang == 'zh' else 'This file type is not supported yet')|tojson }}, 'warning');
-        return;
-      }
       let previewUrl = '';
-      if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
-        previewUrl = URL.createObjectURL(file);
-      }
-      pendingAttachment = { type: file.type || 'application/octet-stream', name: file.name, file, previewUrl };
+      if (isImage || isVideo) previewUrl = URL.createObjectURL(file);
+      pendingAttachment = { type: file.type || 'application/octet-stream', name: file.name, file, previewUrl, uploadKind };
       updateAttachmentPreview();
       setStatus({{ ('附件已准备好，可发送' if lang == 'zh' else 'Attachment is ready to send')|tojson }});
     } catch (err) {
       console.error(err);
       setStatus({{ ('附件处理失败' if lang == 'zh' else 'Failed to process attachment')|tojson }}, 'error');
-    } finally {
-      e.target.value = '';
     }
+  };
+
+  chatMediaInput?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    await prepareAttachment(file, 'media');
+    e.target.value = '';
+  });
+  chatDocInput?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    await prepareAttachment(file, 'doc');
+    e.target.value = '';
   });
   document.getElementById('toggleDanmakuBtn')?.addEventListener('click', () => socket.emit('toggle_danmaku', { enabled: !danmakuEnabled }));
   document.getElementById('chatHideBtn')?.addEventListener('click', () => setChatCollapsed(true));

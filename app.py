@@ -68,7 +68,7 @@ CHAT_VIDEO_MAX_UPLOAD_BYTES = 120 * 1024 * 1024
 CHAT_ROOM_STORAGE_LIMIT_BYTES = 120 * 1024 * 1024
 CHAT_GLOBAL_STORAGE_LIMIT_BYTES = 512 * 1024 * 1024
 CHAT_IMAGE_MAX_DIMENSION = 1920
-ALLOWED_CHAT_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "mp4", "webm", "mov", "m4v", "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "txt", "zip", "rar", "7z"}
+ALLOWED_CHAT_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "mp4", "webm", "mov", "m4v", "avi", "3gp", "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "txt", "zip", "rar", "7z"}
 
 TRANSLATIONS = {
     "zh": {
@@ -1641,9 +1641,47 @@ def _translate_via_google(text: str, target_lang: str):
     return translated or text, detected
 
 
-def _allowed_chat_file(filename: str) -> bool:
+def _guess_extension_from_content_type(content_type: str | None) -> str:
+    content_type = (content_type or "").split(";", 1)[0].strip().lower()
+    mapping = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/bmp": ".bmp",
+        "image/heic": ".heic",
+        "image/heif": ".heif",
+        "video/mp4": ".mp4",
+        "video/webm": ".webm",
+        "video/quicktime": ".mov",
+        "video/x-msvideo": ".avi",
+        "video/3gpp": ".3gp",
+        "application/pdf": ".pdf",
+    }
+    return mapping.get(content_type, mimetypes.guess_extension(content_type or "") or "")
+
+
+def _allowed_chat_file(filename: str, content_type: str | None = None) -> bool:
     suffix = (Path(filename or "").suffix or "").lower().lstrip(".")
-    return bool(suffix and suffix in ALLOWED_CHAT_EXTENSIONS)
+    if suffix and suffix in ALLOWED_CHAT_EXTENSIONS:
+        return True
+    content_type = (content_type or "").split(";", 1)[0].strip().lower()
+    if content_type.startswith("image/") or content_type.startswith("video/"):
+        return True
+    ext_from_type = _guess_extension_from_content_type(content_type).lstrip(".").lower()
+    return bool(ext_from_type and ext_from_type in ALLOWED_CHAT_EXTENSIONS)
+
+
+def _build_safe_upload_name(filename: str, content_type: str | None = None) -> str:
+    raw_name = (filename or "").strip()
+    safe_name = secure_filename(raw_name)
+    stem = Path(safe_name or raw_name or "attachment").stem
+    suffix = (Path(safe_name or raw_name).suffix or "").lower()
+    if not suffix:
+        suffix = _guess_extension_from_content_type(content_type)
+    stem = secure_filename(stem) or "attachment"
+    return f"{stem}{suffix}" if suffix else stem
 
 
 def _dir_size_bytes(path: str) -> int:
@@ -1821,9 +1859,7 @@ def _can_access_room_attachment(room: dict | None) -> bool:
     allowed_user_ids = {info.get("user_id") for info in room.get("participants", {}).values() if info.get("user_id")}
     return current_user.id in allowed_user_ids or current_user.id == room.get("host_user_id")
 
-@app.post("/api/chat_upload")
-@login_required
-def api_chat_upload():
+def _api_chat_upload_impl(upload_mode: str = "any"):
     room_id = str(request.form.get("room_id") or "").strip()
     permission = str(request.form.get("permission") or "download").strip().lower()
     if permission not in {"view", "download"}:
@@ -1837,14 +1873,24 @@ def api_chat_upload():
     upload = request.files.get("file")
     if not upload or not upload.filename:
         return jsonify({"ok": False, "error": "missing_file"}), 400
-    if not _allowed_chat_file(upload.filename):
-        return jsonify({"ok": False, "error": "file_type_not_allowed"}), 400
+
+    incoming_content_type = (upload.mimetype or "application/octet-stream").strip()
+    original_name = _build_safe_upload_name(upload.filename, incoming_content_type)
+    content_type = _normalize_attachment_content_type(original_name, incoming_content_type)
+    kind = _attachment_kind(original_name, content_type)
+
+    if upload_mode == "media" and kind not in {"image", "video", "audio"}:
+        return jsonify({"ok": False, "error": "media_only_upload"}), 400
+    if upload_mode == "doc" and kind in {"image", "video", "audio"}:
+        return jsonify({"ok": False, "error": "document_only_upload"}), 400
+
+    if not _allowed_chat_file(upload.filename, incoming_content_type):
+        return jsonify({"ok": False, "error": "file_type_not_allowed", "detail": incoming_content_type}), 400
+
     upload.stream.seek(0, os.SEEK_END)
     original_size = upload.stream.tell()
     upload.stream.seek(0)
-    original_name = secure_filename(upload.filename) or "attachment"
-    content_type = _normalize_attachment_content_type(original_name, (upload.mimetype or "application/octet-stream").strip())
-    kind = _attachment_kind(original_name, content_type)
+
     size_limit = CHAT_MAX_UPLOAD_BYTES
     if kind == 'image':
         size_limit = CHAT_IMAGE_MAX_UPLOAD_BYTES
@@ -1860,35 +1906,15 @@ def api_chat_upload():
     room_dir = os.path.join(CHAT_UPLOAD_DIR, room_id)
     os.makedirs(room_dir, exist_ok=True)
 
-    # Media and document uploads intentionally follow separate storage paths.
-    # Images/videos keep their original file bytes to maximize compatibility
-    # across browsers and mobile devices; documents continue to use the
-    # unified attachment card and preview/download rules.
-    optimized = None
-    if kind == 'image' and False:
-        optimized = _optimize_image_to_path(upload, original_name, room_dir)
-    if optimized:
-        if _enforce_chat_storage_limits(room_id, optimized['size']):
-            try:
-                os.remove(optimized['path'])
-            except OSError:
-                pass
-            return jsonify({"ok": False, "error": "room_storage_limit"}), 507
-        abs_path = optimized['path']
-        stored_name = os.path.basename(abs_path)
-        display_name = optimized['display_name']
-        content_type = optimized['content_type']
-        size = optimized['size']
-    else:
-        bucket = 'media' if kind in {'image', 'video', 'audio'} else 'docs'
-        target_dir = os.path.join(room_dir, bucket)
-        os.makedirs(target_dir, exist_ok=True)
-        stored_name = f"{token}_{original_name}"
-        abs_path = os.path.join(target_dir, stored_name)
-        upload.stream.seek(0)
-        upload.save(abs_path)
-        size = os.path.getsize(abs_path)
-        display_name = original_name[:120]
+    bucket = 'media' if kind in {'image', 'video', 'audio'} else 'docs'
+    target_dir = os.path.join(room_dir, bucket)
+    os.makedirs(target_dir, exist_ok=True)
+    stored_name = f"{token}_{original_name}"
+    abs_path = os.path.join(target_dir, stored_name)
+    upload.stream.seek(0)
+    upload.save(abs_path)
+    size = os.path.getsize(abs_path)
+    display_name = original_name[:120]
 
     attachment = {
         "token": token,
@@ -1903,6 +1929,21 @@ def api_chat_upload():
         "downloadUrl": url_for("chat_attachment_download", room_id=room_id, token=token) if permission == "download" else None,
     }
     return jsonify({"ok": True, "attachment": attachment})
+
+@app.post("/api/chat_upload")
+@login_required
+def api_chat_upload():
+    return _api_chat_upload_impl("any")
+
+@app.post("/api/chat_upload_media")
+@login_required
+def api_chat_upload_media():
+    return _api_chat_upload_impl("media")
+
+@app.post("/api/chat_upload_doc")
+@login_required
+def api_chat_upload_doc():
+    return _api_chat_upload_impl("doc")
 
 
 @app.get("/chat_attachment/<room_id>/<token>")
