@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
-{% block title %}{{ '我的账户' if lang == 'zh' else 'My Account' }}{% endblock %}
+{% block title %}{{ t('account_preferences') }}{% endblock %}
 {% block content %}
 <header class="topbar compact">
   <div>
-    <div class="brand">{{ '我的账户' if lang == 'zh' else 'My Account' }}</div>
-    <div class="muted">{{ '管理用户名、会议显示名、地区与文件权限偏好' if lang == 'zh' else 'Manage username, meeting display name, region, and file permission preferences' }}</div>
+    <div class="brand">{{ t('account_preferences') }}</div>
+    <div class="muted">{{ t('manage_account_desc') }}</div>
   </div>
   <div class="top-actions">
     <a class="chip" href="{{ url_for('index') }}">{{ t('back_home') }}</a>
@@ -12,7 +12,7 @@
 </header>
 <section class="grid two">
   <div class="panel panel-glow">
-    <h2>{{ '基础资料' if lang == 'zh' else 'Profile' }}</h2>
+    <h2>{{ t('profile') }}</h2>
     {% if message %}<div class="notice">{{ message }}</div>{% endif %}
     {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
     <form method="post">
@@ -21,51 +21,51 @@
       <input name="username" maxlength="32" value="{{ user.username }}" required />
       <label>{{ t('display_name') }}</label>
       <input name="display_name" maxlength="32" value="{{ preferred_display_name }}" />
-      <label>{{ '地区 / 时区' if lang == 'zh' else 'Region / Time zone' }}</label>
+      <label>{{ t('region_timezone') }}</label>
       <select name="region">
         {% for item in ['Asia/Tokyo','Asia/Shanghai','Asia/Hong_Kong','Europe/London','America/Los_Angeles'] %}
         <option value="{{ item }}" {% if region == item %}selected{% endif %}>{{ item }}</option>
         {% endfor %}
       </select>
-      <label>{{ '翻译默认语言' if lang == 'zh' else 'Translation default' }}</label>
+      <label>{{ t('translation_default') }}</label>
       <select name="preferred_locale">
-        <option value="auto" {% if preferred_locale == 'auto' %}selected{% endif %}>{{ '自动检测' if lang == 'zh' else 'Auto detect' }}</option>
-        <option value="zh" {% if preferred_locale == 'zh' %}selected{% endif %}>中文</option>
+        <option value="auto" {% if preferred_locale == 'auto' %}selected{% endif %}>{{ t('auto_detect') }}</option>
+        <option value="zh" {% if preferred_locale == 'zh' %}selected{% endif %}>{{ t('lang_zh') }}</option>
         <option value="en" {% if preferred_locale == 'en' %}selected{% endif %}>English</option>
       </select>
-      <label>{{ '聊天附件默认权限' if lang == 'zh' else 'Default chat attachment permission' }}</label>
+      <label>{{ t('default_chat_attachment_permission') }}</label>
       <select name="default_attachment_permission">
-        <option value="download" {% if default_attachment_permission == 'download' %}selected{% endif %}>{{ '可下载' if lang == 'zh' else 'Download allowed' }}</option>
-        <option value="view" {% if default_attachment_permission == 'view' %}selected{% endif %}>{{ '仅查看' if lang == 'zh' else 'View only' }}</option>
+        <option value="download" {% if default_attachment_permission == 'download' %}selected{% endif %}>{{ t('download_allowed') }}</option>
+        <option value="view" {% if default_attachment_permission == 'view' %}selected{% endif %}>{{ t('view_only') }}</option>
       </select>
-      <div class="section-head" style="margin-top:16px;"><h3 style="margin:0;">{{ '会议默认偏好' if lang == 'zh' else 'Meeting defaults' }}</h3></div>
-      <label>{{ '进入会议后默认弹幕显示' if lang == 'zh' else 'Show danmaku by default' }}</label>
+      <div class="section-head" style="margin-top:16px;"><h3 style="margin:0;">{{ t('meeting_defaults') }}</h3></div>
+      <label>{{ t('show_danmaku_default') }}</label>
       <select name="default_danmaku_enabled">
-        <option value="1" {% if default_danmaku_enabled %}selected{% endif %}>{{ '开启' if lang == 'zh' else 'On' }}</option>
-        <option value="0" {% if not default_danmaku_enabled %}selected{% endif %}>{{ '关闭' if lang == 'zh' else 'Off' }}</option>
+        <option value="1" {% if default_danmaku_enabled %}selected{% endif %}>{{ t('on') }}</option>
+        <option value="0" {% if not default_danmaku_enabled %}selected{% endif %}>{{ t('off') }}</option>
       </select>
-      <label>{{ '进入会议时默认开启摄像头' if lang == 'zh' else 'Enable camera when entering meetings' }}</label>
+      <label>{{ t('enable_camera_on_join') }}</label>
       <select name="auto_enable_camera">
-        <option value="1" {% if auto_enable_camera %}selected{% endif %}>{{ '开启' if lang == 'zh' else 'On' }}</option>
-        <option value="0" {% if not auto_enable_camera %}selected{% endif %}>{{ '关闭' if lang == 'zh' else 'Off' }}</option>
+        <option value="1" {% if auto_enable_camera %}selected{% endif %}>{{ t('on') }}</option>
+        <option value="0" {% if not auto_enable_camera %}selected{% endif %}>{{ t('off') }}</option>
       </select>
-      <label>{{ '进入会议时默认开启麦克风' if lang == 'zh' else 'Enable microphone when entering meetings' }}</label>
+      <label>{{ t('enable_microphone_on_join') }}</label>
       <select name="auto_enable_microphone">
-        <option value="1" {% if auto_enable_microphone %}selected{% endif %}>{{ '开启' if lang == 'zh' else 'On' }}</option>
-        <option value="0" {% if not auto_enable_microphone %}selected{% endif %}>{{ '关闭' if lang == 'zh' else 'Off' }}</option>
+        <option value="1" {% if auto_enable_microphone %}selected{% endif %}>{{ t('on') }}</option>
+        <option value="0" {% if not auto_enable_microphone %}selected{% endif %}>{{ t('off') }}</option>
       </select>
       <button class="primary-btn" type="submit">{{ t('save') }}</button>
     </form>
   </div>
   <div class="panel panel-glow">
-    <h2>{{ '修改密码' if lang == 'zh' else 'Change password' }}</h2>
+    <h2>{{ t('change_password') }}</h2>
     <form method="post">
       <input type="hidden" name="action" value="password" />
-      <label>{{ '当前密码' if lang == 'zh' else 'Current password' }}</label>
+      <label>{{ t('current_password') }}</label>
       <input name="current_password" type="password" required />
-      <label>{{ '新密码' if lang == 'zh' else 'New password' }}</label>
+      <label>{{ t('new_password') }}</label>
       <input name="new_password" type="password" required />
-      <button class="primary-btn" type="submit">{{ '更新密码' if lang == 'zh' else 'Update password' }}</button>
+      <button class="primary-btn" type="submit">{{ t('update_password') }}</button>
     </form>
   </div>
 </section>

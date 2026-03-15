@@ -139,6 +139,38 @@ TRANSLATIONS = {
         "language": "语言",
         "lang_zh": "中文",
         "lang_en": "English",
+        "account_preferences": "个人账户与偏好",
+        "profile": "基础资料",
+        "change_password": "修改密码",
+        "region_timezone": "地区 / 时区",
+        "translation_default": "翻译默认语言",
+        "auto_detect": "自动检测",
+        "default_chat_attachment_permission": "聊天附件默认权限",
+        "download_allowed": "可下载",
+        "view_only": "仅查看",
+        "meeting_defaults": "会议默认偏好",
+        "show_danmaku_default": "进入会议后默认弹幕显示",
+        "enable_camera_on_join": "进入会议时默认开启摄像头",
+        "enable_microphone_on_join": "进入会议时默认开启麦克风",
+        "on": "开启",
+        "off": "关闭",
+        "current_password": "当前密码",
+        "new_password": "新密码",
+        "update_password": "更新密码",
+        "manage_account_desc": "管理用户名、会议显示名、地区与文件权限偏好",
+        "profile_saved": "保存成功",
+        "password_updated": "密码已更新",
+        "forgot_password": "找回密码",
+        "server_overview": "服务器概览",
+        "memory": "内存",
+        "disk_usage": "硬盘占用",
+        "server_traffic_total": "累计服务器流量",
+        "active_rooms": "在线会议",
+        "active_sockets": "在线连接",
+        "password_reset_requests": "找回密码申请",
+        "resolved": "已处理",
+        "reject": "拒绝",
+        "no_requests": "暂无申请",
         "permission_ready": "设备权限已获取",
         "permission_failed": "设备权限获取失败",
         "kicked": "你的账号已在其他设备登录，当前设备已退出。",
@@ -245,15 +277,15 @@ TRANSLATIONS = {
         "support_email": "支持邮箱",
         "support_email_value": "support@peoplelovesai.xyz",
         "support_phone_value": "+86 400-800-1234",
-        "help_page_title": "用户指南",
-        "help_page_intro": "查看登录、注册、开启会议、加入会议、共享屏幕与流量规则等使用说明。",
-        "support_page_title": "客服支持",
-        "support_page_intro": "如遇登录、会议、配额或设备问题，可通过以下方式联系平台客服。",
-        "back_to_login": "返回登录",
-        "open_help_center": "用户指南",
-        "open_support_center": "客服支持",
-        "auth_tagline": "稳定、安全、现代化的视频会议体验",
-        "auth_desc_simple": "支持中英双语、管理员后台、单设备登录与 TURN relay 流量统计。",
+        "help_page_title": "User Guide",
+        "help_page_intro": "See instructions for login, registration, starting meetings, joining meetings, screen sharing, and traffic policy.",
+        "support_page_title": "Support",
+        "support_page_intro": "For login, meeting, quota, or device issues, contact platform support using the details below.",
+        "back_to_login": "Back to Login",
+        "open_help_center": "User Guide",
+        "open_support_center": "Support",
+        "auth_tagline": "Stable, secure, and modern video meeting experience",
+        "auth_desc_simple": "Supports a bilingual interface, admin console, single-device login, and TURN relay traffic statistics.",
     },
     "en": {
         "app_name": "Video Meeting System",
@@ -315,8 +347,40 @@ TRANSLATIONS = {
         "enable": "Enable",
         "end_meeting": "End meeting",
         "language": "Language",
-        "lang_zh": "中文",
+        "lang_zh": "Chinese",
         "lang_en": "English",
+        "account_preferences": "Account & Preferences",
+        "profile": "Basic Profile",
+        "change_password": "Change Password",
+        "region_timezone": "Region / Timezone",
+        "translation_default": "Default Translation Language",
+        "auto_detect": "Auto Detect",
+        "default_chat_attachment_permission": "Default Chat Attachment Permission",
+        "download_allowed": "Download Allowed",
+        "view_only": "View Only",
+        "meeting_defaults": "Meeting Defaults",
+        "show_danmaku_default": "Show Danmaku by Default",
+        "enable_camera_on_join": "Enable Camera on Join",
+        "enable_microphone_on_join": "Enable Microphone on Join",
+        "on": "On",
+        "off": "Off",
+        "current_password": "Current Password",
+        "new_password": "New Password",
+        "update_password": "Update Password",
+        "manage_account_desc": "Manage your username, meeting display name, region, and file permission preferences",
+        "profile_saved": "Profile saved",
+        "password_updated": "Password updated",
+        "forgot_password": "Forgot password",
+        "server_overview": "Server Overview",
+        "memory": "Memory",
+        "disk_usage": "Disk Usage",
+        "server_traffic_total": "Total Server Traffic",
+        "active_rooms": "Active Rooms",
+        "active_sockets": "Active Sockets",
+        "password_reset_requests": "Password Reset Requests",
+        "resolved": "Resolved",
+        "reject": "Reject",
+        "no_requests": "No requests yet",
         "permission_ready": "Device access granted",
         "permission_failed": "Failed to obtain device access",
         "kicked": "This account signed in on another device. You have been logged out.",
@@ -421,15 +485,15 @@ TRANSLATIONS = {
         "support_email": "Support email",
         "support_email_value": "support@peoplelovesai.xyz",
         "support_phone_value": "+86 400-800-1234",
-        "help_page_title": "用户指南",
-        "help_page_intro": "查看登录、注册、开启会议、加入会议、共享屏幕与流量规则等使用说明。",
-        "support_page_title": "客服支持",
-        "support_page_intro": "如遇登录、会议、配额或设备问题，可通过以下方式联系平台客服。",
-        "back_to_login": "返回登录",
-        "open_help_center": "用户指南",
-        "open_support_center": "客服支持",
-        "auth_tagline": "稳定、安全、现代化的视频会议体验",
-        "auth_desc_simple": "支持中英双语、管理员后台、单设备登录与 TURN relay 流量统计。",
+        "help_page_title": "User Guide",
+        "help_page_intro": "See instructions for login, registration, starting meetings, joining meetings, screen sharing, and traffic policy.",
+        "support_page_title": "Support",
+        "support_page_intro": "For login, meeting, quota, or device issues, contact platform support using the details below.",
+        "back_to_login": "Back to Login",
+        "open_help_center": "User Guide",
+        "open_support_center": "Support",
+        "auth_tagline": "Stable, secure, and modern video meeting experience",
+        "auth_desc_simple": "Supports a bilingual interface, admin console, single-device login, and TURN relay traffic statistics.",
     },
 }
 
@@ -670,25 +734,13 @@ def room_user_marker_key(user_id, sid=None):
     return f"user:{user_id}" if user_id else f"sid:{sid or ''}"
 
 
-def current_chat_seq(room):
-    history = list(room.get("chat_history", []))
-    if history:
-        try:
-            return max(int(item.get("seq", 0) or 0) for item in history)
-        except Exception:
-            pass
-    counter = int(room.get("chat_seq_counter", 0) or 0)
-    return counter - 1
-
-
 def visible_chat_history_for_user(room, user_id, sid, is_room_host=False):
     history = list(room.get("chat_history", []))
     marker_key = room_user_marker_key(user_id, sid)
-    clear_seq = int((room.get("chat_clear_markers") or {}).get(marker_key, -1) or -1)
+    clear_index = int((room.get("chat_clear_markers") or {}).get(marker_key, 0) or 0)
     visible = []
-    for item in history:
-        item_seq = int(item.get("seq", 0) or 0)
-        if item_seq <= clear_seq and not is_room_host:
+    for idx, item in enumerate(history):
+        if idx < clear_index and not is_room_host:
             continue
         if item.get("mode") == "all":
             visible.append(item)
@@ -942,10 +994,9 @@ def ensure_runtime_room(meeting):
         "expiry_timer": None,
         "lang": session.get("lang", "zh"),
         "traffic_last_sync": time.time(),
-        "danmaku_enabled": bool(getattr(meeting.host, "default_danmaku_enabled", False)),
+        "danmaku_enabled": False,
         "chat_history": [],
         "chat_clear_markers": {},
-        "chat_seq_counter": 0,
     }
     schedule_room_expiry(meeting.room_id, meeting.created_at.timestamp())
     return room
@@ -1161,7 +1212,7 @@ def account_page():
                     fresh_user.auto_enable_camera = auto_enable_camera
                     fresh_user.auto_enable_microphone = auto_enable_microphone
                     db.session.commit()
-                    message = "保存成功" if session.get("lang", "zh") == "zh" else "Profile saved"
+                    message = t("profile_saved")
         elif action == "password":
             current_password = (request.form.get("current_password") or "").strip()
             new_password = (request.form.get("new_password") or "").strip()
@@ -1175,7 +1226,7 @@ def account_page():
                 db.session.commit()
                 session["session_version"] = fresh_user.session_version
                 disconnect_user_sockets(fresh_user.id, message=t("kicked"))
-                message = "密码已更新" if session.get("lang", "zh") == "zh" else "Password updated"
+                message = t("password_updated")
     fresh_user = db.session.get(User, current_user.id)
     return render_template(
         "account.html",
@@ -1312,10 +1363,9 @@ def api_create_room():
         "expiry_timer": None,
         "lang": session.get("lang", "zh"),
         "traffic_last_sync": time.time(),
-        "danmaku_enabled": bool(getattr(meeting.host, "default_danmaku_enabled", False)),
+        "danmaku_enabled": False,
         "chat_history": [],
         "chat_clear_markers": {},
-        "chat_seq_counter": 0,
     }
     schedule_room_expiry(room_id, meeting.created_at.timestamp())
 
@@ -1378,41 +1428,6 @@ def api_traffic_summary():
     if user_quota_exceeded(current_user):
         disconnect_user_sockets(current_user.id, message=t("traffic_limit_reached"))
     return jsonify({"success": True, **traffic_summary_dict(current_user)})
-
-
-@app.post("/api/chat_clear")
-@login_required
-def api_chat_clear():
-    payload = request.get_json(silent=True) or {}
-    room_id = str(payload.get("room_id") or "").strip()
-    if not room_id:
-        return jsonify({"success": False, "message": t("meeting_not_found")}), 404
-    room = rooms.get(room_id)
-    if not room:
-        return jsonify({"success": False, "message": t("meeting_not_found")}), 404
-
-    is_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
-    if is_host:
-        room["chat_history"] = []
-        room["chat_clear_markers"] = {}
-        room["chat_seq_counter"] = 0
-        room["chat_seq_counter"] = 0
-        shutil.rmtree(os.path.join(CHAT_UPLOAD_DIR, room_id), ignore_errors=True)
-        socketio.emit("meeting_chat_cleared", {"by": f"user:{current_user.id}", "scope": "all"}, room=room_id)
-        return jsonify({"success": True, "scope": "all"})
-
-    marker_key = room_user_marker_key(current_user.id, None)
-    room.setdefault("chat_clear_markers", {})[marker_key] = current_chat_seq(room)
-    for active_sid in list(user_active_sids.get(current_user.id, set())):
-        socketio.emit("meeting_chat_cleared", {"by": f"user:{current_user.id}", "scope": "self"}, to=active_sid)
-    return jsonify({"success": True, "scope": "self"})
-
-
-@app.get("/api/admin/system_stats")
-@login_required
-@admin_required
-def api_admin_system_stats():
-    return jsonify({"success": True, **get_system_metrics()})
 
 
 @app.get("/history")
@@ -1504,6 +1519,13 @@ def api_remux_recording():
         as_attachment=True,
         download_name=f"meeting-recording-{int(time.time() * 1000)}.mp4",
     )
+
+
+@app.get("/api/admin/system_stats")
+@login_required
+@admin_required
+def api_admin_system_stats():
+    return jsonify({"success": True, **get_system_metrics()})
 
 
 @app.get("/admin")
@@ -2247,10 +2269,9 @@ def on_meeting_chat_send(data):
     mentions = [str(x)[:64] for x in mentions[:12]]
     if not message and not attachment:
         return
-    next_seq = int(room.get("chat_seq_counter", 0) or 0)
     event = {
         "id": secrets.token_hex(8),
-        "seq": next_seq,
+        "seq": len(room.get("chat_history", [])),
         "from": sid,
         "senderUserId": info.get("user_id"),
         "senderName": room["participants"].get(sid, {}).get("name") or info.get("name") or "Guest",
@@ -2262,7 +2283,6 @@ def on_meeting_chat_send(data):
         "withdrawn": False,
     }
     room.setdefault("chat_history", []).append(event)
-    room["chat_seq_counter"] = next_seq + 1
     if len(room["chat_history"]) > 200:
         room["chat_history"] = room["chat_history"][-200:]
     if event["mode"] == "host":
@@ -2291,11 +2311,10 @@ def on_meeting_chat_clear():
     if is_host:
         room["chat_history"] = []
         room["chat_clear_markers"] = {}
-        room["chat_seq_counter"] = 0
         shutil.rmtree(os.path.join(CHAT_UPLOAD_DIR, info["room_id"]), ignore_errors=True)
         socketio.emit("meeting_chat_cleared", {"by": sid, "scope": "all"}, room=info["room_id"])
     else:
-        room.setdefault("chat_clear_markers", {})[room_user_marker_key(info.get("user_id"), sid)] = current_chat_seq(room)
+        room.setdefault("chat_clear_markers", {})[room_user_marker_key(info.get("user_id"), sid)] = len(room.get("chat_history", []))
         socketio.emit("meeting_chat_cleared", {"by": sid, "scope": "self"}, to=sid)
 
 

@@ -13,7 +13,7 @@
       <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
     </div>
     <span class="user-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
-    <a class="chip" href="{{ url_for('account_page') }}">{{ '个人账户与偏好' if lang == 'zh' else 'Account & Preferences' }}</a>
+    <a class="chip" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>
     <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
   </div>
 </header>
@@ -1269,21 +1269,9 @@ function initChatUi() {
   renderMentionPicker();
   setChatMode('all');
   document.querySelectorAll('.chat-mode-btn').forEach(btn => btn.addEventListener('click', () => setChatMode(btn.dataset.mode)));
-  document.getElementById('clearChatBtn')?.addEventListener('click', async () => {
-    if (!confirm({{ ('确认清空当前会议聊天记录？' if lang == 'zh' else 'Clear the current meeting chat history?')|tojson }})) return;
-    try {
-      const response = await fetch('/api/chat_clear', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ room_id: ROOM_ID })
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || data.success === false) {
-        setStatus(data?.message || {{ ('清空失败' if lang == 'zh' else 'Failed to clear chat')|tojson }}, 'error');
-      }
-    } catch (error) {
-      setStatus(error?.message || {{ ('清空失败' if lang == 'zh' else 'Failed to clear chat')|tojson }}, 'error');
+  document.getElementById('clearChatBtn')?.addEventListener('click', () => {
+    if (confirm({{ ('确认清空当前会议聊天记录？' if lang == 'zh' else 'Clear the current meeting chat history?')|tojson }})) {
+      socket.emit('meeting_chat_clear');
     }
   });
   chatAttachmentPermission?.addEventListener('change', updateAttachmentPreview);
