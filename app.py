@@ -1274,7 +1274,7 @@ def disconnect_user_sockets(user_id, exclude_sid=None, message=None):
         except Exception as exc:
             debug_log('SOCKET_KICK_EMIT_ERROR', user_id=user_id, sid=sid, error=str(exc))
         try:
-            socketio.server.disconnect(sid)
+            socketio.server.disconnect(sid, namespace='/')
             debug_log('SOCKET_KICK_DISCONNECT', user_id=user_id, sid=sid)
         except Exception as exc:
             debug_log('SOCKET_KICK_DISCONNECT_ERROR', user_id=user_id, sid=sid, error=str(exc))
@@ -1302,7 +1302,7 @@ def remove_user_from_runtime_rooms(user_id, reason_message=None):
                 debug_log('RUNTIME_REMOVE_SID_UNMAP', user_id=user_id, room_id=room_id, sid=sid)
             unbind_user_socket(user_id, sid)
             try:
-                leave_room(room_id, sid=sid)
+                socketio.server.leave_room(sid, room_id, namespace='/')
                 debug_log('RUNTIME_REMOVE_LEAVE_ROOM', user_id=user_id, room_id=room_id, sid=sid)
             except Exception as exc:
                 debug_log('RUNTIME_REMOVE_LEAVE_ROOM_ERROR', user_id=user_id, room_id=room_id, sid=sid, error=str(exc))
