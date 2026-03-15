@@ -113,7 +113,8 @@
 const ROOM_ID = {{ room_id|tojson }};
 const ROOM_PASSWORD = {{ room_password|tojson }};
 const DEFAULT_USER_NAME = {{ current_user.username|tojson }};
-let USER_NAME = (localStorage.getItem('meeting_display_name') || DEFAULT_PREFERRED_NAME || DEFAULT_USER_NAME).trim() || DEFAULT_USER_NAME;
+const DEFAULT_PREFERRED_NAME = {{ preferred_display_name|tojson }};
+let USER_NAME = (localStorage.getItem('meeting_display_name') || DEFAULT_PREFERRED_NAME || DEFAULT_USER_NAME).trim() || DEFAULT_PREFERRED_NAME || DEFAULT_USER_NAME;
 const TEXT_PERMISSION_READY = {{ t('permission_ready')|tojson }};
 const TEXT_PERMISSION_FAILED = {{ t('permission_failed')|tojson }};
 const TEXT_MEETING_CLOSED = {{ t('meeting_closed')|tojson }};
@@ -145,7 +146,6 @@ const TEXT_HOST_LEFT_ROOM = {{ t('host_left_room')|tojson }};
 const TEXT_HOST_RETURNED_ROOM = {{ t('host_returned_room')|tojson }};
 const TEXT_TRAFFIC_LIMIT_REACHED = {{ t('traffic_limit_reached')|tojson }};
 const IS_HOST = {{ 'true' if is_host else 'false' }};
-const DEFAULT_PREFERRED_NAME = {{ preferred_display_name|tojson }};
 const TEXT_DANMAKU_ON = {{ ('弹幕已开启' if lang == 'zh' else 'Danmaku enabled')|tojson }};
 const TEXT_DANMAKU_OFF = {{ ('弹幕已关闭' if lang == 'zh' else 'Danmaku disabled')|tojson }};
 const TEXT_PROFILE_UPDATED = {{ ('显示名称已更新' if lang == 'zh' else 'Display name updated')|tojson }};
@@ -806,8 +806,7 @@ function appendChatMessage(data) {
       <span>${data.mode === 'host' ? '{{ '仅主持人' if lang == 'zh' else 'Host only' }}' : '{{ '公开' if lang == 'zh' else 'Public' }}'}</span>
       <span>${escapeHtml(data.createdAt || '')}</span>
     </div>
-    <div class="chat-message-body">${mentionBadges}${escapeHtml(data.message || '').replace(/
-/g, '<br>')}</div>
+    <div class="chat-message-body">${mentionBadges}${escapeHtml(data.message || '').replace(/\n/g, '<br>')}</div>
     ${attachmentHtml}
   `;
   chatMessages.appendChild(item);

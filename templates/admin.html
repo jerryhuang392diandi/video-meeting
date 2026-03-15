@@ -1,29 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}{{ t('admin_dashboard') }}
-<section class="panel panel-glow">
-  <div class="section-head">
-    <h2>{{ '找回密码申请' if lang == 'zh' else 'Password reset requests' }}</h2>
-    <span class="section-tag">Support</span>
-  </div>
-  <div class="list-panel">
-    {% for item in reset_requests %}
-      <div class="list-item stacked">
-        <div>
-          <div class="item-title">{{ item.username }} · {{ item.status }}</div>
-          <div class="muted">{{ item.contact or '-' }}</div>
-          <div class="muted">{{ item.note or '-' }}</div>
-        </div>
-        <div class="row-compact">
-          <form method="post" action="{{ url_for('admin_update_reset_request', request_id=item.id, status='resolved') }}"><button class="ghost-btn" type="submit">{{ '已处理' if lang == 'zh' else 'Resolve' }}</button></form>
-          <form method="post" action="{{ url_for('admin_update_reset_request', request_id=item.id, status='rejected') }}"><button class="ghost-btn danger" type="submit">{{ '拒绝' if lang == 'zh' else 'Reject' }}</button></form>
-        </div>
-      </div>
-    {% else %}
-      <div class="muted">{{ '暂无申请' if lang == 'zh' else 'No requests yet' }}</div>
-    {% endfor %}
-  </div>
-</section>
-{% endblock %}
+{% block title %}{{ t('admin_dashboard') }}{% endblock %}
 {% block content %}
 <header class="topbar compact">
   <div>
@@ -131,6 +107,31 @@
     <div class="notice">{{ t('no_online_rooms') }}</div>
   {% endfor %}
 </section>
+
+<section class="panel panel-glow">
+  <div class="section-head">
+    <h2>{{ '找回密码申请' if lang == 'zh' else 'Password reset requests' }}</h2>
+    <span class="section-tag">Support</span>
+  </div>
+  <div class="list-panel">
+    {% for item in reset_requests %}
+      <div class="list-item stacked">
+        <div>
+          <div class="item-title">{{ item.username }} · {{ item.status }}</div>
+          <div class="muted">{{ item.contact or '-' }}</div>
+          <div class="muted">{{ item.note or '-' }}</div>
+        </div>
+        <div class="row-compact">
+          <form method="post" action="{{ url_for('admin_update_reset_request', request_id=item.id, status='resolved') }}"><button class="ghost-btn" type="submit">{{ '已处理' if lang == 'zh' else 'Resolve' }}</button></form>
+          <form method="post" action="{{ url_for('admin_update_reset_request', request_id=item.id, status='rejected') }}"><button class="ghost-btn danger" type="submit">{{ '拒绝' if lang == 'zh' else 'Reject' }}</button></form>
+        </div>
+      </div>
+    {% else %}
+      <div class="notice">{{ '暂无申请' if lang == 'zh' else 'No requests yet' }}</div>
+    {% endfor %}
+  </div>
+</section>
+
 {% endblock %}
 
 
