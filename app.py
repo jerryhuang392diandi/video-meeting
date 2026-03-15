@@ -1253,40 +1253,56 @@ def admin_required(func):
 
 def disconnect_user_sockets(user_id, exclude_sid=None, message=None):
     if not user_id:
+        debug_log('SOCKET_KICK_SKIP', reason='empty_user_id', exclude_sid=exclude_sid)
         return
     active_sids = list(user_active_sids.get(user_id, set()))
+    debug_log('SOCKET_KICK_BEGIN', user_id=user_id, exclude_sid=exclude_sid, active_sids=active_sids, message=message or t('kicked'))
     for sid in active_sids:
         if exclude_sid and sid == exclude_sid:
+            debug_log('SOCKET_KICK_SKIP_SID', user_id=user_id, sid=sid, reason='exclude_sid')
             continue
         try:
             socketio.emit("force_logout", {"message": message or t("kicked")}, to=sid)
-        except Exception:
-            pass
+            debug_log('SOCKET_KICK_EMIT', user_id=user_id, sid=sid)
+        except Exception as exc:
+            debug_log('SOCKET_KICK_EMIT_ERROR', user_id=user_id, sid=sid, error=str(exc))
         try:
             socketio.server.disconnect(sid)
-        except Exception:
-            pass
+            debug_log('SOCKET_KICK_DISCONNECT', user_id=user_id, sid=sid)
+        except Exception as exc:
+            debug_log('SOCKET_KICK_DISCONNECT_ERROR', user_id=user_id, sid=sid, error=str(exc))
+    if not active_sids:
+        debug_log('SOCKET_KICK_EMPTY', user_id=user_id)
 
 
 def remove_user_from_runtime_rooms(user_id, reason_message=None):
     if not user_id:
+        debug_log('RUNTIME_REMOVE_SKIP', reason='empty_user_id')
         return
+    debug_log('RUNTIME_REMOVE_BEGIN', user_id=user_id, room_ids=list(rooms.keys()), reason_message=reason_message)
+    found_any = False
     for room_id, room in list(rooms.items()):
         participant_sids = [sid for sid, info in list(room.get("participants", {}).items()) if info.get("user_id") == user_id]
         if not participant_sids:
             continue
+        found_any = True
+        debug_log('RUNTIME_REMOVE_ROOM_MATCH', user_id=user_id, room_id=room_id, participant_sids=participant_sids, participant_count_before=len(room.get('participants', {})))
         for sid in participant_sids:
             participant_info = room.get("participants", {}).pop(sid, None)
+            debug_log('RUNTIME_REMOVE_POP', user_id=user_id, room_id=room_id, sid=sid, participant_info=participant_info)
             if sid_to_user.get(sid):
                 sid_to_user.pop(sid, None)
+                debug_log('RUNTIME_REMOVE_SID_UNMAP', user_id=user_id, room_id=room_id, sid=sid)
             unbind_user_socket(user_id, sid)
             try:
                 leave_room(room_id, sid=sid)
-            except Exception:
-                pass
+                debug_log('RUNTIME_REMOVE_LEAVE_ROOM', user_id=user_id, room_id=room_id, sid=sid)
+            except Exception as exc:
+                debug_log('RUNTIME_REMOVE_LEAVE_ROOM_ERROR', user_id=user_id, room_id=room_id, sid=sid, error=str(exc))
             participant = MeetingParticipant.query.filter_by(sid=sid).order_by(MeetingParticipant.id.desc()).first()
             if participant and not participant.left_at:
                 participant.left_at = datetime.utcnow()
+                debug_log('RUNTIME_REMOVE_PARTICIPANT_MARK_LEFT', user_id=user_id, room_id=room_id, sid=sid, participant_db_id=participant.id)
             if participant_info:
                 socketio.emit(
                     "participant_left",
@@ -1298,6 +1314,7 @@ def remove_user_from_runtime_rooms(user_id, reason_message=None):
                     room=room_id,
                 )
                 broadcast_room_participant_snapshot(room_id)
+                debug_log('RUNTIME_REMOVE_BROADCAST', user_id=user_id, room_id=room_id, sid=sid, participant_count_after=len(room.get('participants', {})))
         if user_id == room.get("host_user_id") and room.get("host_present"):
             room["host_present"] = False
             socketio.emit(
@@ -1305,9 +1322,14 @@ def remove_user_from_runtime_rooms(user_id, reason_message=None):
                 {"host_present": False, "message": reason_message or t("host_left_room")},
                 room=room_id,
             )
+            debug_log('RUNTIME_REMOVE_HOST_LEFT', user_id=user_id, room_id=room_id)
         if not room.get("participants"):
             schedule_room_cleanup(room_id)
+            debug_log('RUNTIME_REMOVE_SCHEDULE_CLEANUP', user_id=user_id, room_id=room_id)
+    if not found_any:
+        debug_log('RUNTIME_REMOVE_NOT_FOUND', user_id=user_id, room_ids=list(rooms.keys()))
     db.session.commit()
+    debug_log('RUNTIME_REMOVE_DONE', user_id=user_id, active_socket_count=len(sid_to_user), online_user_count=online_user_count())
 
 
 
@@ -1737,7 +1759,9 @@ def api_remux_recording():
 @login_required
 @admin_required
 def api_admin_system_stats():
-    return jsonify({"success": True, **get_system_metrics()})
+    payload = {"success": True, **get_system_metrics()}
+    debug_log('ADMIN_STATS_API', payload=payload, rooms={rid: len(info.get('participants', {})) for rid, info in rooms.items()}, user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids})
+    return jsonify(payload)
 
 
 
@@ -1757,6 +1781,7 @@ def api_admin_alerts():
 @login_required
 @admin_required
 def admin_dashboard():
+    debug_log('ADMIN_DASHBOARD_ENTER', rooms={rid: {'participants': list(info.get('participants', {}).keys()), 'host_user_id': info.get('host_user_id'), 'host_present': info.get('host_present')} for rid, info in rooms.items()}, user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids}, sid_to_user=dict(sid_to_user))
     sync_network_traffic()
     for meeting in Meeting.query.filter_by(status="active").all():
         ensure_meeting_not_expired(meeting)
@@ -1809,13 +1834,17 @@ def admin_set_user_quota(user_id):
 @admin_required
 def admin_kick_user(user_id):
     user = User.query.get_or_404(user_id)
+    debug_log('ADMIN_KICK_ENTER', requested_user_id=user_id, found_user_id=user.id if user else None, username=user.username if user else None, is_admin=user.is_admin if user else None, user_active_sids=list(user_active_sids.get(user_id, set())), rooms={rid: {'participant_user_ids': [info.get('user_id') for info in info_map.get('participants', {}).values()], 'participant_sids': list(info_map.get('participants', {}).keys())} for rid, info_map in rooms.items()})
     if user.is_admin:
+        debug_log('ADMIN_KICK_ABORT', requested_user_id=user_id, reason='target_is_admin')
         return redirect(url_for("admin_dashboard"))
     kick_message = t("kicked_by_admin")
     user.session_version = (user.session_version or 0) + 1
     db.session.commit()
+    debug_log('ADMIN_KICK_SESSION_VERSION_BUMP', user_id=user.id, session_version=user.session_version)
     remove_user_from_runtime_rooms(user.id, reason_message=kick_message)
     disconnect_user_sockets(user.id, message=kick_message)
+    debug_log('ADMIN_KICK_DONE', user_id=user.id, remaining_sids=list(user_active_sids.get(user.id, set())), rooms={rid: {'participant_user_ids': [info.get('user_id') for info in info_map.get('participants', {}).values()], 'participant_sids': list(info_map.get('participants', {}).keys())} for rid, info_map in rooms.items()})
     return redirect(url_for("admin_dashboard"))
 
 
