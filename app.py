@@ -12,6 +12,7 @@ from urllib.parse import quote, urlencode
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 import json
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
@@ -1580,6 +1581,42 @@ def on_update_profile(data):
     socketio.emit("participant_updated", {"sid": sid, "name": new_name}, room=room_id)
 
 
+def _pick_translation_target(text: str) -> str:
+    sample = (text or "")[:400]
+    if re.search(r"[一-鿿]", sample):
+        return "en"
+    latin_words = re.findall(r"[A-Za-z]+", sample)
+    if latin_words:
+        return "zh-CN"
+    return "en"
+
+
+def _translate_via_google(text: str, target_lang: str):
+    query = urlencode({"client": "gtx", "sl": "auto", "tl": target_lang, "dt": "t", "q": text})
+    req = Request(f"https://translate.googleapis.com/translate_a/single?{query}", headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(req, timeout=8) as resp:
+        raw = resp.read().decode("utf-8", errors="replace")
+    data = json.loads(raw)
+    translated = "".join(part[0] for part in (data[0] or []) if isinstance(part, list) and part and part[0])
+    detected = data[2] if isinstance(data, list) and len(data) > 2 else "auto"
+    return translated or text, detected
+
+
+@app.post("/api/translate_message")
+@login_required
+def api_translate_message():
+    payload = request.get_json(silent=True) or {}
+    text = str(payload.get("text") or "").strip()[:2000]
+    if not text:
+        return jsonify({"ok": False, "error": "empty_text"}), 400
+    target_lang = str(payload.get("target") or "").strip() or _pick_translation_target(text)
+    try:
+        translated, detected = _translate_via_google(text, target_lang)
+        return jsonify({"ok": True, "translation": translated, "target": target_lang, "detected": detected})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+
+
 @app.post("/api/translate_to_english")
 @login_required
 def api_translate_to_english():
@@ -1588,13 +1625,8 @@ def api_translate_to_english():
     if not text:
         return jsonify({"ok": False, "error": "empty_text"}), 400
     try:
-        query = urlencode({"client": "gtx", "sl": "auto", "tl": "en", "dt": "t", "q": text})
-        req = Request(f"https://translate.googleapis.com/translate_a/single?{query}", headers={"User-Agent": "Mozilla/5.0"})
-        with urlopen(req, timeout=8) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-        data = json.loads(raw)
-        translated = "".join(part[0] for part in (data[0] or []) if isinstance(part, list) and part and part[0])
-        return jsonify({"ok": True, "translation": translated or text})
+        translated, detected = _translate_via_google(text, "en")
+        return jsonify({"ok": True, "translation": translated, "target": "en", "detected": detected})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 502
 
@@ -1665,8 +1697,12 @@ def on_meeting_chat_clear():
     room = rooms.get(info["room_id"])
     if not room:
         return
-    room["chat_history"] = []
-    socketio.emit("meeting_chat_cleared", {"by": sid}, room=info["room_id"])
+    is_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
+    if is_host:
+        room["chat_history"] = []
+        socketio.emit("meeting_chat_cleared", {"by": sid, "scope": "all"}, room=info["room_id"])
+    else:
+        socketio.emit("meeting_chat_cleared", {"by": sid, "scope": "self"}, to=sid)
 
 
 @socketio.on("meeting_chat_retract")

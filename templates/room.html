@@ -168,7 +168,9 @@ const TEXT_DANMAKU_OFF = {{ ('弹幕已关闭' if lang == 'zh' else 'Danmaku dis
 const TEXT_PROFILE_UPDATED = {{ ('显示名称已更新' if lang == 'zh' else 'Display name updated')|tojson }};
 const TEXT_CHAT_WITHDRAWN = {{ ('此消息已撤回' if lang == 'zh' else 'This message was withdrawn')|tojson }};
 const TEXT_CHAT_CLEARED = {{ ('聊天记录已清空' if lang == 'zh' else 'Chat history cleared')|tojson }};
-const TEXT_TRANSLATE_OPEN = {{ ('已打开英文翻译页' if lang == 'zh' else 'Opened English translation view')|tojson }};
+const TEXT_TRANSLATE_OPEN = {{ ('已打开翻译结果' if lang == 'zh' else 'Opened translation result')|tojson }};
+const TEXT_CHAT_CLEARED_SELF = {{ ('仅清空了你的聊天面板，主持人仍可见历史消息' if lang == 'zh' else 'Only your chat panel was cleared. The host can still see the chat history.')|tojson }};
+const TEXT_CHAT_CLEARED_ALL = {{ ('主持人已清空所有人的聊天记录' if lang == 'zh' else 'The host cleared the chat history for everyone.')|tojson }};
 const TEXT_COPY_SUCCESS = {{ ('文本已复制' if lang == 'zh' else 'Text copied')|tojson }};
 
 const socket = io();
@@ -286,11 +288,16 @@ function ensureCard(sid, displayName = null, isLocal = false) {
 
   card.querySelector('[data-action="fullscreen"]').addEventListener('click', async () => {
     try {
-      const fullscreenTarget = card;
+      const isMobile = window.matchMedia('(max-width: 768px)').matches;
+      const isScreenShareCard = currentSharerSid === sid;
+      const fullscreenTarget = (isMobile && isScreenShareCard) ? (card.querySelector('.video-el') || card.querySelector('video') || card) : card;
       if (document.fullscreenElement === fullscreenTarget) {
         await document.exitFullscreen();
       } else {
         await fullscreenTarget.requestFullscreen({ navigationUI: 'hide' }).catch(() => fullscreenTarget.requestFullscreen());
+        if (isMobile && isScreenShareCard && screen.orientation?.lock) {
+          screen.orientation.lock('landscape').catch(() => {});
+        }
       }
     } catch (err) {
       console.error(err);
@@ -865,7 +872,7 @@ function renderChatMessageState(item, data) {
     ${withdrawn ? '' : buildAttachmentHtml(data.attachment)}
     <div class="chat-message-actions">
       ${text ? `<button type="button" class="msg-action-btn" data-action="copy">{{ '复制' if lang == 'zh' else 'Copy' }}</button>` : ''}
-      ${text ? `<button type="button" class="msg-action-btn" data-action="translate">{{ '译英' if lang == 'zh' else 'Translate' }}</button>` : ''}
+      ${text ? `<button type="button" class="msg-action-btn" data-action="translate">{{ '翻译' if lang == 'zh' else 'Translate' }}</button>` : ''}
       ${canRetract ? `<button type="button" class="msg-action-btn danger" data-action="retract">{{ '撤回' if lang == 'zh' else 'Retract' }}</button>` : ''}
     </div>
   `;
@@ -904,14 +911,16 @@ async function translateToEnglish(item, text) {
   }
   box.textContent = {{ ('翻译中…' if lang == 'zh' else 'Translating...')|tojson }};
   try {
-    const resp = await fetch('/api/translate_to_english', {
+    const resp = await fetch('/api/translate_message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text })
     });
     const data = await resp.json();
     if (!resp.ok || !data.ok) throw new Error(data.error || 'translate_failed');
-    box.innerHTML = `<div class="chat-translation-label">${escapeHtml({{ ('英文翻译' if lang == 'zh' else 'English translation')|tojson }})}</div><div>${escapeHtml(data.translation || '')}</div>`;
+    const target = String(data.target || '').toLowerCase();
+    const label = target.startsWith('zh') ? {{ ('中文翻译' if lang == 'zh' else 'Chinese translation')|tojson }} : {{ ('英文翻译' if lang == 'zh' else 'English translation')|tojson }};
+    box.innerHTML = `<div class="chat-translation-label">${escapeHtml(label)}</div><div>${escapeHtml(data.translation || '')}</div>`;
     setStatus({{ ('翻译已显示在消息下方' if lang == 'zh' else 'Translation shown below the message')|tojson }});
   } catch (err) {
     box.textContent = {{ ('翻译失败，请稍后重试' if lang == 'zh' else 'Translation failed. Please try again later.')|tojson }};
@@ -948,7 +957,7 @@ function openMessageContextMenu(event, item) {
   }
   if (text) {
     menu.push({ label: {{ ('复制文本' if lang == 'zh' else 'Copy text')|tojson }}, action: () => copyText(text) });
-    menu.push({ label: {{ ('翻译为英语' if lang == 'zh' else 'Translate to English')|tojson }}, action: () => translateToEnglish(item, text) });
+    menu.push({ label: {{ ('翻译消息' if lang == 'zh' else 'Translate message')|tojson }}, action: () => translateToEnglish(item, text) });
   }
   menu.push({ label: {{ ('清空聊天记录' if lang == 'zh' else 'Clear chat history')|tojson }}, danger: true, action: () => socket.emit('meeting_chat_clear') });
   openContextMenu(event.clientX, event.clientY, menu);
@@ -1280,7 +1289,12 @@ socket.on('participant_updated', (data) => {
 });
 
 socket.on('meeting_chat_message', (data) => appendChatMessage(data));
-socket.on('meeting_chat_cleared', () => { if (chatMessages) chatMessages.innerHTML = ''; setStatus(TEXT_CHAT_CLEARED); hideFloatingPanels(); });
+socket.on('meeting_chat_cleared', (data) => {
+  if (chatMessages) chatMessages.innerHTML = '';
+  const scope = data?.scope || 'all';
+  setStatus(scope === 'self' ? TEXT_CHAT_CLEARED_SELF : TEXT_CHAT_CLEARED_ALL);
+  hideFloatingPanels();
+});
 socket.on('meeting_chat_retracted', (data) => {
   const item = data?.id ? chatMessages?.querySelector(`.chat-message[data-message-id="${data.id}"]`) : null;
   if (!item) return;
@@ -1357,6 +1371,12 @@ socket.on('room_ui_event', (data) => {
   } else if (data.type === 'danmaku_toggled') {
     danmakuEnabled = !!data.enabled;
     setStatus(danmakuEnabled ? TEXT_DANMAKU_ON : TEXT_DANMAKU_OFF);
+  }
+});
+
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && screen.orientation?.unlock) {
+    try { screen.orientation.unlock(); } catch (_) {}
   }
 });
 
