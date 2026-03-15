@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import secrets
 import shutil
@@ -8,9 +9,10 @@ import subprocess
 import tempfile
 import threading
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.request import urlopen, Request
 from functools import wraps
 
 from flask import Flask, abort, after_this_request, jsonify, redirect, render_template, request, send_file, session, url_for
@@ -1052,6 +1054,40 @@ def forgot_password_page():
     return render_template("forgot_password.html", message=message, error=error)
 
 
+@app.post("/api/translate-to-en")
+@login_required
+def api_translate_to_en():
+    payload = request.get_json(silent=True) or {}
+    text = str(payload.get("text") or "").strip()[:2000]
+    room_id = str(payload.get("room_id") or "").strip()
+    message_id = str(payload.get("message_id") or "").strip()[:32]
+    if not text:
+        return jsonify({"success": False, "message": "No text"}), 400
+
+    translation = None
+    try:
+        query = urlencode({"client": "gtx", "sl": "auto", "tl": "en", "dt": "t", "q": text})
+        req = Request(f"https://translate.googleapis.com/translate_a/single?{query}", headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(req, timeout=8) as resp:
+            raw = resp.read().decode("utf-8", errors="ignore")
+        data = json.loads(raw)
+        translation = "".join(part[0] for part in (data[0] or []) if isinstance(part, list) and part and part[0])[:2000]
+    except Exception:
+        translation = None
+
+    if not translation:
+        return jsonify({"success": False, "message": "Translation failed"}), 502
+
+    room = rooms.get(room_id) if room_id else None
+    if room and message_id:
+        for item in room.get("chat_history", []):
+            if item.get("id") == message_id:
+                item["translationEn"] = translation
+                socketio.emit("meeting_chat_translated", {"id": message_id, "translation": translation}, room=room_id)
+                break
+    return jsonify({"success": True, "translation": translation})
+
+
 @app.route("/help")
 def help_page():
     return render_template("help.html")
@@ -1496,6 +1532,15 @@ def on_join_room(data):
         return
 
     cancel_room_cleanup(room_id)
+    stale_sids = [osid for osid, pinfo in room["participants"].items() if pinfo.get("user_id") == current_user.id and osid != request.sid]
+    for stale_sid in stale_sids:
+        room["participants"].pop(stale_sid, None)
+        sid_to_user.pop(stale_sid, None)
+        unbind_user_socket(current_user.id, stale_sid)
+        try:
+            leave_room(room_id, sid=stale_sid)
+        except Exception:
+            pass
     existing = [{"sid": osid, "name": info["name"]} for osid, info in room["participants"].items()]
     room["participants"][sid] = {"name": user_name, "joined_at": time.time(), "user_id": current_user.id}
     sid_to_user[sid] = {"room_id": room_id, "name": user_name, "user_id": current_user.id}
@@ -1617,6 +1662,7 @@ def on_meeting_chat_send(data):
         "attachment": attachment,
         "createdAt": datetime.utcnow().strftime("%H:%M:%S"),
         "withdrawn": False,
+        "translationEn": "",
     }
     room.setdefault("chat_history", []).append(event)
     if len(room["chat_history"]) > 200:
@@ -1669,6 +1715,7 @@ def on_meeting_chat_retract(data):
         item["message"] = ""
         item["mentions"] = []
         item["attachment"] = None
+        item["translationEn"] = ""
         socketio.emit(
             "meeting_chat_retracted",
             {"id": message_id, "senderName": item.get("senderName") or "Guest"},
