@@ -1297,6 +1297,7 @@ def remove_user_from_runtime_rooms(user_id, reason_message=None):
                     },
                     room=room_id,
                 )
+                broadcast_room_participant_snapshot(room_id)
         if user_id == room.get("host_user_id") and room.get("host_present"):
             room["host_present"] = False
             socketio.emit(
@@ -1307,6 +1308,22 @@ def remove_user_from_runtime_rooms(user_id, reason_message=None):
         if not room.get("participants"):
             schedule_room_cleanup(room_id)
     db.session.commit()
+
+
+
+
+def broadcast_room_participant_snapshot(room_id):
+    room = rooms.get(room_id)
+    if not room:
+        return
+    payload = {
+        "participants": [
+            {"sid": sid, "name": info.get("name") or "Guest"}
+            for sid, info in room.get("participants", {}).items()
+        ],
+        "participant_count": len(room.get("participants", {})),
+    }
+    socketio.emit("participant_snapshot", payload, room=room_id)
 
 
 def online_user_count():
@@ -2006,6 +2023,7 @@ def on_join_room(data):
         room=room_id,
         include_self=False,
     )
+    broadcast_room_participant_snapshot(room_id)
 
     if host_returned:
         socketio.emit(
@@ -2039,6 +2057,7 @@ def on_update_profile(data):
             user.display_name = new_name
     db.session.commit()
     socketio.emit("participant_updated", {"sid": sid, "name": new_name}, room=room_id)
+    broadcast_room_participant_snapshot(room_id)
 
 
 def _pick_translation_target(text: str) -> str:
@@ -2681,6 +2700,7 @@ def on_leave_room(*_args):
             {"sid": sid, "name": name, "participant_count": len(room["participants"])},
             room=room_id,
         )
+        broadcast_room_participant_snapshot(room_id)
         if host_left:
             socketio.emit(
                 "host_presence_changed",

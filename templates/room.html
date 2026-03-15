@@ -1450,6 +1450,28 @@ socket.on('participant_left', (data) => {
   renderMentionPicker();
 });
 
+socket.on('participant_snapshot', (data) => {
+  const list = Array.isArray(data?.participants) ? data.participants : [];
+  const count = Number(data?.participant_count || list.length || 0);
+  const keep = new Set();
+  list.forEach((item) => {
+    if (!item?.sid || item.sid === socket.id) return;
+    keep.add(item.sid);
+    if (!participantMeta[item.sid]) {
+      addRemoteParticipant(item.sid, item.name || item.sid);
+    } else {
+      participantMeta[item.sid].name = item.name || item.sid;
+      const labelEl = document.querySelector(`#card-${CSS.escape(item.sid)} .video-label`);
+      if (labelEl) labelEl.textContent = item.name || item.sid;
+    }
+  });
+  Object.keys(participantMeta).forEach((sid) => {
+    if (!keep.has(sid)) removeRemoteVideo(sid);
+  });
+  participantCountEl.textContent = String(Math.max(1, count));
+  renderMentionPicker();
+});
+
 socket.on('participant_updated', (data) => {
   if (!data || !data.sid) return;
   if (data.sid === socket.id) { USER_NAME = data.name; }
