@@ -76,6 +76,9 @@
       <div id="danmakuLayer" class="danmaku-layer"></div>
       <button id="chatShowBtn" class="chat-side-toggle chat-show-btn hidden" type="button">{{ '聊天' if lang == 'zh' else 'Chat' }} ◀</button>
     <div id="chatWindow" class="chat-window">
+      <button id="chatMobileHandle" class="chat-mobile-handle" type="button" aria-label="{{ '拖动聊天窗口' if lang == 'zh' else 'Drag chat panel' }}">
+        <span></span>
+      </button>
       <div id="chatHeader" class="chat-header">
         <div>
           <strong>{{ '会议聊天' if lang == 'zh' else 'Meeting chat' }}</strong>
@@ -264,7 +267,10 @@ function ensureCard(sid, displayName = null, isLocal = false) {
       <button class="card-btn" data-action="fullscreen">{{ ('全屏' if lang == 'zh' else 'Fullscreen') }}</button>
     </div>
     <div class="video-placeholder">${TEXT_NO_VIDEO}</div>
-    <div class="video-label">${displayName || getDisplayName(sid)}</div>
+    <div class="video-label-stack">
+      <div class="video-label">${displayName || getDisplayName(sid)}</div>
+      <div class="video-meeting-watermark">{{ ('会议ID ' if lang == 'zh' else 'Meeting ID ') }}${ROOM_ID}</div>
+    </div>
   `;
 
   const videoEl = sid === 'local' ? localVideo : document.createElement('video');
@@ -1047,7 +1053,70 @@ async function sendChatMessage() {
   updateAttachmentPreview();
 }
 
-function enableChatDrag() { return; }
+function enableChatDrag() {
+  const handle = document.getElementById('chatMobileHandle');
+  if (!chatWindow || !handle) return;
+  if (handle.dataset.bound === '1') return;
+  handle.dataset.bound = '1';
+
+  const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+  const setHeight = (valuePx) => {
+    const viewport = window.innerHeight || document.documentElement.clientHeight || 800;
+    const minPx = Math.max(320, Math.round(viewport * 0.42));
+    const maxPx = Math.max(minPx + 80, Math.round(viewport * 0.84));
+    const next = Math.max(minPx, Math.min(maxPx, valuePx));
+    chatWindow.style.setProperty('--mobile-chat-height', `${next}px`);
+    return next;
+  };
+
+  const syncDefault = () => {
+    if (!isMobile()) {
+      chatWindow.style.removeProperty('--mobile-chat-height');
+      return;
+    }
+    if (!chatWindow.style.getPropertyValue('--mobile-chat-height')) {
+      setHeight(Math.round((window.innerHeight || 800) * 0.62));
+    }
+  };
+
+  let dragging = false;
+  let startY = 0;
+  let startHeight = 0;
+
+  const getY = (event) => event.touches?.[0]?.clientY ?? event.clientY;
+
+  const onMove = (event) => {
+    if (!dragging || !isMobile()) return;
+    const currentY = getY(event);
+    if (typeof currentY !== 'number') return;
+    const delta = startY - currentY;
+    setHeight(startHeight + delta);
+    event.preventDefault?.();
+  };
+
+  const stopDrag = () => {
+    dragging = false;
+    document.body.classList.remove('chat-dragging');
+  };
+
+  const startDrag = (event) => {
+    if (!isMobile()) return;
+    dragging = true;
+    startY = getY(event);
+    startHeight = chatWindow.getBoundingClientRect().height;
+    document.body.classList.add('chat-dragging');
+    event.preventDefault?.();
+  };
+
+  handle.addEventListener('touchstart', startDrag, { passive: false });
+  handle.addEventListener('mousedown', startDrag);
+  window.addEventListener('touchmove', onMove, { passive: false });
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('touchend', stopDrag);
+  window.addEventListener('mouseup', stopDrag);
+  window.addEventListener('resize', syncDefault);
+  syncDefault();
+}
 
 function setChatCollapsed(collapsed) {
   if (!chatWindow) return;
