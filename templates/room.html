@@ -222,6 +222,7 @@ let stageRotationSeconds = Number(PREF_STAGE_ROTATION_SECONDS || 15) || 15;
 let screenShareSpotlightSid = null;
 let screenShareRotationTimer = null;
 let localRaisedHand = false;
+let preScreenShareLayoutState = null;
 
 function getGridPageSize() {
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
@@ -536,6 +537,28 @@ function stopScreenShareRotationTimer() {
   }
 }
 
+function capturePreScreenShareLayoutState() {
+  if (preScreenShareLayoutState || currentSharerSid) return;
+  preScreenShareLayoutState = {
+    focusedSid: focusedSid || 'local',
+    hiddenSidebar: !!hiddenSidebar,
+    currentGridPage: Number.isFinite(currentGridPage) ? currentGridPage : 0,
+  };
+}
+
+function restorePreScreenShareLayoutState() {
+  const snapshot = preScreenShareLayoutState;
+  preScreenShareLayoutState = null;
+  if (!snapshot) {
+    hiddenSidebar = false;
+    focusedSid = 'local';
+    return;
+  }
+  hiddenSidebar = !!snapshot.hiddenSidebar;
+  focusedSid = snapshot.focusedSid || 'local';
+  currentGridPage = Number.isFinite(snapshot.currentGridPage) ? snapshot.currentGridPage : 0;
+}
+
 function syncScreenShareSpotlight(force = false) {
   if (!currentSharerSid) {
     screenShareSpotlightSid = null;
@@ -676,9 +699,8 @@ function renderLayout(force = false) {
     syncScreenShareSpotlight();
     const sharerCard = document.getElementById('card-' + currentSharerSid) || focusTarget;
     const spotlightCard = screenShareSpotlightSid ? document.getElementById('card-' + screenShareSpotlightSid) : null;
-    const queueSids = orderedScreenShareQueueSids().filter((sid) => sid !== currentSharerSid && sid !== screenShareSpotlightSid);
     videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
-    videoStage.classList.add('focus-layout', 'screen-share-mode', 'screen-share-stacked');
+    videoStage.classList.add('focus-layout', 'screen-share-mode', 'screen-share-stacked', 'sidebar-hidden');
     videoStage.classList.remove('grid-layout');
     videoMain.innerHTML = '';
     videoSidebar.innerHTML = '';
@@ -707,28 +729,6 @@ function renderLayout(force = false) {
     }
     videoMain.appendChild(stageSlot);
 
-    if (queueSids.length) {
-      const queueWrap = document.createElement('div');
-      queueWrap.className = 'screen-share-queue-list';
-      const queueTitle = document.createElement('div');
-      queueTitle.className = 'screen-share-queue-title';
-      queueTitle.textContent = {{ ('右侧候场队列' if lang == 'zh' else 'Queue')|tojson }};
-      queueWrap.appendChild(queueTitle);
-      queueSids.forEach((sid, index) => {
-        const item = document.createElement('div');
-        item.className = 'screen-share-queue-item' + (raisedHands.has(sid) ? ' raised' : '');
-        item.dataset.sid = sid;
-        item.innerHTML = `
-          <span class="screen-share-queue-index">${index + 1}</span>
-          <span class="screen-share-queue-name">${escapeHtml(fakeParticipantMeta[sid]?.name || getDisplayName(sid))}</span>
-          ${raisedHands.has(sid) ? '<span class="screen-share-queue-badge">🙋</span>' : ''}
-        `;
-        queueWrap.appendChild(item);
-      });
-      videoSidebar.appendChild(queueWrap);
-    }
-
-    videoStage.classList.toggle('sidebar-hidden', queueSids.length === 0);
     updateVideoPager(cards.length, totalPages);
     schedulePlaybackRecovery('screen-share-layout');
     return;
@@ -2152,14 +2152,14 @@ socket.on('signal', async (data) => {
 socket.on('room_ui_event', (data) => {
   if (!data || !data.type) return;
   if (data.type === 'screen_share_started') {
+    capturePreScreenShareLayoutState();
     currentSharerSid = data.from;
     if (currentSharerSid !== 'local') isSharingScreen = false;
     syncScreenShareSpotlight(true);
-    focusParticipant(data.from, { hideSidebar: false, screenShare: true });
+    focusParticipant(data.from, { hideSidebar: true, screenShare: true });
   } else if (data.type === 'screen_share_stopped') {
     currentSharerSid = null;
-    hiddenSidebar = false;
-    focusedSid = 'local';
+    restorePreScreenShareLayoutState();
     screenShareSpotlightSid = null;
     stopScreenShareRotationTimer();
     renderLayout();
@@ -2291,6 +2291,7 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     return;
   }
   try {
+    capturePreScreenShareLayoutState();
     const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
     const screenTrack = screenStream.getVideoTracks()[0];
     const screenCard = ensureCard('local', getDisplayName('local'), true);
@@ -2304,7 +2305,7 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     currentSharerSid = 'local';
     screenShareSpotlightSid = orderedScreenShareCandidates()[0] || null;
     syncScreenShareSpotlight(true);
-    focusParticipant('local', { hideSidebar: false, screenShare: true });
+    focusParticipant('local', { hideSidebar: true, screenShare: true });
     setStatus(TEXT_SCREEN_SHARE_MODE);
     broadcastUiEvent({ type: 'screen_share_started', hideSidebar: false });
 
@@ -2318,8 +2319,7 @@ document.getElementById('shareScreenBtn').onclick = async () => {
         await requestMedia(currentFacingMode, true);
       }
       currentSharerSid = null;
-      hiddenSidebar = false;
-      focusedSid = 'local';
+      restorePreScreenShareLayoutState();
       screenShareSpotlightSid = null;
       stopScreenShareRotationTimer();
       renderLayout();

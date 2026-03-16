@@ -3467,3 +3467,17 @@ video:-webkit-full-screen {
   border-color: rgba(255,200,80,.35);
   box-shadow: inset 0 0 0 1px rgba(255,200,80,.12);
 }
+
+
+/* v6.2.2 screen-share should not show any queue/sidebar on the frontend */
+.video-stage.screen-share-mode,
+.video-stage.screen-share-mode.screen-share-stacked {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+.video-stage.screen-share-mode .video-sidebar,
+.video-stage.screen-share-mode.screen-share-stacked .video-sidebar,
+.video-stage.screen-share-mode .screen-share-queue-list,
+.video-stage.screen-share-mode .screen-share-queue-title,
+.video-stage.screen-share-mode .screen-share-queue-item {
+  display: none !important;
+}
