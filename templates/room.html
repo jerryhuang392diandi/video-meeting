@@ -88,7 +88,6 @@
         <button id="videoPrevPageBtn" class="ghost-btn pager-btn" type="button">{{ '上一页' if lang == 'zh' else 'Previous' }}</button>
       </div>
       <div class="video-pager-center">
-        <input id="videoSearchInput" class="video-search-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="{{ '检索参会者 / 会议ID' if lang == 'zh' else 'Search participant / meeting ID' }}" />
         <span id="videoPagerInfo" class="video-pager-info">1 / 1</span>
       </div>
       <div class="video-pager-right">
@@ -228,7 +227,6 @@ let focusedSid = 'local';
 let hiddenSidebar = false;
 let currentSharerSid = null;
 let currentGridPage = 0;
-let videoSearchKeyword = '';
 
 function getGridPageSize() {
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
@@ -307,7 +305,6 @@ const videoPager = document.getElementById('videoPager');
 const videoPrevPageBtn = document.getElementById('videoPrevPageBtn');
 const videoNextPageBtn = document.getElementById('videoNextPageBtn');
 const videoHomePageBtn = document.getElementById('videoHomePageBtn');
-const videoSearchInput = document.getElementById('videoSearchInput');
 const videoPagerInfo = document.getElementById('videoPagerInfo');
 
 function setStatus(msg, cls='') {
@@ -504,38 +501,27 @@ function getGridColumns(cardCount) {
 function updateVideoPager(totalCards, totalPages) {
   if (!videoPager || !videoPrevPageBtn || !videoNextPageBtn || !videoPagerInfo) return;
   const pageSize = getGridPageSize();
-  const hasSearch = !!getVideoSearchKeyword();
-  const showPager = !currentSharerSid && ((totalCards > pageSize && totalPages > 1) || hasSearch);
+  const showPager = !currentSharerSid && totalCards > pageSize && totalPages > 1;
   videoPager.classList.toggle('hidden', !showPager);
   if (!showPager) {
     videoPagerInfo.textContent = '1 / 1';
     if (videoHomePageBtn) videoHomePageBtn.disabled = true;
-    if (videoSearchInput) videoSearchInput.value = videoSearchKeyword;
     return;
   }
   videoPagerInfo.textContent = `${currentGridPage + 1} / ${totalPages}`;
   videoPrevPageBtn.disabled = currentGridPage <= 0;
   videoNextPageBtn.disabled = currentGridPage >= totalPages - 1;
   if (videoHomePageBtn) videoHomePageBtn.disabled = currentGridPage <= 0;
-  if (videoSearchInput && videoSearchInput.value !== videoSearchKeyword) videoSearchInput.value = videoSearchKeyword;
-}
-
-function getVideoSearchKeyword() {
-  return String(videoSearchKeyword || '').trim().toLocaleLowerCase('zh-Hans-CN');
 }
 
 function getRenderableCards() {
   const orderedSids = ['local', ...Object.keys(participantMeta), ...Object.keys(fakeParticipantMeta)];
   const seen = new Set();
-  const keyword = getVideoSearchKeyword();
   return orderedSids
     .filter(sid => {
       if (seen.has(sid)) return false;
       seen.add(sid);
-      if (!keyword) return true;
-      const displayName = sid === 'local' ? getDisplayName('local') : (fakeParticipantMeta[sid]?.name || getDisplayName(sid));
-      const haystack = `${displayName || ''} ${sid || ''} ${ROOM_ID || ''}`.toLocaleLowerCase('zh-Hans-CN');
-      return haystack.includes(keyword);
+      return true;
     })
     .map(sid => ensureCard(
       sid,
@@ -691,6 +677,27 @@ function useLocalOutputStream(stream) {
   renderLayout();
 }
 
+async function refreshVideoElementPlayback(videoEl, stream) {
+  if (!videoEl || !stream) return;
+  try {
+    if (videoEl.srcObject !== stream) videoEl.srcObject = stream;
+    videoEl.muted = true;
+    videoEl.playsInline = true;
+    await videoEl.play().catch(() => {});
+  } catch (_) {}
+}
+
+async function stabilizeCameraAfterStart() {
+  await refreshVideoElementPlayback(localVideo, localStream || rawCameraStream);
+  await refreshVideoElementPlayback(rawPreviewVideo, rawCameraStream || localStream);
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  renderLayout(true);
+  setTimeout(() => {
+    syncPeerMedia().catch(err => console.error(err));
+    renderLayout(true);
+  }, 120);
+}
+
 function getScaledSize(width, height) {
   if (!width || !height) return { width: 640, height: 360 };
   const scale = Math.min(MAX_VBG_WIDTH / width, MAX_VBG_HEIGHT / height, 1);
@@ -780,6 +787,7 @@ async function requestMedia(forceFacingMode = null, manualRequest = false) {
     } else {
       setStatus(TEXT_PERMISSION_READY);
     }
+    await stabilizeCameraAfterStart();
   } catch (err) {
     console.error(err);
     setStatus(TEXT_PERMISSION_FAILED + ': ' + err.message, 'error');
@@ -1996,6 +2004,11 @@ videoNextPageBtn?.addEventListener('click', () => {
   currentGridPage += 1;
   renderLayout();
 });
+videoHomePageBtn?.addEventListener('click', () => {
+  if (currentGridPage <= 0) return;
+  currentGridPage = 0;
+  renderLayout(true);
+});
 
 document.getElementById('requestMediaBtn').onclick = () => requestMedia(currentFacingMode, true);
 document.getElementById('switchCameraBtn').onclick = async () => {
@@ -2022,14 +2035,18 @@ document.getElementById('toggleCameraBtn').onclick = async () => {
     rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
     if (!rawTrack) return;
   }
-  rawTrack.enabled = !rawTrack.enabled;
+  const nextEnabled = !rawTrack.enabled;
+  rawTrack.enabled = nextEnabled;
   const outputVideoTrack = localStream?.getVideoTracks?.()[0];
-  if (outputVideoTrack && outputVideoTrack !== rawTrack) outputVideoTrack.enabled = rawTrack.enabled;
-  updatePlaceholder(localCard, rawTrack.enabled);
-  if (rawTrack.enabled) {
+  if (outputVideoTrack && outputVideoTrack !== rawTrack) outputVideoTrack.enabled = nextEnabled;
+  updatePlaceholder(localCard, nextEnabled);
+  if (nextEnabled) {
+    await stabilizeCameraAfterStart();
     await syncPeerMedia().catch(err => console.error(err));
+  } else {
+    renderLayout(true);
   }
-  setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
+  setStatus(nextEnabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 };
 document.getElementById('shareScreenBtn').onclick = async () => {
   try {
