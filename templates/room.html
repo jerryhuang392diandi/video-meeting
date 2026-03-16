@@ -40,6 +40,19 @@
       </div>
     </div>
 
+    <div class="mini-panel" id="invitePanel">
+      <div class="muted">{{ ('邀请链接' if lang == 'zh' else 'Invite link') }}</div>
+      <label>{{ ('分享给参会者' if lang == 'zh' else 'Share with participants') }}</label>
+      <input id="inviteInput" value="{{ request.url }}" readonly />
+      <div class="row-compact">
+        <button class="ghost-btn" id="copyInviteBtn">{{ ('复制' if lang == 'zh' else 'Copy') }}</button>
+        <button class="ghost-btn" id="showQrBtn">{{ ('显示二维码' if lang == 'zh' else 'Show QR') }}</button>
+      </div>
+      <div id="inviteQrWrap" class="invite-qr-wrap hidden">
+        <img id="inviteQrImage" alt="{{ ('入会二维码' if lang == 'zh' else 'Join QR code') }}" />
+      </div>
+    </div>
+
     <div class="mini-panel">
       <div class="muted">{{ t('traffic_usage') }} · {{ t('traffic_turn_relay') }}</div>
       <div class="status-grid">
@@ -2237,6 +2250,37 @@ document.getElementById('saveProfileBtn').onclick = () => {
   renderMentionPicker();
   setStatus(TEXT_PROFILE_UPDATED);
 };
+const inviteInput = document.getElementById('inviteInput');
+const copyInviteBtn = document.getElementById('copyInviteBtn');
+const showQrBtn = document.getElementById('showQrBtn');
+const inviteQrWrap = document.getElementById('inviteQrWrap');
+const inviteQrImage = document.getElementById('inviteQrImage');
+
+if (inviteInput) {
+  inviteInput.value = window.location.href;
+}
+
+if (copyInviteBtn) {
+  copyInviteBtn.onclick = async () => {
+    const text = inviteInput?.value || window.location.href;
+    const ok = await copyText(text);
+    if (!ok) {
+      try { window.prompt({{ ('请手动复制下面链接' if lang == 'zh' else 'Please copy this link manually')|tojson }}, text); } catch (_) {}
+    }
+  };
+}
+
+if (showQrBtn && inviteQrWrap && inviteQrImage) {
+  showQrBtn.onclick = () => {
+    const text = encodeURIComponent(inviteInput?.value || window.location.href);
+    inviteQrImage.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${text}`;
+    inviteQrWrap.classList.toggle('hidden');
+    const showing = !inviteQrWrap.classList.contains('hidden');
+    showQrBtn.textContent = showing
+      ? {{ ('隐藏二维码' if lang == 'zh' else 'Hide QR')|tojson }}
+      : {{ ('显示二维码' if lang == 'zh' else 'Show QR')|tojson }};
+  };
+}
 const switchRoomBtn = document.getElementById('switchRoomBtn');
 if (switchRoomBtn) {
   switchRoomBtn.onclick = async () => {
