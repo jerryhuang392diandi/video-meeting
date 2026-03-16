@@ -83,9 +83,17 @@
       <div id="videoSidebar" class="video-sidebar"></div>
     </div>
     <div id="videoPager" class="video-pager hidden" aria-label="{{ '分页参会者视图' if lang == 'zh' else 'Paged participant view' }}">
-      <button id="videoPrevPageBtn" class="ghost-btn pager-btn" type="button">{{ '上一页' if lang == 'zh' else 'Previous' }}</button>
-      <span id="videoPagerInfo" class="video-pager-info">1 / 1</span>
-      <button id="videoNextPageBtn" class="ghost-btn pager-btn" type="button">{{ '下一页' if lang == 'zh' else 'Next' }}</button>
+      <div class="video-pager-left">
+        <button id="videoHomePageBtn" class="ghost-btn pager-btn pager-home-btn" type="button" title="{{ '首页' if lang == 'zh' else 'First page' }}" aria-label="{{ '首页' if lang == 'zh' else 'First page' }}">⌂</button>
+        <button id="videoPrevPageBtn" class="ghost-btn pager-btn" type="button">{{ '上一页' if lang == 'zh' else 'Previous' }}</button>
+      </div>
+      <div class="video-pager-center">
+        <input id="videoSearchInput" class="video-search-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="{{ '检索参会者 / 会议ID' if lang == 'zh' else 'Search participant / meeting ID' }}" />
+        <span id="videoPagerInfo" class="video-pager-info">1 / 1</span>
+      </div>
+      <div class="video-pager-right">
+        <button id="videoNextPageBtn" class="ghost-btn pager-btn" type="button">{{ '下一页' if lang == 'zh' else 'Next' }}</button>
+      </div>
     </div>
       <div id="danmakuLayer" class="danmaku-layer"></div>
       <button id="chatShowBtn" class="chat-side-toggle chat-show-btn hidden" type="button">{{ t('chat_short') }} ◀</button>
@@ -206,7 +214,7 @@ const TEXT_ROOM_STORAGE_LIMIT = {{ ('当前会议附件空间已接近上限，�
 const socket = io();
 const rtcConfig = { iceServers: {{ turn_ice_servers|tojson }}, iceTransportPolicy: 'relay' };
 const ROOM_TEST_PARAMS = new URLSearchParams(window.location.search);
-const TEST_GRID_COUNT = Math.max(0, Math.min(50, parseInt(ROOM_TEST_PARAMS.get('testgrid') || ROOM_TEST_PARAMS.get('fake') || '0', 10) || 0));
+const TEST_GRID_COUNT = Math.max(0, Math.min(120, parseInt(ROOM_TEST_PARAMS.get('testgrid') || ROOM_TEST_PARAMS.get('fake') || '0', 10) || 0));
 const IS_GRID_TEST_MODE = TEST_GRID_COUNT > 0;
 const TEXT_TEST_GRID_ACTIVE = {{ ('当前为布局测试模式：已生成虚拟参会者，仅用于测试视频宫格与分页。' if lang == 'zh' else 'Layout test mode is active: fake participants were added for grid and pagination testing only.')|tojson }};
 
@@ -220,10 +228,12 @@ let focusedSid = 'local';
 let hiddenSidebar = false;
 let currentSharerSid = null;
 let currentGridPage = 0;
+let videoSearchKeyword = '';
 
 function getGridPageSize() {
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
   const stageWidth = videoMain?.clientWidth || videoStage?.clientWidth || 0;
+  if (viewportWidth >= 1600 && stageWidth >= 1180) return 16;
   if (viewportWidth >= 1380 && stageWidth >= 980) return 12;
   if (viewportWidth >= 961) return 9;
   if (viewportWidth >= 640) return 6;
@@ -296,6 +306,8 @@ const danmakuLayer = document.getElementById('danmakuLayer');
 const videoPager = document.getElementById('videoPager');
 const videoPrevPageBtn = document.getElementById('videoPrevPageBtn');
 const videoNextPageBtn = document.getElementById('videoNextPageBtn');
+const videoHomePageBtn = document.getElementById('videoHomePageBtn');
+const videoSearchInput = document.getElementById('videoSearchInput');
 const videoPagerInfo = document.getElementById('videoPagerInfo');
 
 function setStatus(msg, cls='') {
@@ -492,25 +504,38 @@ function getGridColumns(cardCount) {
 function updateVideoPager(totalCards, totalPages) {
   if (!videoPager || !videoPrevPageBtn || !videoNextPageBtn || !videoPagerInfo) return;
   const pageSize = getGridPageSize();
-  const showPager = !currentSharerSid && totalCards > pageSize && totalPages > 1;
+  const hasSearch = !!getVideoSearchKeyword();
+  const showPager = !currentSharerSid && ((totalCards > pageSize && totalPages > 1) || hasSearch);
   videoPager.classList.toggle('hidden', !showPager);
   if (!showPager) {
     videoPagerInfo.textContent = '1 / 1';
+    if (videoHomePageBtn) videoHomePageBtn.disabled = true;
+    if (videoSearchInput) videoSearchInput.value = videoSearchKeyword;
     return;
   }
   videoPagerInfo.textContent = `${currentGridPage + 1} / ${totalPages}`;
   videoPrevPageBtn.disabled = currentGridPage <= 0;
   videoNextPageBtn.disabled = currentGridPage >= totalPages - 1;
+  if (videoHomePageBtn) videoHomePageBtn.disabled = currentGridPage <= 0;
+  if (videoSearchInput && videoSearchInput.value !== videoSearchKeyword) videoSearchInput.value = videoSearchKeyword;
+}
+
+function getVideoSearchKeyword() {
+  return String(videoSearchKeyword || '').trim().toLocaleLowerCase('zh-Hans-CN');
 }
 
 function getRenderableCards() {
   const orderedSids = ['local', ...Object.keys(participantMeta), ...Object.keys(fakeParticipantMeta)];
   const seen = new Set();
+  const keyword = getVideoSearchKeyword();
   return orderedSids
     .filter(sid => {
       if (seen.has(sid)) return false;
       seen.add(sid);
-      return true;
+      if (!keyword) return true;
+      const displayName = sid === 'local' ? getDisplayName('local') : (fakeParticipantMeta[sid]?.name || getDisplayName(sid));
+      const haystack = `${displayName || ''} ${sid || ''} ${ROOM_ID || ''}`.toLocaleLowerCase('zh-Hans-CN');
+      return haystack.includes(keyword);
     })
     .map(sid => ensureCard(
       sid,
@@ -527,7 +552,14 @@ function renderLayout(force = false) {
     return;
   }
   const cards = getRenderableCards();
-  if (!cards.length) return;
+  if (!cards.length) {
+    videoMain.innerHTML = '<div class="video-empty-state">' + escapeHtml({{ ('未找到匹配的参会者' if lang == 'zh' else 'No matching participants found')|tojson }}) + '</div>';
+    videoSidebar.innerHTML = '';
+    videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid', 'focus-layout', 'grid-layout');
+    videoStage.classList.add('sidebar-hidden');
+    updateVideoPager(0, 1);
+    return;
+  }
 
   videoMain.innerHTML = '';
   videoSidebar.innerHTML = '';

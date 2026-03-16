@@ -64,7 +64,7 @@ login_manager.login_view = "login"
 def debug_log(tag, **kwargs):
     return None
 
-MAX_PARTICIPANTS = 6
+MAX_PARTICIPANTS = 120
 ROOM_EMPTY_GRACE_SECONDS = 20
 MEETING_DURATION_SECONDS = 90 * 60
 rooms = {}
