@@ -1186,6 +1186,7 @@ def ensure_runtime_room(meeting):
         "raised_hands": {},
         "stage_rotation_enabled": bool(getattr(meeting.host, "stage_rotation_enabled", True)) if getattr(meeting, "host", None) else True,
         "stage_rotation_seconds": normalize_stage_rotation_seconds(getattr(meeting.host, "stage_rotation_seconds", 15) if getattr(meeting, "host", None) else 15),
+        "screen_share_spotlight_sid": None,
     }
     schedule_room_expiry(meeting.room_id, meeting.created_at.timestamp())
     return room
@@ -1688,6 +1689,7 @@ def api_create_room():
         "raised_hands": {},
         "stage_rotation_enabled": bool(getattr(meeting.host, "stage_rotation_enabled", True)) if getattr(meeting, "host", None) else True,
         "stage_rotation_seconds": normalize_stage_rotation_seconds(getattr(meeting.host, "stage_rotation_seconds", 15) if getattr(meeting, "host", None) else 15),
+        "screen_share_spotlight_sid": None,
     }
     schedule_room_expiry(room_id, meeting.created_at.timestamp())
 
@@ -2837,9 +2839,15 @@ def on_room_ui_event(data):
             emit("room_ui_event", {"type": "screen_share_denied", "message": t("single_screen_share_only"), "from": active_sharer})
             return
         room["current_sharer_sid"] = sid
+        room["screen_share_spotlight_sid"] = None
     elif event_type == "screen_share_stopped":
         if room.get("current_sharer_sid") == sid:
             room["current_sharer_sid"] = None
+            room["screen_share_spotlight_sid"] = None
+    elif event_type == "screen_share_spotlight":
+        spotlight_sid = payload.get("spotlight_sid")
+        room["screen_share_spotlight_sid"] = spotlight_sid
+        payload["spotlight_sid"] = spotlight_sid
     elif event_type == "raise_hand":
         raised = bool(payload.get("raised"))
         room.setdefault("raised_hands", {})[sid] = raised
@@ -2905,6 +2913,7 @@ def on_leave_room(*_args):
             room["raised_hands"].pop(sid, None)
         if room.get("current_sharer_sid") == sid:
             room["current_sharer_sid"] = None
+            room["screen_share_spotlight_sid"] = None
             socketio.emit("room_ui_event", {"type": "screen_share_stopped", "from": sid}, room=room_id)
         host_left = False
         leaving_user_id = info.get("user_id")

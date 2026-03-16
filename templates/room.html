@@ -223,6 +223,7 @@ let screenShareSpotlightSid = null;
 let screenShareRotationTimer = null;
 let localRaisedHand = false;
 let preScreenShareLayoutState = null;
+let preScreenShareMediaState = null;
 let localScreenShareStream = null;
 let localScreenShareTrack = null;
 let localScreenShareMonitorTimer = null;
@@ -515,11 +516,14 @@ function applyRaisedHandState(sid, raised) {
 
 function orderedScreenShareCandidates() {
   if (!currentSharerSid) return [];
-  const base = ['local', ...Object.keys(participantMeta), ...Object.keys(fakeParticipantMeta)].filter((sid) => sid !== currentSharerSid);
+  const sharerStageSid = toStageSid(currentSharerSid);
+  const raisedStageSids = new Set(Array.from(raisedHands || []).map((sid) => toStageSid(sid)));
+  const base = [getLocalParticipantSid(), ...Object.keys(participantMeta), ...Object.keys(fakeParticipantMeta)]
+    .filter((sid, index, arr) => sid && arr.indexOf(sid) === index && sid !== sharerStageSid);
   const prioritized = [];
   const normal = [];
   base.forEach((sid) => {
-    if (raisedHands.has(sid)) prioritized.push(sid);
+    if (raisedStageSids.has(sid)) prioritized.push(sid);
     else normal.push(sid);
   });
   return [...prioritized, ...normal];
@@ -543,6 +547,26 @@ function stopScreenShareRotationTimer() {
 function normalizeParticipantSid(sid) {
   if (!sid) return sid;
   return sid === socket.id ? 'local' : sid;
+}
+
+function getLocalParticipantSid() {
+  return socket?.id || 'local';
+}
+
+function toStageSid(sid) {
+  if (!sid) return sid;
+  return sid === 'local' ? getLocalParticipantSid() : sid;
+}
+
+function toUiSid(stageSid) {
+  if (!stageSid) return stageSid;
+  return stageSid === getLocalParticipantSid() ? 'local' : stageSid;
+}
+
+function broadcastScreenShareSpotlight() {
+  if (!currentSharerSid || currentSharerSid !== 'local') return;
+  if (!screenShareSpotlightSid) return;
+  broadcastUiEvent({ type: 'screen_share_spotlight', spotlight_sid: screenShareSpotlightSid });
 }
 
 function stopLocalScreenShareMonitor() {
@@ -582,7 +606,27 @@ async function endLocalScreenShare({ broadcast = true, statusMessage = TEXT_SCRE
       fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (vbgErr.message || 'unknown error'));
     }
   } else if (rawCameraStream) {
+    const savedFacingMode = preScreenShareMediaState?.facingMode || currentFacingMode;
+    const shouldHaveCamera = !!preScreenShareMediaState?.cameraEnabled;
+    const shouldHaveMic = !!preScreenShareMediaState?.micEnabled;
+    currentFacingMode = savedFacingMode;
+    if (shouldHaveCamera) {
+      const rawVideoTrack = rawCameraStream.getVideoTracks?.()[0] || null;
+      if (!rawVideoTrack || rawVideoTrack.readyState !== 'live') await ensureStandaloneVideoTrack(savedFacingMode);
+    }
+    if (shouldHaveMic) {
+      const rawAudioTrack = rawCameraStream.getAudioTracks?.()[0] || null;
+      if (!rawAudioTrack || rawAudioTrack.readyState !== 'live') await ensureStandaloneAudioTrack();
+    }
     fallbackToRawCamera();
+    const restoredVideoTrack = rawCameraStream?.getVideoTracks?.()[0] || null;
+    const restoredAudioTrack = rawCameraStream?.getAudioTracks?.()[0] || null;
+    if (restoredVideoTrack) restoredVideoTrack.enabled = shouldHaveCamera;
+    if (restoredAudioTrack) restoredAudioTrack.enabled = shouldHaveMic;
+    if (localStream?.getVideoTracks?.()[0]) localStream.getVideoTracks()[0].enabled = shouldHaveCamera;
+    if (localStream?.getAudioTracks?.()[0]) localStream.getAudioTracks()[0].enabled = shouldHaveMic;
+    updatePlaceholder(ensureCard('local', getDisplayName('local'), true), !!restoredVideoTrack && shouldHaveCamera);
+    await syncPeerMedia().catch(err => console.error(err));
   } else {
     await requestMedia(currentFacingMode, true);
   }
@@ -611,6 +655,11 @@ function capturePreScreenShareLayoutState() {
     hiddenSidebar: !!hiddenSidebar,
     currentGridPage: Number.isFinite(currentGridPage) ? currentGridPage : 0,
   };
+  preScreenShareMediaState = {
+    cameraEnabled: !!(rawCameraStream?.getVideoTracks?.()[0]?.enabled),
+    micEnabled: !!(rawCameraStream?.getAudioTracks?.()[0]?.enabled),
+    facingMode: currentFacingMode,
+  };
 }
 
 function restorePreScreenShareLayoutState() {
@@ -625,6 +674,7 @@ function restorePreScreenShareLayoutState() {
   focusedSid = snapshot.focusedSid || 'local';
   currentGridPage = Number.isFinite(snapshot.currentGridPage) ? snapshot.currentGridPage : 0;
   if (getRenderableCards().length <= getGridPageSize()) hiddenSidebar = false;
+  if (!currentSharerSid) preScreenShareMediaState = null;
 }
 
 function syncScreenShareSpotlight(force = false) {
@@ -639,17 +689,23 @@ function syncScreenShareSpotlight(force = false) {
     stopScreenShareRotationTimer();
     return;
   }
-  if (force || !screenShareSpotlightSid || !candidates.includes(screenShareSpotlightSid)) {
+  const normalizedSpotlight = toStageSid(screenShareSpotlightSid);
+  if (force || !normalizedSpotlight || !candidates.includes(normalizedSpotlight)) {
     screenShareSpotlightSid = candidates[0];
+    if (currentSharerSid === 'local') broadcastScreenShareSpotlight();
+  } else {
+    screenShareSpotlightSid = normalizedSpotlight;
   }
   stopScreenShareRotationTimer();
+  if (currentSharerSid !== 'local') return;
   if (stageRotationEnabled && candidates.length > 1) {
     const intervalMs = Math.max(15, Number(stageRotationSeconds || 15)) * 1000;
     screenShareRotationTimer = setInterval(() => {
       const nextCandidates = orderedScreenShareCandidates();
-      if (!currentSharerSid || nextCandidates.length <= 1) return;
+      if (!currentSharerSid || currentSharerSid !== 'local' || nextCandidates.length <= 1) return;
       const currentIndex = Math.max(0, nextCandidates.indexOf(screenShareSpotlightSid));
       screenShareSpotlightSid = nextCandidates[(currentIndex + 1) % nextCandidates.length];
+      broadcastScreenShareSpotlight();
       renderLayout();
     }, intervalMs);
   }
@@ -733,6 +789,22 @@ function schedulePlaybackRecovery(reason = 'layout') {
   }, 40);
 }
 
+function refreshScreenShareActionLocks() {
+  const lockActions = !!(isSharingScreen || currentSharerSid === 'local' || localScreenShareStream || localScreenShareTrack);
+  const switchCameraBtnEl = document.getElementById('switchCameraBtn');
+  const virtualBgBtnEl = document.getElementById('virtualBgBtn');
+  if (switchCameraBtnEl) {
+    switchCameraBtnEl.disabled = lockActions;
+    switchCameraBtnEl.classList.toggle('disabled', lockActions);
+    switchCameraBtnEl.setAttribute('aria-disabled', lockActions ? 'true' : 'false');
+  }
+  if (virtualBgBtnEl) {
+    virtualBgBtnEl.disabled = lockActions;
+    virtualBgBtnEl.classList.toggle('disabled', lockActions);
+    virtualBgBtnEl.setAttribute('aria-disabled', lockActions ? 'true' : 'false');
+  }
+}
+
 function renderLayout(force = false) {
   if (!videoMain || !videoSidebar || !videoStage) return;
   if (!force && hasActiveFullscreenSession()) {
@@ -741,6 +813,7 @@ function renderLayout(force = false) {
     return;
   }
   const cards = getRenderableCards();
+  refreshScreenShareActionLocks();
   if (!cards.length) {
     videoMain.innerHTML = '<div class="video-empty-state">' + escapeHtml({{ ('暂无可显示的参会者' if lang == 'zh' else 'No participants to display')|tojson }}) + '</div>';
     videoSidebar.innerHTML = '';
@@ -751,10 +824,12 @@ function renderLayout(force = false) {
   }
 
   cards.forEach(card => {
-    card.classList.remove('is-focused', 'is-sidebar', 'is-stage-spotlight', 'is-stage-queue');
+    card.classList.remove('is-focused', 'is-sidebar', 'is-stage-spotlight', 'is-stage-queue', 'is-screen-host');
     setPagedCardVisibility(card, true);
   });
   videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid', 'screen-share-stacked');
+  videoMain.innerHTML = '';
+  videoSidebar.innerHTML = '';
 
   const pageSize = getGridPageSize();
   const totalPages = Math.max(1, Math.ceil(cards.length / pageSize));
@@ -766,16 +841,14 @@ function renderLayout(force = false) {
   if (currentSharerSid) {
     syncScreenShareSpotlight();
     const sharerCard = document.getElementById('card-' + currentSharerSid) || focusTarget;
-    const spotlightCard = screenShareSpotlightSid ? document.getElementById('card-' + screenShareSpotlightSid) : null;
+    const spotlightUiSid = toUiSid(screenShareSpotlightSid);
+    const spotlightCard = spotlightUiSid ? document.getElementById('card-' + spotlightUiSid) : null;
     videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
     videoStage.classList.add('focus-layout', 'screen-share-mode', 'screen-share-stacked', 'sidebar-hidden');
     videoStage.classList.remove('grid-layout');
-    videoMain.innerHTML = '';
-    videoSidebar.innerHTML = '';
-
     cards.forEach((card) => {
       const sid = card.dataset.sid || '';
-      const visible = sid === currentSharerSid || sid === screenShareSpotlightSid;
+      const visible = sid === currentSharerSid || toStageSid(sid) === toStageSid(screenShareSpotlightSid);
       setPagedCardVisibility(card, visible);
     });
 
@@ -813,7 +886,6 @@ function renderLayout(force = false) {
 
   if (shouldUseGrid || shouldUsePagedGrid) {
     videoStage.classList.add('sidebar-hidden');
-    videoSidebar.innerHTML = '';
     const start = shouldUsePagedGrid ? currentGridPage * pageSize : 0;
     const end = shouldUsePagedGrid ? start + pageSize : cards.length;
     const visibleCards = cards.slice(start, end);
@@ -830,8 +902,6 @@ function renderLayout(force = false) {
     return;
   }
 
-  videoMain.innerHTML = '';
-  videoSidebar.innerHTML = '';
   updateVideoPager(cards.length, totalPages);
   focusTarget.classList.add('is-focused');
   videoMain.appendChild(focusTarget);
@@ -2091,9 +2161,9 @@ raiseHandBtn?.addEventListener('click', () => {
   localRaisedHand = !localRaisedHand;
   applyRaisedHandState('local', localRaisedHand);
   refreshRaiseHandButton();
-  if (localRaisedHand && currentSharerSid && currentSharerSid !== 'local') {
-    screenShareSpotlightSid = 'local';
+  if (localRaisedHand && currentSharerSid === 'local') {
     syncScreenShareSpotlight(true);
+    broadcastScreenShareSpotlight();
     renderLayout();
   }
   broadcastUiEvent({ type: 'raise_hand', raised: localRaisedHand });
@@ -2156,6 +2226,7 @@ socket.on('join_ok', async (data) => {
   danmakuEnabled = !!data.danmaku_enabled;
   const snapshotSharerSid = normalizeParticipantSid(data?.current_sharer_sid || null);
   currentSharerSid = snapshotSharerSid || null;
+  screenShareSpotlightSid = data?.screen_share_spotlight_sid || null;
   if (!snapshotSharerSid && (isSharingScreen || localScreenShareStream)) {
     endLocalScreenShare({ broadcast: false, statusMessage: '' }).catch(err => console.error(err));
   }
@@ -2189,6 +2260,7 @@ socket.on('participant_snapshot', (data) => {
   const count = Number(data?.participant_count || list.length || 0);
   const snapshotSharerSid = normalizeParticipantSid(data?.current_sharer_sid || null);
   currentSharerSid = snapshotSharerSid || null;
+  screenShareSpotlightSid = data?.screen_share_spotlight_sid || null;
   if (!snapshotSharerSid && (isSharingScreen || localScreenShareStream)) {
     endLocalScreenShare({ broadcast: false, statusMessage: '' }).catch(err => console.error(err));
   }
@@ -2329,11 +2401,15 @@ socket.on('room_ui_event', (data) => {
     setStatus(danmakuEnabled ? TEXT_DANMAKU_ON : TEXT_DANMAKU_OFF);
   } else if (data.type === 'raise_hand') {
     applyRaisedHandState(data.from, !!data.raised);
-    if (!!data.raised && currentSharerSid && data.from !== currentSharerSid) {
+    if (!!data.raised && currentSharerSid === 'local' && data.from !== getLocalParticipantSid()) {
       screenShareSpotlightSid = data.from;
       syncScreenShareSpotlight(true);
+      broadcastScreenShareSpotlight();
       renderLayout();
     }
+  } else if (data.type === 'screen_share_spotlight') {
+    screenShareSpotlightSid = data?.spotlight_sid || null;
+    renderLayout(true);
   } else if (data.type === 'stage_rotation_updated') {
     stageRotationEnabled = !!data.enabled;
     stageRotationSeconds = Number(data.seconds || stageRotationSeconds || 15) || 15;
@@ -2486,6 +2562,7 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     focusParticipant('local', { hideSidebar: true, screenShare: true });
     setStatus(TEXT_SCREEN_SHARE_MODE);
     broadcastUiEvent({ type: 'screen_share_started', hideSidebar: false });
+    broadcastScreenShareSpotlight();
     startLocalScreenShareMonitor();
 
     screenTrack.onended = () => {

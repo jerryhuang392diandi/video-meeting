@@ -3481,3 +3481,5 @@ video:-webkit-full-screen {
 .video-stage.screen-share-mode .screen-share-queue-item {
   display: none !important;
 }
+
+.ghost-btn.disabled, .ghost-btn:disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
