@@ -308,11 +308,41 @@ function getDisplayName(sid) {
   return sid === 'local' ? `${USER_NAME} · {{ t('local_you') }}` : (participantMeta[sid]?.name || sid);
 }
 
+const roomDebugEnabled = ROOM_TEST_PARAMS.get('debugRoom') === '1';
+let simulatedFullscreenCardSid = null;
+
+function roomDebugLog(...args) {
+  if (!roomDebugEnabled) return;
+  console.log('[room-debug]', ...args);
+}
+
 function getFullscreenElement() {
   return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
 }
 
+function getSimulatedFullscreenCard() {
+  return simulatedFullscreenCardSid ? document.getElementById('card-' + simulatedFullscreenCardSid) : null;
+}
+
+function clearSimulatedFullscreen() {
+  const active = document.querySelector('.video-card.fullscreen-simulated');
+  if (active) active.classList.remove('fullscreen-simulated');
+  document.body.classList.remove('has-simulated-fullscreen');
+  simulatedFullscreenCardSid = null;
+}
+
+function applySimulatedFullscreen(card, sid) {
+  if (!card) return false;
+  clearSimulatedFullscreen();
+  card.classList.add('fullscreen-simulated');
+  document.body.classList.add('has-simulated-fullscreen');
+  simulatedFullscreenCardSid = sid || card.dataset.sid || null;
+  roomDebugLog('simulated fullscreen applied', { sid: simulatedFullscreenCardSid });
+  return true;
+}
+
 async function exitAnyFullscreen(videoEl = null) {
+  clearSimulatedFullscreen();
   if (document.exitFullscreen && getFullscreenElement()) {
     return document.exitFullscreen();
   }
@@ -327,14 +357,20 @@ async function exitAnyFullscreen(videoEl = null) {
   }
 }
 
-async function requestBestFullscreen({ card, videoEl, preferVideo = false } = {}) {
+async function requestBestFullscreen({ card, videoEl, preferVideo = false, sid = null } = {}) {
   const candidates = preferVideo ? [videoEl, card] : [card, videoEl];
   for (const el of candidates) {
     if (!el) continue;
     try {
+      roomDebugLog('try fullscreen candidate', { sid, tag: el.tagName, hasRequest: !!el.requestFullscreen, hasWebkit: !!el.webkitRequestFullscreen, hasVideoWebkit: !!el.webkitEnterFullscreen });
       if (el.requestFullscreen) {
-        await el.requestFullscreen({ navigationUI: 'hide' }).catch(() => el.requestFullscreen());
-        return true;
+        try {
+          await el.requestFullscreen({ navigationUI: 'hide' });
+        } catch (err) {
+          roomDebugLog('requestFullscreen with options failed, retrying without options', err?.message || err);
+          await el.requestFullscreen();
+        }
+        return getFullscreenElement() === el || getFullscreenElement() === card || true;
       }
       if (el.webkitRequestFullscreen) {
         el.webkitRequestFullscreen();
@@ -348,9 +384,11 @@ async function requestBestFullscreen({ card, videoEl, preferVideo = false } = {}
         el.webkitEnterFullscreen();
         return true;
       }
-    } catch (_) {}
+    } catch (err) {
+      roomDebugLog('fullscreen candidate failed', { sid, error: err?.message || String(err) });
+    }
   }
-  return false;
+  return applySimulatedFullscreen(card, sid);
 }
 
 async function toggleCardFullscreen(card, sid) {
@@ -358,16 +396,21 @@ async function toggleCardFullscreen(card, sid) {
   const isMobile = window.matchMedia('(max-width: 768px)').matches;
   const isScreenShareCard = currentSharerSid === sid;
   const activeFullscreenEl = getFullscreenElement();
+  const simulatedCard = getSimulatedFullscreenCard();
   const isSameFullscreen = !!activeFullscreenEl && (activeFullscreenEl === card || activeFullscreenEl === videoEl);
+  const isSimulatedSame = !!simulatedCard && simulatedCard === card;
   const isVideoNativeFullscreen = !!(videoEl?.webkitDisplayingFullscreen);
 
-  if (isSameFullscreen || isVideoNativeFullscreen) {
+  roomDebugLog('toggle fullscreen', { sid, isMobile, isScreenShareCard, isSameFullscreen, isSimulatedSame, isVideoNativeFullscreen });
+
+  if (isSameFullscreen || isSimulatedSame || isVideoNativeFullscreen) {
     await exitAnyFullscreen(videoEl);
     return;
   }
 
   const preferVideo = isScreenShareCard || isMobile;
-  const entered = await requestBestFullscreen({ card, videoEl, preferVideo });
+  const entered = await requestBestFullscreen({ card, videoEl, preferVideo, sid });
+  roomDebugLog('fullscreen result', { sid, entered, active: !!getFullscreenElement(), simulated: !!getSimulatedFullscreenCard() });
   if (entered && (isScreenShareCard || isMobile) && screen.orientation?.lock) {
     screen.orientation.lock('landscape').catch(() => {});
   }
@@ -394,6 +437,10 @@ function ensureCard(sid, displayName = null, isLocal = false) {
       <div class="video-label">${displayName || getDisplayName(sid)}</div>
     </div>
   `;
+  if (simulatedFullscreenCardSid && simulatedFullscreenCardSid === sid) {
+    card.classList.add('fullscreen-simulated');
+    document.body.classList.add('has-simulated-fullscreen');
+  }
 
   const videoEl = sid === 'local' ? localVideo : document.createElement('video');
   if (sid !== 'local') {
@@ -1055,12 +1102,11 @@ function getMentionablePeople() {
   return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN-u-co-pinyin'));
 }
 
-function renderMentionPicker(filterText = '') {
-  if (!mentionPicker) return;
-  const rawFilterText = String(filterText || '');
-  const keyword = rawFilterText.trim().toLowerCase();
-  const people = getMentionablePeople();
-  const filtered = keyword ? people.filter(person => person.name.toLowerCase().includes(keyword)) : people;
+function normalizeMentionKeyword(value) {
+  return String(value || '').trim().toLocaleLowerCase('zh-Hans-CN');
+}
+
+function buildMentionPickerShell(rawFilterText = '') {
   mentionPicker.innerHTML = `
     <div class="mention-dropdown">
       <div class="mention-dropdown-head">
@@ -1068,11 +1114,9 @@ function renderMentionPicker(filterText = '') {
         <button type="button" class="card-btn mention-collapse-btn">${escapeHtml({{ ('收起' if lang == 'zh' else 'Collapse')|tojson }})}</button>
       </div>
       <div class="mention-search-wrap">
-        <input id="mentionSearchInput" class="mention-search-input" type="text" autocomplete="off" spellcheck="false" inputmode="search" placeholder="${escapeHtml(MENTION_SEARCH_PLACEHOLDER)}" value="${escapeHtml(rawFilterText)}" />
+        <input id="mentionSearchInput" class="mention-search-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="search" lang="zh-CN en" placeholder="${escapeHtml(MENTION_SEARCH_PLACEHOLDER)}" value="${escapeHtml(rawFilterText)}" />
       </div>
-      <div class="mention-options-list">
-        ${filtered.length ? filtered.map(person => `<button type="button" class="mention-option mention-option-row" data-name="${escapeHtml(person.name)}"><span class="mention-option-at">@</span><span class="mention-option-name">${escapeHtml(person.name)}</span></button>`).join('') : `<div class="mention-empty">${escapeHtml(MENTION_EMPTY_TEXT)}</div>`}
-      </div>
+      <div class="mention-options-list"></div>
     </div>`;
 
   mentionPicker.querySelector('.mention-collapse-btn')?.addEventListener('click', () => {
@@ -1080,10 +1124,39 @@ function renderMentionPicker(filterText = '') {
   });
 
   const searchInput = mentionPicker.querySelector('#mentionSearchInput');
-  searchInput?.addEventListener('input', (e) => {
-    const nextValue = e.target.value;
-    renderMentionPicker(nextValue);
+  const optionList = mentionPicker.querySelector('.mention-options-list');
+  let composing = false;
+
+  const paintList = (filterValue = '') => {
+    if (!optionList) return;
+    const keyword = normalizeMentionKeyword(filterValue);
+    const people = getMentionablePeople();
+    const filtered = keyword ? people.filter(person => normalizeMentionKeyword(person.name).includes(keyword)) : people;
+    optionList.innerHTML = filtered.length
+      ? filtered.map(person => `<button type="button" class="mention-option mention-option-row" data-name="${escapeHtml(person.name)}"><span class="mention-option-at">@</span><span class="mention-option-name">${escapeHtml(person.name)}</span></button>`).join('')
+      : `<div class="mention-empty">${escapeHtml(MENTION_EMPTY_TEXT)}</div>`;
+
+    optionList.querySelectorAll('.mention-option').forEach(btn => {
+      btn.addEventListener('click', () => {
+        chatInput.value = `${chatInput.value}${chatInput.value && !chatInput.value.endsWith(' ') ? ' ' : ''}@${btn.dataset.name} `;
+        mentionPicker.classList.add('hidden');
+        chatInput.focus();
+      });
+    });
+  };
+
+  searchInput?.addEventListener('compositionstart', () => {
+    composing = true;
   });
+  searchInput?.addEventListener('compositionend', (e) => {
+    composing = false;
+    paintList(e.target.value);
+  });
+  searchInput?.addEventListener('input', (e) => {
+    if (composing || e.isComposing) return;
+    paintList(e.target.value);
+  });
+
   if (searchInput) {
     const caret = rawFilterText.length;
     requestAnimationFrame(() => {
@@ -1092,13 +1165,24 @@ function renderMentionPicker(filterText = '') {
     });
   }
 
-  mentionPicker.querySelectorAll('.mention-option').forEach(btn => {
-    btn.addEventListener('click', () => {
-      chatInput.value = `${chatInput.value}${chatInput.value && !chatInput.value.endsWith(' ') ? ' ' : ''}@${btn.dataset.name} `;
-      mentionPicker.classList.add('hidden');
-      chatInput.focus();
-    });
-  });
+  paintList(rawFilterText);
+}
+
+function renderMentionPicker(filterText = '') {
+  if (!mentionPicker) return;
+  const currentInput = mentionPicker.querySelector('#mentionSearchInput');
+  const hasShell = !!mentionPicker.querySelector('.mention-dropdown');
+  const rawFilterText = String(filterText || '');
+  if (!hasShell) {
+    buildMentionPickerShell(rawFilterText);
+    return;
+  }
+  if (currentInput) {
+    currentInput.value = rawFilterText;
+    currentInput.dispatchEvent(new Event('input', { bubbles: true }));
+    return;
+  }
+  buildMentionPickerShell(rawFilterText);
 }
 
 function renderEmojiPicker() {
@@ -1817,11 +1901,25 @@ document.addEventListener('fullscreenchange', () => {
   if (!getFullscreenElement() && screen.orientation?.unlock) {
     try { screen.orientation.unlock(); } catch (_) {}
   }
+  if (getFullscreenElement()) {
+    clearSimulatedFullscreen();
+  }
+  roomDebugLog('fullscreenchange', { active: !!getFullscreenElement(), simulated: !!getSimulatedFullscreenCard() });
 });
 
 document.addEventListener('webkitfullscreenchange', () => {
   if (!getFullscreenElement() && screen.orientation?.unlock) {
     try { screen.orientation.unlock(); } catch (_) {}
+  }
+  if (getFullscreenElement()) {
+    clearSimulatedFullscreen();
+  }
+  roomDebugLog('webkitfullscreenchange', { active: !!getFullscreenElement(), simulated: !!getSimulatedFullscreenCard() });
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && getSimulatedFullscreenCard()) {
+    clearSimulatedFullscreen();
   }
 });
 
