@@ -676,13 +676,18 @@ function renderLayout(force = false) {
     syncScreenShareSpotlight();
     const sharerCard = document.getElementById('card-' + currentSharerSid) || focusTarget;
     const spotlightCard = screenShareSpotlightSid ? document.getElementById('card-' + screenShareSpotlightSid) : null;
-    const queueCards = orderedScreenShareQueueSids()
-      .map((sid) => document.getElementById('card-' + sid))
-      .filter((card) => !!card && card !== sharerCard && card !== spotlightCard);
+    const queueSids = orderedScreenShareQueueSids().filter((sid) => sid !== currentSharerSid && sid !== screenShareSpotlightSid);
     videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
     videoStage.classList.add('focus-layout', 'screen-share-mode', 'screen-share-stacked');
     videoStage.classList.remove('grid-layout');
     videoMain.innerHTML = '';
+    videoSidebar.innerHTML = '';
+
+    cards.forEach((card) => {
+      const sid = card.dataset.sid || '';
+      const visible = sid === currentSharerSid || sid === screenShareSpotlightSid;
+      setPagedCardVisibility(card, visible);
+    });
 
     const hostSlot = document.createElement('div');
     hostSlot.className = 'screen-share-host-slot';
@@ -702,13 +707,28 @@ function renderLayout(force = false) {
     }
     videoMain.appendChild(stageSlot);
 
-    videoSidebar.innerHTML = '';
-    queueCards.forEach((card) => {
-      card.classList.add('is-sidebar', 'is-stage-queue');
-      videoSidebar.appendChild(card);
-      setPagedCardVisibility(card, true);
-    });
-    videoStage.classList.toggle('sidebar-hidden', queueCards.length === 0);
+    if (queueSids.length) {
+      const queueWrap = document.createElement('div');
+      queueWrap.className = 'screen-share-queue-list';
+      const queueTitle = document.createElement('div');
+      queueTitle.className = 'screen-share-queue-title';
+      queueTitle.textContent = {{ ('右侧候场队列' if lang == 'zh' else 'Queue')|tojson }};
+      queueWrap.appendChild(queueTitle);
+      queueSids.forEach((sid, index) => {
+        const item = document.createElement('div');
+        item.className = 'screen-share-queue-item' + (raisedHands.has(sid) ? ' raised' : '');
+        item.dataset.sid = sid;
+        item.innerHTML = `
+          <span class="screen-share-queue-index">${index + 1}</span>
+          <span class="screen-share-queue-name">${escapeHtml(fakeParticipantMeta[sid]?.name || getDisplayName(sid))}</span>
+          ${raisedHands.has(sid) ? '<span class="screen-share-queue-badge">🙋</span>' : ''}
+        `;
+        queueWrap.appendChild(item);
+      });
+      videoSidebar.appendChild(queueWrap);
+    }
+
+    videoStage.classList.toggle('sidebar-hidden', queueSids.length === 0);
     updateVideoPager(cards.length, totalPages);
     schedulePlaybackRecovery('screen-share-layout');
     return;

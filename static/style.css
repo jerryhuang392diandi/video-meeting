@@ -3415,3 +3415,55 @@ video:-webkit-full-screen {
     max-height: none;
   }
 }
+
+/* v6.2.1 screen-share queue should be names only; off-stage videos stay hidden */
+.video-stage.screen-share-mode .video-sidebar {
+  padding: 2px 0;
+}
+.video-stage.screen-share-mode .screen-share-queue-list {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+.video-stage.screen-share-mode .screen-share-queue-title {
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: .04em;
+  padding: 2px 4px 8px;
+}
+.video-stage.screen-share-mode .screen-share-queue-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--line);
+}
+.video-stage.screen-share-mode .screen-share-queue-index {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(130,177,255,.12);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+.video-stage.screen-share-mode .screen-share-queue-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.video-stage.screen-share-mode .screen-share-queue-badge {
+  color: #ffe08a;
+  font-size: 16px;
+}
+.video-stage.screen-share-mode .screen-share-queue-item.raised {
+  border-color: rgba(255,200,80,.35);
+  box-shadow: inset 0 0 0 1px rgba(255,200,80,.12);
+}
