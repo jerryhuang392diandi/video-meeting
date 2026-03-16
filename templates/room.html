@@ -310,6 +310,7 @@ function getDisplayName(sid) {
 
 const roomDebugEnabled = ROOM_TEST_PARAMS.get('debugRoom') === '1';
 let simulatedFullscreenCardSid = null;
+let pendingLayoutAfterFullscreen = false;
 
 function roomDebugLog(...args) {
   if (!roomDebugEnabled) return;
@@ -329,6 +330,17 @@ function clearSimulatedFullscreen() {
   if (active) active.classList.remove('fullscreen-simulated');
   document.body.classList.remove('has-simulated-fullscreen');
   simulatedFullscreenCardSid = null;
+}
+
+function hasActiveFullscreenSession(videoEl = null) {
+  return !!getFullscreenElement() || !!getSimulatedFullscreenCard() || !!(videoEl?.webkitDisplayingFullscreen);
+}
+
+function flushPendingLayoutIfNeeded() {
+  if (!pendingLayoutAfterFullscreen) return;
+  pendingLayoutAfterFullscreen = false;
+  roomDebugLog('flush deferred layout after fullscreen exit');
+  renderLayout(true);
 }
 
 function applySimulatedFullscreen(card, sid) {
@@ -507,8 +519,13 @@ function getRenderableCards() {
     ));
 }
 
-function renderLayout() {
+function renderLayout(force = false) {
   if (!videoMain || !videoSidebar || !videoStage) return;
+  if (!force && hasActiveFullscreenSession()) {
+    pendingLayoutAfterFullscreen = true;
+    roomDebugLog('renderLayout deferred due to active fullscreen');
+    return;
+  }
   const cards = getRenderableCards();
   if (!cards.length) return;
 
@@ -1114,7 +1131,7 @@ function buildMentionPickerShell(rawFilterText = '') {
         <button type="button" class="card-btn mention-collapse-btn">${escapeHtml({{ ('收起' if lang == 'zh' else 'Collapse')|tojson }})}</button>
       </div>
       <div class="mention-search-wrap">
-        <input id="mentionSearchInput" class="mention-search-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="search" lang="zh-CN en" placeholder="${escapeHtml(MENTION_SEARCH_PLACEHOLDER)}" value="${escapeHtml(rawFilterText)}" />
+        <input id="mentionSearchInput" class="mention-search-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="${escapeHtml(MENTION_SEARCH_PLACEHOLDER)}" value="${escapeHtml(rawFilterText)}" />
       </div>
       <div class="mention-options-list"></div>
     </div>`;
@@ -1927,6 +1944,11 @@ window.addEventListener('resize', () => {
   const totalCards = getRenderableCards().length;
   const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
   currentGridPage = Math.min(currentGridPage, totalPages - 1);
+  if (hasActiveFullscreenSession()) {
+    pendingLayoutAfterFullscreen = true;
+    roomDebugLog('resize while fullscreen active; layout deferred');
+    return;
+  }
   renderLayout();
 });
 
