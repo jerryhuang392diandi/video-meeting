@@ -21,7 +21,6 @@
   <aside class="panel side-panel panel-glow">
     <h2>{{ t('permissions') }}</h2>
     <div class="stack-controls button-grid-2">
-      <button class="primary-btn slim-btn" id="requestMediaBtn">{{ t('request_media') }}</button>
       <button class="ghost-btn" id="switchCameraBtn">{{ t('switch_camera') }}</button>
       <button class="ghost-btn" id="shareScreenBtn">{{ t('share_screen') }}</button>
       <button class="ghost-btn" id="virtualBgBtn">{{ t('virtual_bg') }}</button>
@@ -557,6 +556,7 @@ function restorePreScreenShareLayoutState() {
   hiddenSidebar = !!snapshot.hiddenSidebar;
   focusedSid = snapshot.focusedSid || 'local';
   currentGridPage = Number.isFinite(snapshot.currentGridPage) ? snapshot.currentGridPage : 0;
+  if (getRenderableCards().length <= getGridPageSize()) hiddenSidebar = false;
 }
 
 function syncScreenShareSpotlight(force = false) {
@@ -930,7 +930,7 @@ async function requestMedia(forceFacingMode = null, options = false) {
     disableVirtualBackgroundState({ stopCanvas: true });
 
     if (!wantsVideo && !wantsAudio) {
-      setStatus({{ ('当前偏好为入会不自动开启摄像头与麦克风，可手动点击“申请摄像头/麦克风权限”' if lang == 'zh' else 'Your preferences keep camera and microphone off when joining. Use the media button to enable them manually.')|tojson }});
+      setStatus({{ ('当前偏好为入会不自动开启摄像头与麦克风，可手动点击“摄像头”或“麦克风”' if lang == 'zh' else 'Your preferences keep camera and microphone off when joining. Use the camera or microphone button to enable them manually.')|tojson }});
       return;
     }
     const constraints = {
@@ -961,6 +961,74 @@ async function requestMedia(forceFacingMode = null, options = false) {
     console.error(err);
     setStatus(TEXT_PERMISSION_FAILED + ': ' + err.message, 'error');
   }
+}
+
+
+function rebuildRawCameraStream(videoTrack = null, audioTrack = null) {
+  const nextStream = new MediaStream();
+  if (videoTrack && videoTrack.readyState === 'live') nextStream.addTrack(videoTrack);
+  if (audioTrack && audioTrack.readyState === 'live') nextStream.addTrack(audioTrack);
+  rawCameraStream = nextStream;
+  rawPreviewVideo.srcObject = rawCameraStream;
+}
+
+async function applyUpdatedRawStream(statusMessage = null) {
+  await rawPreviewVideo.play().catch(() => {});
+  if (virtualBgImageDataUrl && rawCameraStream?.getVideoTracks?.().length) {
+    try {
+      await activateVirtualBackground();
+    } catch (vbgErr) {
+      console.error(vbgErr);
+      fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (vbgErr.message || 'unknown error'));
+    }
+  } else {
+    disableVirtualBackgroundState();
+    useLocalOutputStream(rawCameraStream);
+  }
+  if (statusMessage) setStatus(statusMessage);
+}
+
+async function ensureStandaloneAudioTrack() {
+  const existingAudioTrack = rawCameraStream?.getAudioTracks?.()[0];
+  if (existingAudioTrack && existingAudioTrack.readyState === 'live') return existingAudioTrack;
+  const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  const newAudioTrack = audioStream.getAudioTracks?.()[0] || null;
+  const currentVideoTrack = rawCameraStream?.getVideoTracks?.()[0] || null;
+  rebuildRawCameraStream(currentVideoTrack, newAudioTrack);
+  await applyUpdatedRawStream();
+  return newAudioTrack;
+}
+
+async function ensureStandaloneVideoTrack(forceFacingMode = null) {
+  const existingVideoTrack = rawCameraStream?.getVideoTracks?.()[0];
+  if (existingVideoTrack && existingVideoTrack.readyState === 'live') return existingVideoTrack;
+  const constraints = { video: forceFacingMode ? { facingMode: { ideal: forceFacingMode } } : true, audio: false };
+  const videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+  const newVideoTrack = videoStream.getVideoTracks?.()[0] || null;
+  const currentAudioTrack = rawCameraStream?.getAudioTracks?.()[0] || null;
+  rebuildRawCameraStream(newVideoTrack, currentAudioTrack);
+  await applyUpdatedRawStream();
+  return newVideoTrack;
+}
+
+async function switchCameraTrack() {
+  const previousVideoTrack = rawCameraStream?.getVideoTracks?.()[0] || null;
+  const currentAudioTrack = rawCameraStream?.getAudioTracks?.()[0] || null;
+  const camWasEnabled = previousVideoTrack ? previousVideoTrack.enabled : true;
+  currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+  const nextStream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: currentFacingMode } },
+    audio: false,
+  });
+  const nextVideoTrack = nextStream.getVideoTracks?.()[0] || null;
+  if (!nextVideoTrack) throw new Error('No camera track available');
+  nextVideoTrack.enabled = camWasEnabled;
+  rebuildRawCameraStream(nextVideoTrack, currentAudioTrack);
+  if (previousVideoTrack && previousVideoTrack !== nextVideoTrack) {
+    try { previousVideoTrack.stop(); } catch (_) {}
+  }
+  await applyUpdatedRawStream(camWasEnabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
+  return nextVideoTrack;
 }
 
 async function syncPeerMedia(targetSid = null) {
@@ -2162,7 +2230,8 @@ socket.on('room_ui_event', (data) => {
     restorePreScreenShareLayoutState();
     screenShareSpotlightSid = null;
     stopScreenShareRotationTimer();
-    renderLayout();
+    if (getRenderableCards().length <= getGridPageSize()) hiddenSidebar = false;
+    renderLayout(true);
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
   } else if (data.type === 'screen_share_denied') {
     isSharingScreen = false;
@@ -2241,48 +2310,58 @@ videoNextPageBtn?.addEventListener('click', () => {
   renderLayout();
 });
 
-document.getElementById('requestMediaBtn').onclick = () => requestMedia(currentFacingMode, true);
+document.getElementById('requestMediaBtn')?.addEventListener('click', () => requestMedia(currentFacingMode, true));
 document.getElementById('switchCameraBtn').onclick = async () => {
-  const micWasEnabled = !!(rawCameraStream?.getAudioTracks?.()[0]?.enabled || localStream?.getAudioTracks?.()[0]?.enabled);
-  const camWasEnabled = !!(rawCameraStream?.getVideoTracks?.()[0]?.enabled || localStream?.getVideoTracks?.()[0]?.enabled);
-  currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-  await requestMedia(currentFacingMode, { manualRequest: true, wantsAudio: false, wantsVideo: true });
-  const nextAudioTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
-  const nextVideoTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
-  if (nextAudioTrack) nextAudioTrack.enabled = micWasEnabled;
-  if (nextVideoTrack) nextVideoTrack.enabled = camWasEnabled;
-  const localCard = ensureCard('local', getDisplayName('local'), true);
-  updatePlaceholder(localCard, !!nextVideoTrack?.enabled);
-  setStatus(camWasEnabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
+  try {
+    const micTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0] || null;
+    const micWasEnabled = !!micTrack?.enabled;
+    const nextVideoTrack = await switchCameraTrack();
+    const nextAudioTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0] || null;
+    if (nextAudioTrack) nextAudioTrack.enabled = micWasEnabled;
+    const localCard = ensureCard('local', getDisplayName('local'), true);
+    updatePlaceholder(localCard, !!nextVideoTrack?.enabled);
+  } catch (err) {
+    console.error(err);
+    setStatus(TEXT_PERMISSION_FAILED + ': ' + err.message, 'error');
+  }
 };
 document.getElementById('toggleMicBtn').onclick = async () => {
-  let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
-  if (!rawTrack) {
-    await requestMedia(currentFacingMode, true);
-    rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
-    if (!rawTrack) return;
+  try {
+    let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || null;
+    if (!rawTrack || rawTrack.readyState !== 'live') {
+      rawTrack = await ensureStandaloneAudioTrack();
+      if (!rawTrack) return;
+      rawTrack.enabled = false;
+    }
+    rawTrack.enabled = !rawTrack.enabled;
+    const localTrack = localStream?.getAudioTracks?.()[0];
+    if (localTrack && localTrack !== rawTrack) localTrack.enabled = rawTrack.enabled;
+    await syncPeerMedia().catch(err => console.error(err));
+    setStatus(rawTrack.enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
+  } catch (err) {
+    console.error(err);
+    setStatus(TEXT_PERMISSION_FAILED + ': ' + err.message, 'error');
   }
-  rawTrack.enabled = !rawTrack.enabled;
-  const localTrack = localStream?.getAudioTracks?.()[0];
-  if (localTrack && localTrack !== rawTrack) localTrack.enabled = rawTrack.enabled;
-  setStatus(rawTrack.enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
 };
 document.getElementById('toggleCameraBtn').onclick = async () => {
-  let rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
-  const localCard = ensureCard('local', getDisplayName('local'), true);
-  if (!rawTrack) {
-    await requestMedia(currentFacingMode, true);
-    rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
-    if (!rawTrack) return;
-  }
-  rawTrack.enabled = !rawTrack.enabled;
-  const outputVideoTrack = localStream?.getVideoTracks?.()[0];
-  if (outputVideoTrack && outputVideoTrack !== rawTrack) outputVideoTrack.enabled = rawTrack.enabled;
-  updatePlaceholder(localCard, rawTrack.enabled);
-  if (rawTrack.enabled) {
+  try {
+    let rawTrack = rawCameraStream?.getVideoTracks?.()[0] || null;
+    const localCard = ensureCard('local', getDisplayName('local'), true);
+    if (!rawTrack || rawTrack.readyState !== 'live') {
+      rawTrack = await ensureStandaloneVideoTrack(currentFacingMode);
+      if (!rawTrack) return;
+      rawTrack.enabled = false;
+    }
+    rawTrack.enabled = !rawTrack.enabled;
+    const outputVideoTrack = localStream?.getVideoTracks?.()[0];
+    if (outputVideoTrack && outputVideoTrack !== rawTrack) outputVideoTrack.enabled = rawTrack.enabled;
+    updatePlaceholder(localCard, rawTrack.enabled);
     await syncPeerMedia().catch(err => console.error(err));
+    setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
+  } catch (err) {
+    console.error(err);
+    setStatus(TEXT_PERMISSION_FAILED + ': ' + err.message, 'error');
   }
-  setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 };
 
 document.getElementById('shareScreenBtn').onclick = async () => {
@@ -2322,7 +2401,8 @@ document.getElementById('shareScreenBtn').onclick = async () => {
       restorePreScreenShareLayoutState();
       screenShareSpotlightSid = null;
       stopScreenShareRotationTimer();
-      renderLayout();
+      if (getRenderableCards().length <= getGridPageSize()) hiddenSidebar = false;
+      renderLayout(true);
       broadcastUiEvent({ type: 'screen_share_stopped' });
       setStatus(TEXT_SCREEN_SHARE_STOPPED);
     };
