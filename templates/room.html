@@ -511,7 +511,7 @@ function applyRaisedHandState(sid, raised) {
 
 function orderedScreenShareCandidates() {
   if (!currentSharerSid) return [];
-  const base = ['local', ...Object.keys(participantMeta)].filter((sid) => sid !== currentSharerSid);
+  const base = ['local', ...Object.keys(participantMeta), ...Object.keys(fakeParticipantMeta)].filter((sid) => sid !== currentSharerSid);
   const prioritized = [];
   const normal = [];
   base.forEach((sid) => {
@@ -519,6 +519,14 @@ function orderedScreenShareCandidates() {
     else normal.push(sid);
   });
   return [...prioritized, ...normal];
+}
+
+function orderedScreenShareQueueSids() {
+  const candidates = orderedScreenShareCandidates();
+  if (!candidates.length) return [];
+  const spotlightIndex = Math.max(0, candidates.indexOf(screenShareSpotlightSid));
+  const queueStart = spotlightIndex >= 0 ? spotlightIndex + 1 : 0;
+  return candidates.slice(queueStart).concat(candidates.slice(0, Math.max(0, spotlightIndex))).filter((sid) => sid !== screenShareSpotlightSid);
 }
 
 function stopScreenShareRotationTimer() {
@@ -667,25 +675,40 @@ function renderLayout(force = false) {
   if (currentSharerSid) {
     syncScreenShareSpotlight();
     const sharerCard = document.getElementById('card-' + currentSharerSid) || focusTarget;
-    const stageCards = orderedScreenShareCandidates()
-      .map((sid) => document.getElementById('card-' + sid))
-      .filter((card) => !!card && card !== sharerCard);
     const spotlightCard = screenShareSpotlightSid ? document.getElementById('card-' + screenShareSpotlightSid) : null;
+    const queueCards = orderedScreenShareQueueSids()
+      .map((sid) => document.getElementById('card-' + sid))
+      .filter((card) => !!card && card !== sharerCard && card !== spotlightCard);
     videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
     videoStage.classList.add('focus-layout', 'screen-share-mode', 'screen-share-stacked');
     videoStage.classList.remove('grid-layout');
     videoMain.innerHTML = '';
-    videoMain.appendChild(sharerCard);
-    sharerCard.classList.add('is-focused');
+
+    const hostSlot = document.createElement('div');
+    hostSlot.className = 'screen-share-host-slot';
+    sharerCard.classList.add('is-focused', 'is-screen-host');
     setPagedCardVisibility(sharerCard, true);
+    hostSlot.appendChild(sharerCard);
+    videoMain.appendChild(hostSlot);
+
+    const stageSlot = document.createElement('div');
+    stageSlot.className = 'screen-share-stage-slot';
+    if (spotlightCard) {
+      spotlightCard.classList.add('is-stage-spotlight');
+      setPagedCardVisibility(spotlightCard, true);
+      stageSlot.appendChild(spotlightCard);
+    } else {
+      stageSlot.innerHTML = '<div class="video-empty-state">' + escapeHtml({{ ('当前暂无候场用户' if lang == 'zh' else 'No one is currently on stage')|tojson }}) + '</div>';
+    }
+    videoMain.appendChild(stageSlot);
+
     videoSidebar.innerHTML = '';
-    stageCards.forEach((card) => {
+    queueCards.forEach((card) => {
       card.classList.add('is-sidebar', 'is-stage-queue');
-      if (spotlightCard && card === spotlightCard) card.classList.add('is-stage-spotlight');
       videoSidebar.appendChild(card);
       setPagedCardVisibility(card, true);
     });
-    videoStage.classList.toggle('sidebar-hidden', stageCards.length === 0);
+    videoStage.classList.toggle('sidebar-hidden', queueCards.length === 0);
     updateVideoPager(cards.length, totalPages);
     schedulePlaybackRecovery('screen-share-layout');
     return;
@@ -877,13 +900,15 @@ async function transcodeRecordingBlob(blob, filename = 'meeting-recording.webm')
   return await response.blob();
 }
 
-async function requestMedia(forceFacingMode = null, manualRequest = false) {
+async function requestMedia(forceFacingMode = null, options = false) {
   try {
+    const manualRequest = typeof options === 'object' ? !!options.manualRequest : !!options;
+    const wantsVideo = typeof options === 'object' && typeof options.wantsVideo === 'boolean' ? options.wantsVideo : (manualRequest ? true : !!PREF_AUTO_ENABLE_CAMERA);
+    const wantsAudio = typeof options === 'object' && typeof options.wantsAudio === 'boolean' ? options.wantsAudio : (manualRequest ? true : !!PREF_AUTO_ENABLE_MICROPHONE);
+
     if (rawCameraStream) stopStreamTracks(rawCameraStream);
     disableVirtualBackgroundState({ stopCanvas: true });
 
-    const wantsVideo = manualRequest ? true : !!PREF_AUTO_ENABLE_CAMERA;
-    const wantsAudio = manualRequest ? true : !!PREF_AUTO_ENABLE_MICROPHONE;
     if (!wantsVideo && !wantsAudio) {
       setStatus({{ ('当前偏好为入会不自动开启摄像头与麦克风，可手动点击“申请摄像头/麦克风权限”' if lang == 'zh' else 'Your preferences keep camera and microphone off when joining. Use the media button to enable them manually.')|tojson }});
       return;
@@ -2198,8 +2223,17 @@ videoNextPageBtn?.addEventListener('click', () => {
 
 document.getElementById('requestMediaBtn').onclick = () => requestMedia(currentFacingMode, true);
 document.getElementById('switchCameraBtn').onclick = async () => {
+  const micWasEnabled = !!(rawCameraStream?.getAudioTracks?.()[0]?.enabled || localStream?.getAudioTracks?.()[0]?.enabled);
+  const camWasEnabled = !!(rawCameraStream?.getVideoTracks?.()[0]?.enabled || localStream?.getVideoTracks?.()[0]?.enabled);
   currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-  await requestMedia(currentFacingMode, true);
+  await requestMedia(currentFacingMode, { manualRequest: true, wantsAudio: false, wantsVideo: true });
+  const nextAudioTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
+  const nextVideoTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
+  if (nextAudioTrack) nextAudioTrack.enabled = micWasEnabled;
+  if (nextVideoTrack) nextVideoTrack.enabled = camWasEnabled;
+  const localCard = ensureCard('local', getDisplayName('local'), true);
+  updatePlaceholder(localCard, !!nextVideoTrack?.enabled);
+  setStatus(camWasEnabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 };
 document.getElementById('toggleMicBtn').onclick = async () => {
   let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
