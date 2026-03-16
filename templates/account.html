@@ -54,17 +54,6 @@
         <option value="1" {% if auto_enable_microphone %}selected{% endif %}>{{ t('on') }}</option>
         <option value="0" {% if not auto_enable_microphone %}selected{% endif %}>{{ t('off') }}</option>
       </select>
-      <label>{{ t('stage_rotation_enabled') }}</label>
-      <select name="stage_rotation_enabled">
-        <option value="1" {% if stage_rotation_enabled %}selected{% endif %}>{{ t('on') }}</option>
-        <option value="0" {% if not stage_rotation_enabled %}selected{% endif %}>{{ t('off') }}</option>
-      </select>
-      <label>{{ t('stage_rotation_interval') }}</label>
-      <select name="stage_rotation_seconds">
-        <option value="15" {% if stage_rotation_seconds == 15 %}selected{% endif %}>{{ t('stage_rotation_15') }}</option>
-        <option value="30" {% if stage_rotation_seconds == 30 %}selected{% endif %}>{{ t('stage_rotation_30') }}</option>
-        <option value="60" {% if stage_rotation_seconds == 60 %}selected{% endif %}>{{ t('stage_rotation_60') }}</option>
-      </select>
       <button class="primary-btn" type="submit">{{ t('save') }}</button>
     </form>
   </div>
