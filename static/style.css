@@ -3276,3 +3276,20 @@ video:-webkit-full-screen {
     min-width: 52px;
   }
 }
+
+
+/* screen-share stage rotation + raise hand */
+.video-stage.screen-share-mode { grid-template-columns: minmax(0, 1fr) 220px; align-items: stretch; }
+.video-stage.screen-share-mode .video-main { display: block; }
+.video-stage.screen-share-mode .video-main .video-card { min-height: clamp(320px, 62vh, 760px); border-radius: 24px; }
+.video-stage.screen-share-mode .video-sidebar { display: grid; grid-template-columns: 1fr; align-content: start; gap: 14px; max-height: none; }
+.video-stage.screen-share-mode .video-sidebar .video-card { min-height: 180px; max-height: 220px; border-radius: 20px; }
+.raised-hand-badge { position: absolute; left: 14px; top: 14px; z-index: 4; padding: 6px 10px; border-radius: 999px; background: rgba(255,170,0,.18); border: 1px solid rgba(255,200,80,.35); color: #ffe08a; font-size: 12px; font-weight: 700; backdrop-filter: blur(8px); }
+.raised-hand-card { box-shadow: 0 0 0 1px rgba(255,200,80,.28), 0 16px 36px rgba(0,0,0,.32); }
+.raise-hand-btn.active { border-color: rgba(255, 208, 102, 0.6); color: #ffe08a; }
+@media (max-width: 960px) {
+  .video-stage.screen-share-mode { grid-template-columns: minmax(0,1fr); }
+  .video-stage.screen-share-mode .video-main .video-card { min-height: clamp(280px, 44vh, 520px); }
+  .video-stage.screen-share-mode .video-sidebar { grid-template-columns: minmax(0,1fr); }
+  .video-stage.screen-share-mode .video-sidebar .video-card { min-height: 132px; max-height: 170px; }
+}

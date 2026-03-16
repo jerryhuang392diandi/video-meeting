@@ -185,6 +185,16 @@ TRANSLATIONS = {'zh': {'app_name': '西小电视频会议系统',
         'view_only': '仅查看',
         'meeting_defaults': '会议默认偏好',
         'show_danmaku_default': '进入会议后默认弹幕显示',
+        'stage_rotation_enabled': '共享屏时自动轮换上台',
+        'stage_rotation_interval': '轮换上台间隔',
+        'stage_rotation_off': '关闭自动轮换',
+        'stage_rotation_15': '15 秒',
+        'stage_rotation_30': '30 秒',
+        'stage_rotation_60': '60 秒',
+        'raise_hand': '举手',
+        'lower_hand': '放下手',
+        'hand_raised': '已举手',
+        'single_screen_share_only': '当前会议只允许 1 人共享屏幕，请等待对方结束后再试',
         'enable_camera_on_join': '进入会议时默认开启摄像头',
         'enable_microphone_on_join': '进入会议时默认开启麦克风',
         'on': '开启',
@@ -678,6 +688,8 @@ class User(UserMixin, db.Model):
     default_danmaku_enabled = db.Column(db.Boolean, default=True)
     auto_enable_camera = db.Column(db.Boolean, default=True)
     auto_enable_microphone = db.Column(db.Boolean, default=True)
+    stage_rotation_enabled = db.Column(db.Boolean, default=True)
+    stage_rotation_seconds = db.Column(db.Integer, default=15)
 
     meetings = db.relationship("Meeting", backref="host", lazy=True)
 
@@ -740,6 +752,15 @@ def tf(lang: str, key: str) -> str:
     return TRANSLATIONS.get(lang, TRANSLATIONS["zh"]).get(key, key)
 
 
+def normalize_stage_rotation_seconds(value, default=15):
+    try:
+        ivalue = int(value)
+    except (TypeError, ValueError):
+        ivalue = default
+    return ivalue if ivalue in {15, 30, 60} else default
+
+
+
 
 
 def preferred_display_name(user):
@@ -792,6 +813,10 @@ def ensure_user_columns():
         cur.execute("ALTER TABLE users ADD COLUMN auto_enable_camera BOOLEAN DEFAULT 1")
     if "auto_enable_microphone" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN auto_enable_microphone BOOLEAN DEFAULT 1")
+    if "stage_rotation_enabled" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN stage_rotation_enabled BOOLEAN DEFAULT 1")
+    if "stage_rotation_seconds" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN stage_rotation_seconds INTEGER DEFAULT 15")
     cur.execute("CREATE TABLE IF NOT EXISTS password_reset_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, username VARCHAR(64) NOT NULL, contact VARCHAR(128), note TEXT, status VARCHAR(16) DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)")
     conn.commit()
     conn.close()
@@ -1157,6 +1182,10 @@ def ensure_runtime_room(meeting):
         "danmaku_enabled": False,
         "chat_history": [],
         "chat_clear_markers": {},
+        "current_sharer_sid": None,
+        "raised_hands": {},
+        "stage_rotation_enabled": bool(getattr(meeting.host, "stage_rotation_enabled", True)) if getattr(meeting, "host", None) else True,
+        "stage_rotation_seconds": normalize_stage_rotation_seconds(getattr(meeting.host, "stage_rotation_seconds", 15) if getattr(meeting, "host", None) else 15),
     }
     schedule_room_expiry(meeting.room_id, meeting.created_at.timestamp())
     return room
@@ -1350,10 +1379,13 @@ def broadcast_room_participant_snapshot(room_id):
         return
     payload = {
         "participants": [
-            {"sid": sid, "name": info.get("name") or "Guest"}
+            {"sid": sid, "name": info.get("name") or "Guest", "raised_hand": bool((room.get("raised_hands") or {}).get(sid))}
             for sid, info in room.get("participants", {}).items()
         ],
         "participant_count": len(room.get("participants", {})),
+        "current_sharer_sid": room.get("current_sharer_sid"),
+        "stage_rotation_enabled": bool(room.get("stage_rotation_enabled", True)),
+        "stage_rotation_seconds": normalize_stage_rotation_seconds(room.get("stage_rotation_seconds", 15), 15),
     }
     socketio.emit("participant_snapshot", payload, room=room_id)
 
@@ -1472,6 +1504,8 @@ def account_page():
             default_danmaku_enabled = bool_from_form(request.form.get("default_danmaku_enabled"), True)
             auto_enable_camera = bool_from_form(request.form.get("auto_enable_camera"), True)
             auto_enable_microphone = bool_from_form(request.form.get("auto_enable_microphone"), True)
+            stage_rotation_enabled = bool_from_form(request.form.get("stage_rotation_enabled"), True)
+            stage_rotation_seconds = normalize_stage_rotation_seconds(request.form.get("stage_rotation_seconds"), 15)
             if preferred_locale not in {"auto", "zh", "en"}:
                 preferred_locale = "auto"
             if default_attachment_permission not in {"view", "download"}:
@@ -1491,6 +1525,8 @@ def account_page():
                     fresh_user.default_danmaku_enabled = default_danmaku_enabled
                     fresh_user.auto_enable_camera = auto_enable_camera
                     fresh_user.auto_enable_microphone = auto_enable_microphone
+                    fresh_user.stage_rotation_enabled = stage_rotation_enabled
+                    fresh_user.stage_rotation_seconds = stage_rotation_seconds
                     db.session.commit()
                     message = t("profile_saved")
         elif action == "password":
@@ -1520,6 +1556,8 @@ def account_page():
         default_danmaku_enabled=bool(getattr(fresh_user, "default_danmaku_enabled", True)),
         auto_enable_camera=bool(getattr(fresh_user, "auto_enable_camera", True)),
         auto_enable_microphone=bool(getattr(fresh_user, "auto_enable_microphone", True)),
+        stage_rotation_enabled=bool(getattr(fresh_user, "stage_rotation_enabled", True)),
+        stage_rotation_seconds=normalize_stage_rotation_seconds(getattr(fresh_user, "stage_rotation_seconds", 15), 15),
     )
 
 
@@ -1646,6 +1684,10 @@ def api_create_room():
         "danmaku_enabled": False,
         "chat_history": [],
         "chat_clear_markers": {},
+        "current_sharer_sid": None,
+        "raised_hands": {},
+        "stage_rotation_enabled": bool(getattr(meeting.host, "stage_rotation_enabled", True)) if getattr(meeting, "host", None) else True,
+        "stage_rotation_seconds": normalize_stage_rotation_seconds(getattr(meeting.host, "stage_rotation_seconds", 15) if getattr(meeting, "host", None) else 15),
     }
     schedule_room_expiry(room_id, meeting.created_at.timestamp())
 
@@ -1697,6 +1739,8 @@ def room_page(room_id):
         default_danmaku_enabled=bool(getattr(current_user, "default_danmaku_enabled", True)),
         auto_enable_camera=bool(getattr(current_user, "auto_enable_camera", True)),
         auto_enable_microphone=bool(getattr(current_user, "auto_enable_microphone", True)),
+        stage_rotation_enabled=bool(getattr(current_user, "stage_rotation_enabled", True)),
+        stage_rotation_seconds=normalize_stage_rotation_seconds(getattr(current_user, "stage_rotation_seconds", 15), 15),
     )
 
 
@@ -2112,6 +2156,8 @@ def on_join_room(data):
         if bool(getattr(fresh_user, "default_danmaku_enabled", True)) and not bool(room.get("danmaku_enabled")):
             room["danmaku_enabled"] = True
             danmaku_auto_enabled_by_host = True
+        room["stage_rotation_enabled"] = bool(getattr(fresh_user, "stage_rotation_enabled", True))
+        room["stage_rotation_seconds"] = normalize_stage_rotation_seconds(getattr(fresh_user, "stage_rotation_seconds", 15), 15)
 
     participant = MeetingParticipant(
         meeting_id=room["meeting_db_id"],
@@ -2136,6 +2182,10 @@ def on_join_room(data):
             "host_present": bool(room.get("host_present")),
             "danmaku_enabled": bool(room.get("danmaku_enabled")),
             "chat_history": visible_chat_history,
+            "current_sharer_sid": room.get("current_sharer_sid"),
+            "raised_hands": [hand_sid for hand_sid, raised in (room.get("raised_hands") or {}).items() if raised],
+            "stage_rotation_enabled": bool(room.get("stage_rotation_enabled", True)),
+            "stage_rotation_seconds": normalize_stage_rotation_seconds(room.get("stage_rotation_seconds", 15), 15),
         },
     )
     emit(
@@ -2774,8 +2824,42 @@ def on_room_ui_event(data):
     if not info:
         return
     room_id = info["room_id"]
+    room = rooms.get(room_id)
+    if not room:
+        return
     payload = data or {}
+    event_type = (payload.get("type") or "").strip()
     payload["from"] = sid
+
+    if event_type == "screen_share_started":
+        active_sharer = room.get("current_sharer_sid")
+        if active_sharer and active_sharer != sid and active_sharer in room.get("participants", {}):
+            emit("room_ui_event", {"type": "screen_share_denied", "message": t("single_screen_share_only"), "from": active_sharer})
+            return
+        room["current_sharer_sid"] = sid
+    elif event_type == "screen_share_stopped":
+        if room.get("current_sharer_sid") == sid:
+            room["current_sharer_sid"] = None
+    elif event_type == "raise_hand":
+        raised = bool(payload.get("raised"))
+        room.setdefault("raised_hands", {})[sid] = raised
+        payload["raised"] = raised
+        broadcast_room_participant_snapshot(room_id)
+    elif event_type == "stage_rotation_updated":
+        meeting = Meeting.query.filter_by(room_id=room_id).first()
+        if not meeting or not current_user.is_authenticated or current_user.id != meeting.host_user_id:
+            emit("host_action_error", {"message": t("host_only_action")})
+            return
+        room["stage_rotation_enabled"] = bool(payload.get("enabled", True))
+        room["stage_rotation_seconds"] = normalize_stage_rotation_seconds(payload.get("seconds"), room.get("stage_rotation_seconds", 15))
+        payload["enabled"] = bool(room["stage_rotation_enabled"])
+        payload["seconds"] = normalize_stage_rotation_seconds(room["stage_rotation_seconds"], 15)
+        user = db.session.get(User, current_user.id)
+        if user:
+            user.stage_rotation_enabled = bool(room["stage_rotation_enabled"])
+            user.stage_rotation_seconds = normalize_stage_rotation_seconds(room["stage_rotation_seconds"], 15)
+            db.session.commit()
+        broadcast_room_participant_snapshot(room_id)
     emit("room_ui_event", payload, room=room_id, include_self=False)
 
 
@@ -2817,6 +2901,11 @@ def on_leave_room(*_args):
     if room and sid in room["participants"]:
         name = room["participants"][sid]["name"]
         del room["participants"][sid]
+        if room.get("raised_hands"):
+            room["raised_hands"].pop(sid, None)
+        if room.get("current_sharer_sid") == sid:
+            room["current_sharer_sid"] = None
+            socketio.emit("room_ui_event", {"type": "screen_share_stopped", "from": sid}, room=room_id)
         host_left = False
         leaving_user_id = info.get("user_id")
         if leaving_user_id and leaving_user_id == room.get("host_user_id"):

@@ -124,6 +124,7 @@
             <label class="ghost-btn attachment-btn">{{ t('media_short') }}<input id="chatMediaInput" type="file" accept="image/*,video/*,.heic,.heif,.avi,.3gp" class="hidden" /></label>
             <label class="ghost-btn attachment-btn">{{ t('docs_archive_short') }}<input id="chatDocInput" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,.rar,.7z" class="hidden" /></label>
             <button class="ghost-btn" id="emojiBtn" type="button">😊 {{ t('emoji') }}</button>
+            <button class="ghost-btn raise-hand-btn" id="raiseHandBtn" type="button">🙋 {{ t('raise_hand') }}</button>
           </div>
           <button class="primary-btn slim-btn" id="sendChatBtn">{{ t('send') }}</button>
         </div>
@@ -145,6 +146,8 @@ const DEFAULT_PREFERRED_NAME = {{ preferred_display_name|tojson }};
 const PREF_ENABLE_DANMAKU = {{ 'true' if default_danmaku_enabled else 'false' }};
 const PREF_AUTO_ENABLE_CAMERA = {{ 'true' if auto_enable_camera else 'false' }};
 const PREF_AUTO_ENABLE_MICROPHONE = {{ 'true' if auto_enable_microphone else 'false' }};
+const PREF_STAGE_ROTATION_ENABLED = {{ 'true' if stage_rotation_enabled else 'false' }};
+const PREF_STAGE_ROTATION_SECONDS = {{ stage_rotation_seconds|int }};
 let USER_NAME = (localStorage.getItem('meeting_display_name') || DEFAULT_PREFERRED_NAME || DEFAULT_USER_NAME).trim() || DEFAULT_PREFERRED_NAME || DEFAULT_USER_NAME;
 const TEXT_PERMISSION_READY = {{ t('permission_ready')|tojson }};
 const TEXT_PERMISSION_FAILED = {{ t('permission_failed')|tojson }};
@@ -191,6 +194,10 @@ const TEXT_ATTACHMENT_LIMIT_IMAGE = {{ ('图片请控制在 25MB 以内' if lang
 const TEXT_ATTACHMENT_LIMIT_VIDEO = {{ ('视频请控制在 120MB 以内' if lang == 'zh' else 'Please keep videos under 120MB')|tojson }};
 const TEXT_ATTACHMENT_LIMIT_FILE = {{ ('文档或压缩包请控制在 25MB 以内' if lang == 'zh' else 'Please keep documents or archives under 25MB')|tojson }};
 const TEXT_ROOM_STORAGE_LIMIT = {{ ('当前会议附件空间已接近上限，请先清理聊天或稍后再试' if lang == 'zh' else 'Meeting attachment storage is nearly full. Please clear chat or try later')|tojson }};
+const TEXT_SINGLE_SCREEN_SHARE_ONLY = {{ t('single_screen_share_only')|tojson }};
+const TEXT_RAISE_HAND = {{ t('raise_hand')|tojson }};
+const TEXT_LOWER_HAND = {{ t('lower_hand')|tojson }};
+const TEXT_HAND_RAISED = {{ t('hand_raised')|tojson }};
 
 const socket = io();
 const rtcConfig = { iceServers: {{ turn_ice_servers|tojson }}, iceTransportPolicy: 'relay' };
@@ -209,6 +216,12 @@ let focusedSid = 'local';
 let hiddenSidebar = false;
 let currentSharerSid = null;
 let currentGridPage = 0;
+let raisedHands = new Set();
+let stageRotationEnabled = !!PREF_STAGE_ROTATION_ENABLED;
+let stageRotationSeconds = Number(PREF_STAGE_ROTATION_SECONDS || 15) || 15;
+let screenShareSpotlightSid = null;
+let screenShareRotationTimer = null;
+let localRaisedHand = false;
 
 function getGridPageSize() {
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
@@ -457,6 +470,8 @@ function ensureCard(sid, displayName = null, isLocal = false) {
     videoMain.appendChild(card);
   }
 
+  updateRaisedHandBadge(card, raisedHands.has(sid));
+
   card.querySelector('[data-action="fullscreen"]').addEventListener('click', async () => {
     try {
       await toggleCardFullscreen(card, sid);
@@ -471,6 +486,74 @@ function ensureCard(sid, displayName = null, isLocal = false) {
 function updatePlaceholder(card, hasVideo) {
   if (!card) return;
   card.classList.toggle('has-video', !!hasVideo);
+}
+
+function updateRaisedHandBadge(card, visible) {
+  if (!card) return;
+  let badge = card.querySelector('.raised-hand-badge');
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.className = 'raised-hand-badge hidden';
+    badge.textContent = '🙋 ' + TEXT_HAND_RAISED;
+    card.appendChild(badge);
+  }
+  badge.classList.toggle('hidden', !visible);
+  card.classList.toggle('raised-hand-card', !!visible);
+}
+
+function applyRaisedHandState(sid, raised) {
+  if (!sid) return;
+  if (raised) raisedHands.add(sid);
+  else raisedHands.delete(sid);
+  const card = document.getElementById('card-' + sid);
+  if (card) updateRaisedHandBadge(card, raisedHands.has(sid));
+}
+
+function orderedScreenShareCandidates() {
+  if (!currentSharerSid) return [];
+  const base = ['local', ...Object.keys(participantMeta)].filter((sid) => sid !== currentSharerSid);
+  const prioritized = [];
+  const normal = [];
+  base.forEach((sid) => {
+    if (raisedHands.has(sid)) prioritized.push(sid);
+    else normal.push(sid);
+  });
+  return [...prioritized, ...normal];
+}
+
+function stopScreenShareRotationTimer() {
+  if (screenShareRotationTimer) {
+    clearInterval(screenShareRotationTimer);
+    screenShareRotationTimer = null;
+  }
+}
+
+function syncScreenShareSpotlight(force = false) {
+  if (!currentSharerSid) {
+    screenShareSpotlightSid = null;
+    stopScreenShareRotationTimer();
+    return;
+  }
+  const candidates = orderedScreenShareCandidates();
+  if (!candidates.length) {
+    screenShareSpotlightSid = null;
+    stopScreenShareRotationTimer();
+    return;
+  }
+  if (force || !screenShareSpotlightSid || !candidates.includes(screenShareSpotlightSid)) {
+    screenShareSpotlightSid = candidates[0];
+  }
+  stopScreenShareRotationTimer();
+  if (stageRotationEnabled && candidates.length > 1) {
+    const intervalMs = Math.max(15, Number(stageRotationSeconds || 15)) * 1000;
+    screenShareRotationTimer = setInterval(() => {
+      const nextCandidates = orderedScreenShareCandidates();
+      if (!currentSharerSid || nextCandidates.length <= 1) return;
+      const currentIndex = Math.max(0, nextCandidates.indexOf(screenShareSpotlightSid));
+      screenShareSpotlightSid = nextCandidates[(currentIndex + 1) % nextCandidates.length];
+      renderLayout();
+    }, intervalMs);
+  }
 }
 
 function getGridColumns(cardCount) {
@@ -580,6 +663,30 @@ function renderLayout(force = false) {
 
   const focusTarget = document.getElementById('card-' + (focusedSid || 'local')) || document.getElementById('card-local') || cards[0];
   if (!focusTarget) return;
+
+  if (currentSharerSid) {
+    syncScreenShareSpotlight();
+    const sharerCard = document.getElementById('card-' + currentSharerSid) || focusTarget;
+    const spotlightCard = screenShareSpotlightSid ? document.getElementById('card-' + screenShareSpotlightSid) : null;
+    videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
+    videoStage.classList.add('focus-layout', 'screen-share-mode');
+    videoStage.classList.remove('grid-layout');
+    videoMain.innerHTML = '';
+    videoMain.appendChild(sharerCard);
+    setPagedCardVisibility(sharerCard, true);
+    videoSidebar.innerHTML = '';
+    if (spotlightCard) {
+      spotlightCard.classList.add('is-sidebar');
+      videoSidebar.appendChild(spotlightCard);
+      setPagedCardVisibility(spotlightCard, true);
+      videoStage.classList.remove('sidebar-hidden');
+    } else {
+      videoStage.classList.add('sidebar-hidden');
+    }
+    updateVideoPager(cards.length, totalPages);
+    schedulePlaybackRecovery('screen-share-layout');
+    return;
+  }
 
   const canUseGrid = !currentSharerSid && !hiddenSidebar;
   const shouldUseGrid = canUseGrid && cards.length <= pageSize;
@@ -878,7 +985,9 @@ function addRemoteParticipant(sid, name) {
   participantMeta[sid] = { name: name || sid };
   const card = ensureCard(sid, participantMeta[sid].name, false);
   updatePlaceholder(card, false);
+  updateRaisedHandBadge(card, raisedHands.has(sid));
   currentGridPage = 0;
+  syncScreenShareSpotlight(true);
   renderLayout();
   updateParticipantCount();
 }
@@ -902,8 +1011,12 @@ function removeRemoteVideo(sid) {
   if (currentSharerSid === sid) {
     currentSharerSid = null;
     hiddenSidebar = false;
+    screenShareSpotlightSid = null;
+    stopScreenShareRotationTimer();
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
   }
+  raisedHands.delete(sid);
+  if (screenShareSpotlightSid === sid) screenShareSpotlightSid = null;
   const totalCards = document.querySelectorAll('.video-card').length;
   const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
   currentGridPage = Math.min(currentGridPage, totalPages - 1);
@@ -1783,6 +1896,25 @@ function initChatUi() {
     e.target.value = '';
   });
   document.getElementById('toggleDanmakuBtn')?.addEventListener('click', () => socket.emit('toggle_danmaku', { enabled: !danmakuEnabled }));
+const raiseHandBtn = document.getElementById('raiseHandBtn');
+function refreshRaiseHandButton() {
+  if (!raiseHandBtn) return;
+  raiseHandBtn.textContent = '🙋 ' + (localRaisedHand ? TEXT_LOWER_HAND : TEXT_RAISE_HAND);
+  raiseHandBtn.classList.toggle('active', !!localRaisedHand);
+}
+raiseHandBtn?.addEventListener('click', () => {
+  localRaisedHand = !localRaisedHand;
+  applyRaisedHandState('local', localRaisedHand);
+  refreshRaiseHandButton();
+  if (localRaisedHand && currentSharerSid && currentSharerSid !== 'local') {
+    screenShareSpotlightSid = 'local';
+    syncScreenShareSpotlight(true);
+    renderLayout();
+  }
+  broadcastUiEvent({ type: 'raise_hand', raised: localRaisedHand });
+  setStatus(localRaisedHand ? TEXT_HAND_RAISED : TEXT_LOWER_HAND);
+});
+refreshRaiseHandButton();
   document.getElementById('chatHideBtn')?.addEventListener('click', () => setChatCollapsed(true));
   document.getElementById('chatShowBtn')?.addEventListener('click', () => setChatCollapsed(false));
 }
@@ -1834,6 +1966,12 @@ socket.on('join_ok', async (data) => {
   focusParticipant('local');
   if (IS_GRID_TEST_MODE) seedFakeParticipants();
   danmakuEnabled = !!data.danmaku_enabled;
+  currentSharerSid = data?.current_sharer_sid || null;
+  stageRotationEnabled = typeof data?.stage_rotation_enabled === 'boolean' ? !!data.stage_rotation_enabled : !!PREF_STAGE_ROTATION_ENABLED;
+  stageRotationSeconds = Number(data?.stage_rotation_seconds || PREF_STAGE_ROTATION_SECONDS || 15) || 15;
+  raisedHands = new Set(Array.isArray(data?.raised_hands) ? data.raised_hands : []);
+  applyRaisedHandState('local', localRaisedHand);
+  syncScreenShareSpotlight(true);
   if (data && data.host_present === false && IS_HOST) {
     setStatus(TEXT_HOST_RETURNED_ROOM);
   } else if (data && data.host_present === false) {
@@ -1857,6 +1995,9 @@ socket.on('participant_left', (data) => {
 socket.on('participant_snapshot', (data) => {
   const list = Array.isArray(data?.participants) ? data.participants : [];
   const count = Number(data?.participant_count || list.length || 0);
+  currentSharerSid = data?.current_sharer_sid || null;
+  stageRotationEnabled = typeof data?.stage_rotation_enabled === 'boolean' ? !!data.stage_rotation_enabled : stageRotationEnabled;
+  stageRotationSeconds = Number(data?.stage_rotation_seconds || stageRotationSeconds || 15) || 15;
   const keep = new Set();
   list.forEach((item) => {
     if (!item?.sid || item.sid === socket.id) return;
@@ -1868,11 +2009,14 @@ socket.on('participant_snapshot', (data) => {
       const labelEl = document.querySelector(`#card-${CSS.escape(item.sid)} .video-label`);
       if (labelEl) labelEl.textContent = item.name || item.sid;
     }
+    applyRaisedHandState(item.sid, !!item.raised_hand);
   });
   Object.keys(participantMeta).forEach((sid) => {
     if (!keep.has(sid)) removeRemoteVideo(sid);
   });
   participantCountEl.textContent = String(Math.max(1, count));
+  applyRaisedHandState('local', localRaisedHand);
+  syncScreenShareSpotlight(true);
   renderMentionPicker();
 });
 
@@ -1959,16 +2103,36 @@ socket.on('signal', async (data) => {
 socket.on('room_ui_event', (data) => {
   if (!data || !data.type) return;
   if (data.type === 'screen_share_started') {
-    focusParticipant(data.from, { hideSidebar: !!data.hideSidebar, screenShare: true });
+    currentSharerSid = data.from;
+    if (currentSharerSid !== 'local') isSharingScreen = false;
+    syncScreenShareSpotlight(true);
+    focusParticipant(data.from, { hideSidebar: false, screenShare: true });
   } else if (data.type === 'screen_share_stopped') {
     currentSharerSid = null;
     hiddenSidebar = false;
     focusedSid = 'local';
+    screenShareSpotlightSid = null;
+    stopScreenShareRotationTimer();
     renderLayout();
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
+  } else if (data.type === 'screen_share_denied') {
+    isSharingScreen = false;
+    setStatus(data.message || TEXT_SINGLE_SCREEN_SHARE_ONLY, 'warning');
   } else if (data.type === 'danmaku_toggled') {
     danmakuEnabled = !!data.enabled;
     setStatus(danmakuEnabled ? TEXT_DANMAKU_ON : TEXT_DANMAKU_OFF);
+  } else if (data.type === 'raise_hand') {
+    applyRaisedHandState(data.from, !!data.raised);
+    if (!!data.raised && currentSharerSid && data.from !== currentSharerSid) {
+      screenShareSpotlightSid = data.from;
+      syncScreenShareSpotlight(true);
+      renderLayout();
+    }
+  } else if (data.type === 'stage_rotation_updated') {
+    stageRotationEnabled = !!data.enabled;
+    stageRotationSeconds = Number(data.seconds || stageRotationSeconds || 15) || 15;
+    syncScreenShareSpotlight(true);
+    renderLayout();
   }
 });
 
@@ -2062,7 +2226,12 @@ document.getElementById('toggleCameraBtn').onclick = async () => {
   }
   setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 };
+
 document.getElementById('shareScreenBtn').onclick = async () => {
+  if (currentSharerSid && currentSharerSid !== 'local') {
+    setStatus(TEXT_SINGLE_SCREEN_SHARE_ONLY, 'warning');
+    return;
+  }
   try {
     const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
     const screenTrack = screenStream.getVideoTracks()[0];
@@ -2074,6 +2243,9 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     localVideo.srcObject = screenStream;
     updatePlaceholder(screenCard, true);
     isSharingScreen = true;
+    currentSharerSid = 'local';
+    screenShareSpotlightSid = orderedScreenShareCandidates()[0] || null;
+    syncScreenShareSpotlight(true);
     focusParticipant('local', { hideSidebar: false, screenShare: true });
     setStatus(TEXT_SCREEN_SHARE_MODE);
     broadcastUiEvent({ type: 'screen_share_started', hideSidebar: false });
@@ -2090,6 +2262,8 @@ document.getElementById('shareScreenBtn').onclick = async () => {
       currentSharerSid = null;
       hiddenSidebar = false;
       focusedSid = 'local';
+      screenShareSpotlightSid = null;
+      stopScreenShareRotationTimer();
       renderLayout();
       broadcastUiEvent({ type: 'screen_share_stopped' });
       setStatus(TEXT_SCREEN_SHARE_STOPPED);
