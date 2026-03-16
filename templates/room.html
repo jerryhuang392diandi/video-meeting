@@ -530,6 +530,30 @@ function getRenderableCards() {
     ));
 }
 
+let playbackRecoveryTimer = null;
+
+function resumeVisibleVideoPlayback() {
+  const videos = Array.from(document.querySelectorAll('#videoMain video, #videoSidebar video'));
+  videos.forEach(video => {
+    if (!(video instanceof HTMLVideoElement)) return;
+    if (!video.srcObject) return;
+    if (video.readyState >= 2 && !video.paused) return;
+    video.muted = video.id === 'localVideo';
+    video.playsInline = true;
+    const tryPlay = () => video.play().catch(() => {});
+    requestAnimationFrame(tryPlay);
+    setTimeout(tryPlay, 80);
+  });
+}
+
+function schedulePlaybackRecovery(reason = 'layout') {
+  clearTimeout(playbackRecoveryTimer);
+  playbackRecoveryTimer = setTimeout(() => {
+    roomDebugLog('playback recovery', { reason, currentGridPage });
+    resumeVisibleVideoPlayback();
+  }, 40);
+}
+
 function renderLayout(force = false) {
   if (!videoMain || !videoSidebar || !videoStage) return;
   if (!force && hasActiveFullscreenSession()) {
@@ -539,7 +563,7 @@ function renderLayout(force = false) {
   }
   const cards = getRenderableCards();
   if (!cards.length) {
-    videoMain.innerHTML = '<div class="video-empty-state">' + escapeHtml({{ ('未找到匹配的参会者' if lang == 'zh' else 'No matching participants found')|tojson }}) + '</div>';
+    videoMain.innerHTML = '<div class="video-empty-state">' + escapeHtml({{ ('暂无可显示的参会者' if lang == 'zh' else 'No participants to display')|tojson }}) + '</div>';
     videoSidebar.innerHTML = '';
     videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid', 'focus-layout', 'grid-layout');
     videoStage.classList.add('sidebar-hidden');
@@ -578,6 +602,7 @@ function renderLayout(force = false) {
     if (shouldUsePagedGrid) videoStage.classList.add('paged-grid');
     visibleCards.forEach(card => videoMain.appendChild(card));
     updateVideoPager(cards.length, totalPages);
+    schedulePlaybackRecovery('grid-render');
     return;
   }
 
@@ -592,6 +617,7 @@ function renderLayout(force = false) {
   });
 
   videoStage.classList.toggle('sidebar-hidden', hiddenSidebar || sidebarCards.length === 0);
+  schedulePlaybackRecovery('focus-render');
 }
 
 function focusParticipant(sid, opts = {}) {
@@ -671,31 +697,15 @@ function deactivateVirtualBackground(message = null) {
 function useLocalOutputStream(stream) {
   localStream = stream;
   localVideo.srcObject = stream;
+  localVideo.muted = true;
+  localVideo.playsInline = true;
+  localVideo.autoplay = true;
+  localVideo.play().catch(() => {});
   const localCard = ensureCard('local', getDisplayName('local'), true);
   updatePlaceholder(localCard, !!stream?.getVideoTracks?.()[0]?.enabled);
   syncPeerMedia().catch(err => console.error(err));
   renderLayout();
-}
-
-async function refreshVideoElementPlayback(videoEl, stream) {
-  if (!videoEl || !stream) return;
-  try {
-    if (videoEl.srcObject !== stream) videoEl.srcObject = stream;
-    videoEl.muted = true;
-    videoEl.playsInline = true;
-    await videoEl.play().catch(() => {});
-  } catch (_) {}
-}
-
-async function stabilizeCameraAfterStart() {
-  await refreshVideoElementPlayback(localVideo, localStream || rawCameraStream);
-  await refreshVideoElementPlayback(rawPreviewVideo, rawCameraStream || localStream);
-  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  renderLayout(true);
-  setTimeout(() => {
-    syncPeerMedia().catch(err => console.error(err));
-    renderLayout(true);
-  }, 120);
+  schedulePlaybackRecovery('local-stream-update');
 }
 
 function getScaledSize(width, height) {
@@ -787,7 +797,6 @@ async function requestMedia(forceFacingMode = null, manualRequest = false) {
     } else {
       setStatus(TEXT_PERMISSION_READY);
     }
-    await stabilizeCameraAfterStart();
   } catch (err) {
     console.error(err);
     setStatus(TEXT_PERMISSION_FAILED + ': ' + err.message, 'error');
@@ -872,9 +881,14 @@ function addRemoteParticipant(sid, name) {
 
 function addRemoteVideo(sid, stream) {
   const card = ensureCard(sid, getDisplayName(sid), false);
-  card.querySelector('video').srcObject = stream;
+  const videoEl = card.querySelector('video');
+  videoEl.srcObject = stream;
+  videoEl.playsInline = true;
+  videoEl.autoplay = true;
+  videoEl.play().catch(() => {});
   updatePlaceholder(card, true);
   renderLayout();
+  schedulePlaybackRecovery('remote-stream-update');
 }
 
 function removeRemoteVideo(sid) {
@@ -1992,6 +2006,11 @@ window.addEventListener('resize', () => {
   renderLayout();
 });
 
+videoHomePageBtn?.addEventListener('click', () => {
+  if (currentGridPage <= 0) return;
+  currentGridPage = 0;
+  renderLayout();
+});
 videoPrevPageBtn?.addEventListener('click', () => {
   if (currentGridPage <= 0) return;
   currentGridPage -= 1;
@@ -2003,11 +2022,6 @@ videoNextPageBtn?.addEventListener('click', () => {
   if (currentGridPage >= totalPages - 1) return;
   currentGridPage += 1;
   renderLayout();
-});
-videoHomePageBtn?.addEventListener('click', () => {
-  if (currentGridPage <= 0) return;
-  currentGridPage = 0;
-  renderLayout(true);
 });
 
 document.getElementById('requestMediaBtn').onclick = () => requestMedia(currentFacingMode, true);
@@ -2035,18 +2049,14 @@ document.getElementById('toggleCameraBtn').onclick = async () => {
     rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
     if (!rawTrack) return;
   }
-  const nextEnabled = !rawTrack.enabled;
-  rawTrack.enabled = nextEnabled;
+  rawTrack.enabled = !rawTrack.enabled;
   const outputVideoTrack = localStream?.getVideoTracks?.()[0];
-  if (outputVideoTrack && outputVideoTrack !== rawTrack) outputVideoTrack.enabled = nextEnabled;
-  updatePlaceholder(localCard, nextEnabled);
-  if (nextEnabled) {
-    await stabilizeCameraAfterStart();
+  if (outputVideoTrack && outputVideoTrack !== rawTrack) outputVideoTrack.enabled = rawTrack.enabled;
+  updatePlaceholder(localCard, rawTrack.enabled);
+  if (rawTrack.enabled) {
     await syncPeerMedia().catch(err => console.error(err));
-  } else {
-    renderLayout(true);
   }
-  setStatus(nextEnabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
+  setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 };
 document.getElementById('shareScreenBtn').onclick = async () => {
   try {
