@@ -2068,9 +2068,13 @@ def on_join_room(data):
     debug_log('SOCKET_JOIN_ROOM_REGISTERED', sid=sid, room_id=room_id, user_id=current_user.id, room_participants=list(room['participants'].keys()), user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids}, sid_to_user_entry=sid_to_user.get(sid))
 
     host_returned = False
+    danmaku_auto_enabled_by_host = False
     if current_user.is_authenticated and current_user.id == room.get("host_user_id"):
         host_returned = not room.get("host_present")
         room["host_present"] = True
+        if bool(getattr(fresh_user, "default_danmaku_enabled", True)) and not bool(room.get("danmaku_enabled")):
+            room["danmaku_enabled"] = True
+            danmaku_auto_enabled_by_host = True
 
     participant = MeetingParticipant(
         meeting_id=room["meeting_db_id"],
@@ -2111,6 +2115,8 @@ def on_join_room(data):
             {"host_present": True, "message": t("host_returned_room")},
             room=room_id,
         )
+    if danmaku_auto_enabled_by_host:
+        socketio.emit("room_ui_event", {"type": "danmaku_toggled", "enabled": True, "from": sid}, room=room_id)
 
 
 @socketio.on("update_profile")

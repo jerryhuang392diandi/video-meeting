@@ -13,7 +13,6 @@
       <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
     </div>
     <span class="user-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
-    <a class="chip" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>
     <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
   </div>
 </header>
@@ -41,23 +40,6 @@
         <input id="displayNameInput" maxlength="32" value="{{ preferred_display_name }}" />
         <button class="ghost-btn" id="saveProfileBtn">{{ t('save') }}</button>
       </div>
-    </div>
-    <div class="mini-panel">
-      <div class="muted">{{ t('join_defaults') }}</div>
-      <div class="status-grid compact-grid">
-        <div><span>{{ t('danmaku_display') }}</span><strong>{{ ('开启' if default_danmaku_enabled else '关闭') if lang == 'zh' else ('On' if default_danmaku_enabled else 'Off') }}</strong></div>
-        <div><span>{{ t('camera') }}</span><strong>{{ ('开启' if auto_enable_camera else '关闭') if lang == 'zh' else ('On' if auto_enable_camera else 'Off') }}</strong></div>
-        <div><span>{{ t('mic') }}</span><strong>{{ ('开启' if auto_enable_microphone else '关闭') if lang == 'zh' else ('On' if auto_enable_microphone else 'Off') }}</strong></div>
-      </div>
-      <a class="ghost-btn wide-link mt-12" href="{{ url_for('account_page') }}">{{ t('open_account_preferences') }}</a>
-    </div>
-    <div class="mini-panel">
-      <div class="muted">{{ t('quick_switch_room') }}</div>
-      <label>{{ t('room_id') }}</label>
-      <input id="switchRoomId" maxlength="6" value="{{ room_id }}" />
-      <label>{{ t('room_password') }}</label>
-      <input id="switchRoomPassword" maxlength="16" value="{{ room_password }}" />
-      <button class="ghost-btn wide-link mt-12" id="switchRoomBtn">{{ t('switch_room') }}</button>
     </div>
     <div class="mini-panel">
       <div class="muted">{{ t('invite_link') }}</div>
@@ -2152,15 +2134,18 @@ document.getElementById('saveProfileBtn').onclick = () => {
   renderMentionPicker();
   setStatus(TEXT_PROFILE_UPDATED);
 };
-document.getElementById('switchRoomBtn').onclick = async () => {
-  const nextRoomId = document.getElementById('switchRoomId').value.trim();
-  const nextPwd = document.getElementById('switchRoomPassword').value.trim();
-  if (!nextRoomId || !nextPwd) return;
-  const res = await fetch('/api/join_room', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room_id: nextRoomId, password: nextPwd }) });
-  const data = await res.json();
-  if (!res.ok || !data.success) { setStatus(data.message || 'failed', 'error'); return; }
-  leaveMeetingAndExit(null, `/room/${nextRoomId}?pwd=${encodeURIComponent(nextPwd)}`);
-};
+const switchRoomBtn = document.getElementById('switchRoomBtn');
+if (switchRoomBtn) {
+  switchRoomBtn.onclick = async () => {
+    const nextRoomId = document.getElementById('switchRoomId')?.value?.trim() || '';
+    const nextPwd = document.getElementById('switchRoomPassword')?.value?.trim() || '';
+    if (!nextRoomId || !nextPwd) return;
+    const res = await fetch('/api/join_room', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room_id: nextRoomId, password: nextPwd }) });
+    const data = await res.json();
+    if (!res.ok || !data.success) { setStatus(data.message || 'failed', 'error'); return; }
+    leaveMeetingAndExit(null, `/room/${nextRoomId}?pwd=${encodeURIComponent(nextPwd)}`);
+  };
+}
 document.getElementById('copyInviteBtn').onclick = async () => {
   await navigator.clipboard.writeText(document.getElementById('inviteInput').value);
   setStatus(TEXT_COPIED);
