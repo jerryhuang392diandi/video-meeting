@@ -652,10 +652,10 @@ function renderLayout(force = false) {
   }
 
   cards.forEach(card => {
-    card.classList.remove('is-focused', 'is-sidebar');
+    card.classList.remove('is-focused', 'is-sidebar', 'is-stage-spotlight', 'is-stage-queue');
     setPagedCardVisibility(card, true);
   });
-  videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
+  videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid', 'screen-share-stacked');
 
   const pageSize = getGridPageSize();
   const totalPages = Math.max(1, Math.ceil(cards.length / pageSize));
@@ -667,27 +667,31 @@ function renderLayout(force = false) {
   if (currentSharerSid) {
     syncScreenShareSpotlight();
     const sharerCard = document.getElementById('card-' + currentSharerSid) || focusTarget;
+    const stageCards = orderedScreenShareCandidates()
+      .map((sid) => document.getElementById('card-' + sid))
+      .filter((card) => !!card && card !== sharerCard);
     const spotlightCard = screenShareSpotlightSid ? document.getElementById('card-' + screenShareSpotlightSid) : null;
     videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
-    videoStage.classList.add('focus-layout', 'screen-share-mode');
+    videoStage.classList.add('focus-layout', 'screen-share-mode', 'screen-share-stacked');
     videoStage.classList.remove('grid-layout');
     videoMain.innerHTML = '';
     videoMain.appendChild(sharerCard);
+    sharerCard.classList.add('is-focused');
     setPagedCardVisibility(sharerCard, true);
     videoSidebar.innerHTML = '';
-    if (spotlightCard) {
-      spotlightCard.classList.add('is-sidebar');
-      videoSidebar.appendChild(spotlightCard);
-      setPagedCardVisibility(spotlightCard, true);
-      videoStage.classList.remove('sidebar-hidden');
-    } else {
-      videoStage.classList.add('sidebar-hidden');
-    }
+    stageCards.forEach((card) => {
+      card.classList.add('is-sidebar', 'is-stage-queue');
+      if (spotlightCard && card === spotlightCard) card.classList.add('is-stage-spotlight');
+      videoSidebar.appendChild(card);
+      setPagedCardVisibility(card, true);
+    });
+    videoStage.classList.toggle('sidebar-hidden', stageCards.length === 0);
     updateVideoPager(cards.length, totalPages);
     schedulePlaybackRecovery('screen-share-layout');
     return;
   }
 
+  videoStage.classList.remove('screen-share-stacked');
   const canUseGrid = !currentSharerSid && !hiddenSidebar;
   const shouldUseGrid = canUseGrid && cards.length <= pageSize;
   const shouldUsePagedGrid = canUseGrid && cards.length > pageSize;
