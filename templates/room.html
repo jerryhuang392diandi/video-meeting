@@ -283,6 +283,9 @@ const chatMediaInput = document.getElementById('chatMediaInput');
 const chatDocInput = document.getElementById('chatDocInput');
 const chatAttachmentPreview = document.getElementById('chatAttachmentPreview');
 const mentionPicker = document.getElementById('mentionPicker');
+const MENTION_SEARCH_PLACEHOLDER = {{ ('搜索用户名' if lang == 'zh' else 'Search users')|tojson }};
+const MENTION_EMPTY_TEXT = {{ ('没有匹配的用户' if lang == 'zh' else 'No matching users')|tojson }};
+const MENTION_ALL_TEXT = {{ ('所有成员' if lang == 'zh' else 'All participants')|tojson }};
 const emojiPicker = document.getElementById('emojiPicker');
 const emojiPopover = document.getElementById('emojiPopover');
 const chatContextMenu = document.getElementById('chatContextMenu');
@@ -983,12 +986,52 @@ function escapeHtml(text) {
   return String(text || '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
-function renderMentionPicker() {
-  if (!mentionPicker) return;
-  const people = [{ sid: 'local', name: USER_NAME }]
+function getMentionablePeople() {
+  const byName = new Map();
+  [{ sid: 'local', name: USER_NAME }]
     .concat(Object.entries(participantMeta).map(([sid, info]) => ({ sid, name: info.name || sid })))
-    .concat(Object.entries(fakeParticipantMeta).map(([sid, info]) => ({ sid, name: info.name || sid })));
-  mentionPicker.innerHTML = people.map(person => `<button type="button" class="mention-option" data-name="${escapeHtml(person.name)}">@${escapeHtml(person.name)}</button>`).join('');
+    .concat(Object.entries(fakeParticipantMeta).map(([sid, info]) => ({ sid, name: info.name || sid })))
+    .forEach(person => {
+      const name = String(person?.name || '').trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (!byName.has(key)) byName.set(key, { sid: person.sid, name });
+    });
+  return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN-u-co-pinyin'));
+}
+
+function renderMentionPicker(filterText = '') {
+  if (!mentionPicker) return;
+  const keyword = String(filterText || '').trim().toLowerCase();
+  const people = getMentionablePeople();
+  const filtered = keyword ? people.filter(person => person.name.toLowerCase().includes(keyword)) : people;
+  mentionPicker.innerHTML = `
+    <div class="mention-dropdown">
+      <div class="mention-dropdown-head">
+        <span class="mention-dropdown-title">${escapeHtml(MENTION_ALL_TEXT)}</span>
+        <button type="button" class="card-btn mention-collapse-btn">${escapeHtml({{ ('收起' if lang == 'zh' else 'Collapse')|tojson }})}</button>
+      </div>
+      <div class="mention-search-wrap">
+        <input id="mentionSearchInput" class="mention-search-input" type="text" autocomplete="off" placeholder="${escapeHtml(MENTION_SEARCH_PLACEHOLDER)}" value="${escapeHtml(filterText)}" />
+      </div>
+      <div class="mention-options-list">
+        ${filtered.length ? filtered.map(person => `<button type="button" class="mention-option mention-option-row" data-name="${escapeHtml(person.name)}"><span class="mention-option-at">@</span><span class="mention-option-name">${escapeHtml(person.name)}</span></button>`).join('') : `<div class="mention-empty">${escapeHtml(MENTION_EMPTY_TEXT)}</div>`}
+      </div>
+    </div>`;
+
+  mentionPicker.querySelector('.mention-collapse-btn')?.addEventListener('click', () => {
+    mentionPicker.classList.add('hidden');
+  });
+
+  const searchInput = mentionPicker.querySelector('#mentionSearchInput');
+  searchInput?.addEventListener('input', (e) => renderMentionPicker(e.target.value));
+  if (searchInput) {
+    requestAnimationFrame(() => {
+      try { searchInput.focus({ preventScroll: true }); } catch (_) { searchInput.focus(); }
+      searchInput.select();
+    });
+  }
+
   mentionPicker.querySelectorAll('.mention-option').forEach(btn => {
     btn.addEventListener('click', () => {
       chatInput.value = `${chatInput.value}${chatInput.value && !chatInput.value.endsWith(' ') ? ' ' : ''}@${btn.dataset.name} `;
@@ -1452,7 +1495,7 @@ function initChatUi() {
   chatAttachmentPermission?.addEventListener('change', updateAttachmentPreview);
   sendChatBtn?.addEventListener('click', sendChatMessage);
   chatInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } });
-  document.getElementById('mentionBtn')?.addEventListener('click', () => { renderMentionPicker(); mentionPicker.classList.toggle('hidden'); emojiPopover?.classList.add('hidden'); });
+  document.getElementById('mentionBtn')?.addEventListener('click', () => { const willShow = mentionPicker.classList.contains('hidden'); emojiPopover?.classList.add('hidden'); if (willShow) { renderMentionPicker(''); mentionPicker.classList.remove('hidden'); } else { mentionPicker.classList.add('hidden'); } });
   document.getElementById('emojiBtn')?.addEventListener('click', () => { renderEmojiPicker(); emojiPopover?.classList.toggle('hidden'); mentionPicker.classList.add('hidden'); });
   document.getElementById('emojiCloseBtn')?.addEventListener('click', () => emojiPopover?.classList.add('hidden'));
   chatMessages?.addEventListener('scroll', () => {
