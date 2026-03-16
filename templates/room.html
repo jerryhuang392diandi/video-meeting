@@ -41,20 +41,6 @@
     </div>
 
     <div class="mini-panel">
-      <div class="muted">{{ t('invite_link') }}</div>
-      <div class="row-compact">
-        <input id="inviteInput" readonly value="{{ invite_url }}" />
-        <button class="ghost-btn" id="copyInviteBtn">{{ t('copy') }}</button>
-      </div>
-      <div class="row-compact" style="margin-top:8px;">
-        <button class="ghost-btn" id="toggleInviteQrBtn" type="button">{{ '显示二维码' if lang == 'zh' else 'Show QR' }}</button>
-      </div>
-      <div id="inviteQrWrap" class="hidden" style="margin-top:10px;text-align:center;">
-        <img id="inviteQrImg" alt="{{ '邀请二维码' if lang == 'zh' else 'Invite QR code' }}" style="max-width:220px;width:100%;height:auto;border-radius:12px;background:#fff;padding:8px;" />
-        <div class="muted" style="margin-top:6px;">{{ '手机扫码加入会议' if lang == 'zh' else 'Scan with phone to join' }}</div>
-      </div>
-    </div>
-    <div class="mini-panel">
       <div class="muted">{{ t('traffic_usage') }} · {{ t('traffic_turn_relay') }}</div>
       <div class="status-grid">
         <div><span>{{ t('monthly_quota') }}</span><strong id="trafficQuotaTotal">{{ traffic.monthly_quota_text }}</strong></div>
@@ -1439,10 +1425,6 @@ async function copyText(text) {
     }
   } catch (_) {}
 
-  try {
-    window.prompt({{ ('复制失败，请手动复制下面的链接：' if lang == 'zh' else 'Copy failed. Please copy this link manually:')|tojson }}, text);
-  } catch (_) {}
-
   setStatus({{ ('复制失败，请长按或手动复制' if lang == 'zh' else 'Copy failed, please copy manually')|tojson }}, 'error');
   return false;
 }
@@ -2264,28 +2246,6 @@ document.getElementById('switchRoomBtn').onclick = async () => {
   if (!res.ok || !data.success) { setStatus(data.message || 'failed', 'error'); return; }
   leaveMeetingAndExit(null, `/room/${nextRoomId}?pwd=${encodeURIComponent(nextPwd)}`);
 };
-document.getElementById('copyInviteBtn').onclick = async () => {
-  await copyText(document.getElementById('inviteInput').value);
-};
-
-const inviteQrWrap = document.getElementById('inviteQrWrap');
-const inviteQrImg = document.getElementById('inviteQrImg');
-const toggleInviteQrBtn = document.getElementById('toggleInviteQrBtn');
-if (toggleInviteQrBtn && inviteQrWrap && inviteQrImg) {
-  const inviteText = (document.getElementById('inviteInput')?.value || '').trim();
-  const qrUrl = inviteText
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(inviteText)}`
-    : '';
-  if (qrUrl) inviteQrImg.src = qrUrl;
-  toggleInviteQrBtn.onclick = () => {
-    const willShow = inviteQrWrap.classList.contains('hidden');
-    if (willShow && qrUrl && !inviteQrImg.src) inviteQrImg.src = qrUrl;
-    inviteQrWrap.classList.toggle('hidden', !willShow);
-    toggleInviteQrBtn.textContent = willShow
-      ? {{ ('隐藏二维码' if lang == 'zh' else 'Hide QR')|tojson }}
-      : {{ ('显示二维码' if lang == 'zh' else 'Show QR')|tojson }};
-  };
-}
 
 window.addEventListener('beforeunload', () => {
   if (!hasLeftMeeting) {
