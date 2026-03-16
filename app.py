@@ -1387,6 +1387,7 @@ def broadcast_room_participant_snapshot(room_id):
         "stage_rotation_enabled": bool(room.get("stage_rotation_enabled", True)),
         "stage_rotation_seconds": normalize_stage_rotation_seconds(room.get("stage_rotation_seconds", 15), 15),
     }
+    debug_log('PARTICIPANT_SNAPSHOT', room_id=room_id, payload=payload)
     socketio.emit("participant_snapshot", payload, room=room_id)
 
 
@@ -2830,6 +2831,7 @@ def on_room_ui_event(data):
     payload = data or {}
     event_type = (payload.get("type") or "").strip()
     payload["from"] = sid
+    debug_log('ROOM_UI_EVENT_IN', room_id=room_id, sid=sid, payload=payload, current_sharer=room.get('current_sharer_sid'), participants=list(room.get('participants', {}).keys()))
 
     if event_type == "screen_share_started":
         active_sharer = room.get("current_sharer_sid")
@@ -2860,6 +2862,7 @@ def on_room_ui_event(data):
             user.stage_rotation_seconds = normalize_stage_rotation_seconds(room["stage_rotation_seconds"], 15)
             db.session.commit()
         broadcast_room_participant_snapshot(room_id)
+    debug_log('ROOM_UI_EVENT_OUT', room_id=room_id, sid=sid, payload=payload, current_sharer=room.get('current_sharer_sid'))
     emit("room_ui_event", payload, room=room_id, include_self=False)
 
 
