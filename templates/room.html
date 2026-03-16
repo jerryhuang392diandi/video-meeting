@@ -220,7 +220,15 @@ let focusedSid = 'local';
 let hiddenSidebar = false;
 let currentSharerSid = null;
 let currentGridPage = 0;
-const GRID_PAGE_SIZE = 9;
+
+function getGridPageSize() {
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  const stageWidth = videoMain?.clientWidth || videoStage?.clientWidth || 0;
+  if (viewportWidth >= 1380 && stageWidth >= 980) return 12;
+  if (viewportWidth >= 961) return 9;
+  if (viewportWidth >= 640) return 6;
+  return 4;
+}
 let isSharingScreen = false;
 let activeRecorder = null;
 let recorderStream = null;
@@ -366,7 +374,8 @@ function getGridColumns(cardCount) {
 
 function updateVideoPager(totalCards, totalPages) {
   if (!videoPager || !videoPrevPageBtn || !videoNextPageBtn || !videoPagerInfo) return;
-  const showPager = !currentSharerSid && totalCards > GRID_PAGE_SIZE && totalPages > 1;
+  const pageSize = getGridPageSize();
+  const showPager = !currentSharerSid && totalCards > pageSize && totalPages > 1;
   videoPager.classList.toggle('hidden', !showPager);
   if (!showPager) {
     videoPagerInfo.textContent = '1 / 1';
@@ -404,15 +413,16 @@ function renderLayout() {
   cards.forEach(card => card.classList.remove('is-focused', 'is-sidebar'));
   videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
 
-  const totalPages = Math.max(1, Math.ceil(cards.length / GRID_PAGE_SIZE));
+  const pageSize = getGridPageSize();
+  const totalPages = Math.max(1, Math.ceil(cards.length / pageSize));
   currentGridPage = Math.max(0, Math.min(currentGridPage, totalPages - 1));
 
   const focusTarget = document.getElementById('card-' + (focusedSid || 'local')) || document.getElementById('card-local') || cards[0];
   if (!focusTarget) return;
 
   const canUseGrid = !currentSharerSid && !hiddenSidebar;
-  const shouldUseGrid = canUseGrid && cards.length <= GRID_PAGE_SIZE;
-  const shouldUsePagedGrid = canUseGrid && cards.length > GRID_PAGE_SIZE;
+  const shouldUseGrid = canUseGrid && cards.length <= pageSize;
+  const shouldUsePagedGrid = canUseGrid && cards.length > pageSize;
 
   videoStage.classList.toggle('screen-share-mode', !!currentSharerSid);
   videoStage.classList.toggle('grid-layout', shouldUseGrid || shouldUsePagedGrid);
@@ -420,8 +430,8 @@ function renderLayout() {
 
   if (shouldUseGrid || shouldUsePagedGrid) {
     videoStage.classList.add('sidebar-hidden');
-    const start = shouldUsePagedGrid ? currentGridPage * GRID_PAGE_SIZE : 0;
-    const end = shouldUsePagedGrid ? start + GRID_PAGE_SIZE : cards.length;
+    const start = shouldUsePagedGrid ? currentGridPage * pageSize : 0;
+    const end = shouldUsePagedGrid ? start + pageSize : cards.length;
     const visibleCards = cards.slice(start, end);
     const gridCols = getGridColumns(visibleCards.length);
     videoStage.classList.add(`grid-${gridCols}`);
@@ -715,7 +725,7 @@ function removeRemoteVideo(sid) {
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
   }
   const totalCards = document.querySelectorAll('.video-card').length;
-  const totalPages = Math.max(1, Math.ceil(totalCards / GRID_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
   currentGridPage = Math.min(currentGridPage, totalPages - 1);
   renderLayout();
   updateParticipantCount();
@@ -1706,6 +1716,13 @@ document.addEventListener('fullscreenchange', () => {
   }
 });
 
+window.addEventListener('resize', () => {
+  const totalCards = getRenderableCards().length;
+  const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
+  currentGridPage = Math.min(currentGridPage, totalPages - 1);
+  renderLayout();
+});
+
 videoPrevPageBtn?.addEventListener('click', () => {
   if (currentGridPage <= 0) return;
   currentGridPage -= 1;
@@ -1713,7 +1730,7 @@ videoPrevPageBtn?.addEventListener('click', () => {
 });
 videoNextPageBtn?.addEventListener('click', () => {
   const totalCards = getRenderableCards().length;
-  const totalPages = Math.max(1, Math.ceil(totalCards / GRID_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
   if (currentGridPage >= totalPages - 1) return;
   currentGridPage += 1;
   renderLayout();

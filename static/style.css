@@ -2958,3 +2958,47 @@ video:-webkit-full-screen {
     margin-top: 4px;
   }
 }
+
+
+/* v6.4.12 desktop pager + chat column alignment */
+@media (min-width: 961px) {
+  .video-panel {
+    grid-auto-flow: row;
+    align-items: start;
+  }
+
+  .video-panel > #videoStage {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .video-panel > #videoPager {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: center;
+    width: 100%;
+    margin-top: 12px;
+    margin-bottom: 0;
+  }
+
+  .video-panel > #chatWindow {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: stretch;
+  }
+
+  .video-panel > #chatShowBtn,
+  .video-panel > #chatContextMenu {
+    grid-column: 2;
+  }
+
+  .video-stage.grid-layout.grid-3 .video-main,
+  .video-stage.paged-grid.grid-3 .video-main {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .video-stage.grid-layout .video-main .video-card,
+  .video-stage.paged-grid .video-main .video-card {
+    aspect-ratio: 16 / 9;
+  }
+}
