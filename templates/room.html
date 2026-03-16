@@ -528,6 +528,21 @@ function resumeVisibleVideoPlayback() {
   });
 }
 
+function setPagedCardVisibility(card, visible) {
+  if (!card) return;
+  card.classList.toggle('page-hidden', !visible);
+  card.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function stableAppendCards(container, cards) {
+  if (!container) return;
+  cards.forEach(card => {
+    if (card.parentElement !== container || card !== container.lastElementChild) {
+      container.appendChild(card);
+    }
+  });
+}
+
 function schedulePlaybackRecovery(reason = 'layout') {
   clearTimeout(playbackRecoveryTimer);
   playbackRecoveryTimer = setTimeout(() => {
@@ -553,10 +568,10 @@ function renderLayout(force = false) {
     return;
   }
 
-  videoMain.innerHTML = '';
-  videoSidebar.innerHTML = '';
-
-  cards.forEach(card => card.classList.remove('is-focused', 'is-sidebar'));
+  cards.forEach(card => {
+    card.classList.remove('is-focused', 'is-sidebar');
+    setPagedCardVisibility(card, true);
+  });
   videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
 
   const pageSize = getGridPageSize();
@@ -576,18 +591,25 @@ function renderLayout(force = false) {
 
   if (shouldUseGrid || shouldUsePagedGrid) {
     videoStage.classList.add('sidebar-hidden');
+    videoSidebar.innerHTML = '';
     const start = shouldUsePagedGrid ? currentGridPage * pageSize : 0;
     const end = shouldUsePagedGrid ? start + pageSize : cards.length;
     const visibleCards = cards.slice(start, end);
+    const visibleSet = new Set(visibleCards);
     const gridCols = getGridColumns(visibleCards.length);
     videoStage.classList.add(`grid-${gridCols}`);
     if (shouldUsePagedGrid) videoStage.classList.add('paged-grid');
-    visibleCards.forEach(card => videoMain.appendChild(card));
+    stableAppendCards(videoMain, cards);
+    cards.forEach(card => setPagedCardVisibility(card, visibleSet.has(card)));
+    const emptyState = videoMain.querySelector('.video-empty-state');
+    if (emptyState) emptyState.remove();
     updateVideoPager(cards.length, totalPages);
-    schedulePlaybackRecovery('grid-render');
+    schedulePlaybackRecovery(shouldUsePagedGrid ? 'grid-page-switch' : 'grid-render');
     return;
   }
 
+  videoMain.innerHTML = '';
+  videoSidebar.innerHTML = '';
   updateVideoPager(cards.length, totalPages);
   focusTarget.classList.add('is-focused');
   videoMain.appendChild(focusTarget);

@@ -3231,3 +3231,48 @@ video:-webkit-full-screen {
     min-width: 0;
   }
 }
+
+
+/* v6.4.21 remote video paging freeze fix + mobile pager placement */
+.video-card.page-hidden {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .video-panel > #videoStage {
+    order: 1 !important;
+  }
+
+  .video-panel > #videoPager {
+    order: 2 !important;
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    margin: 8px 0 2px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+    align-self: stretch !important;
+    z-index: auto !important;
+  }
+
+  .video-panel > #chatWindow {
+    order: 3 !important;
+  }
+
+  .video-pager-left,
+  .video-pager-center,
+  .video-pager-right {
+    width: auto !important;
+    flex: 0 0 auto !important;
+  }
+
+  .video-pager {
+    flex-wrap: nowrap !important;
+    gap: 10px !important;
+  }
+
+  .pager-home-btn,
+  .pager-btn {
+    min-width: 52px;
+  }
+}
