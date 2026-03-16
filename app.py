@@ -1154,7 +1154,8 @@ def ensure_runtime_room(meeting):
         "expiry_timer": None,
         "lang": session.get("lang", "zh"),
         "traffic_last_sync": time.time(),
-        "danmaku_enabled": False,
+        "danmaku_enabled": True,
+        "active_sharer_sid": None,
         "chat_history": [],
         "chat_clear_markers": {},
     }
@@ -1607,7 +1608,8 @@ def api_create_room():
         "expiry_timer": None,
         "lang": session.get("lang", "zh"),
         "traffic_last_sync": time.time(),
-        "danmaku_enabled": False,
+        "danmaku_enabled": True,
+        "active_sharer_sid": None,
         "chat_history": [],
         "chat_clear_markers": {},
     }
@@ -2094,6 +2096,7 @@ def on_join_room(data):
             "participant_count": len(room["participants"]),
             "host_present": bool(room.get("host_present")),
             "danmaku_enabled": bool(room.get("danmaku_enabled")),
+            "active_sharer_sid": room.get("active_sharer_sid"),
             "chat_history": visible_chat_history,
         },
     )
@@ -2725,7 +2728,25 @@ def on_room_ui_event(data):
     if not info:
         return
     room_id = info["room_id"]
+    room = rooms.get(room_id)
+    if not room:
+        return
     payload = data or {}
+    event_type = (payload.get("type") or "").strip()
+    if event_type == "screen_share_started":
+        active_sharer_sid = room.get("active_sharer_sid")
+        if active_sharer_sid and active_sharer_sid != sid:
+            emit("room_ui_event", {
+                "type": "screen_share_denied",
+                "from": active_sharer_sid,
+                "activeSharerSid": active_sharer_sid,
+                "message": "Another participant is already sharing the screen" if room.get("lang") != "zh" else "已有其他用户正在共享屏幕",
+            }, to=sid)
+            return
+        room["active_sharer_sid"] = sid
+    elif event_type == "screen_share_stopped":
+        if room.get("active_sharer_sid") == sid:
+            room["active_sharer_sid"] = None
     payload["from"] = sid
     emit("room_ui_event", payload, room=room_id, include_self=False)
 
@@ -2769,6 +2790,9 @@ def on_leave_room(*_args):
         name = room["participants"][sid]["name"]
         del room["participants"][sid]
         host_left = False
+        if room.get("active_sharer_sid") == sid:
+            room["active_sharer_sid"] = None
+            socketio.emit("room_ui_event", {"type": "screen_share_stopped", "from": sid}, room=room_id)
         if current_user.is_authenticated and current_user.id == room.get("host_user_id"):
             if room.get("host_present"):
                 host_left = True

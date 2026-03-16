@@ -13,7 +13,6 @@
       <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
     </div>
     <span class="user-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
-    <a class="chip" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>
     <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
   </div>
 </header>
@@ -22,8 +21,6 @@
   <aside class="panel side-panel panel-glow">
     <h2>{{ t('permissions') }}</h2>
     <div class="stack-controls button-grid-2">
-      <button class="primary-btn slim-btn" id="requestMediaBtn">{{ t('request_media') }}</button>
-      <button class="ghost-btn" id="switchCameraBtn">{{ t('switch_camera') }}</button>
       <button class="ghost-btn" id="shareScreenBtn">{{ t('share_screen') }}</button>
       <button class="ghost-btn" id="virtualBgBtn">{{ t('virtual_bg') }}</button>
       <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
@@ -42,28 +39,19 @@
         <button class="ghost-btn" id="saveProfileBtn">{{ t('save') }}</button>
       </div>
     </div>
-    <div class="mini-panel">
-      <div class="muted">{{ t('join_defaults') }}</div>
-      <div class="status-grid compact-grid">
-        <div><span>{{ t('danmaku_display') }}</span><strong>{{ ('开启' if default_danmaku_enabled else '关闭') if lang == 'zh' else ('On' if default_danmaku_enabled else 'Off') }}</strong></div>
-        <div><span>{{ t('camera') }}</span><strong>{{ ('开启' if auto_enable_camera else '关闭') if lang == 'zh' else ('On' if auto_enable_camera else 'Off') }}</strong></div>
-        <div><span>{{ t('mic') }}</span><strong>{{ ('开启' if auto_enable_microphone else '关闭') if lang == 'zh' else ('On' if auto_enable_microphone else 'Off') }}</strong></div>
-      </div>
-      <a class="ghost-btn wide-link mt-12" href="{{ url_for('account_page') }}">{{ t('open_account_preferences') }}</a>
-    </div>
-    <div class="mini-panel">
-      <div class="muted">{{ t('quick_switch_room') }}</div>
-      <label>{{ t('room_id') }}</label>
-      <input id="switchRoomId" maxlength="6" value="{{ room_id }}" />
-      <label>{{ t('room_password') }}</label>
-      <input id="switchRoomPassword" maxlength="16" value="{{ room_password }}" />
-      <button class="ghost-btn wide-link mt-12" id="switchRoomBtn">{{ t('switch_room') }}</button>
-    </div>
+
     <div class="mini-panel">
       <div class="muted">{{ t('invite_link') }}</div>
       <div class="row-compact">
         <input id="inviteInput" readonly value="{{ invite_url }}" />
         <button class="ghost-btn" id="copyInviteBtn">{{ t('copy') }}</button>
+      </div>
+      <div class="row-compact" style="margin-top:8px;">
+        <button class="ghost-btn" id="toggleInviteQrBtn" type="button">{{ '显示二维码' if lang == 'zh' else 'Show QR' }}</button>
+      </div>
+      <div id="inviteQrWrap" class="hidden" style="margin-top:10px;text-align:center;">
+        <img id="inviteQrImg" alt="{{ '邀请二维码' if lang == 'zh' else 'Invite QR code' }}" style="max-width:220px;width:100%;height:auto;border-radius:12px;background:#fff;padding:8px;" />
+        <div class="muted" style="margin-top:6px;">{{ '手机扫码加入会议' if lang == 'zh' else 'Scan with phone to join' }}</div>
       </div>
     </div>
     <div class="mini-panel">
@@ -88,7 +76,6 @@
         <button id="videoPrevPageBtn" class="ghost-btn pager-btn" type="button">{{ '上一页' if lang == 'zh' else 'Previous' }}</button>
       </div>
       <div class="video-pager-center">
-        <input id="videoSearchInput" class="video-search-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="{{ '检索参会者 / 会议ID' if lang == 'zh' else 'Search participant / meeting ID' }}" />
         <span id="videoPagerInfo" class="video-pager-info">1 / 1</span>
       </div>
       <div class="video-pager-right">
@@ -309,6 +296,9 @@ const videoNextPageBtn = document.getElementById('videoNextPageBtn');
 const videoHomePageBtn = document.getElementById('videoHomePageBtn');
 const videoSearchInput = document.getElementById('videoSearchInput');
 const videoPagerInfo = document.getElementById('videoPagerInfo');
+const shareScreenBtn = document.getElementById('shareScreenBtn');
+const virtualBgBtn = document.getElementById('virtualBgBtn');
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 function setStatus(msg, cls='') {
   if (!statusBox) return;
@@ -318,6 +308,44 @@ function setStatus(msg, cls='') {
 
 function getDisplayName(sid) {
   return sid === 'local' ? `${USER_NAME} · {{ t('local_you') }}` : (participantMeta[sid]?.name || sid);
+}
+
+function isMobileDevice() {
+  return window.matchMedia('(max-width: 768px)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+async function safePlayVideo(videoEl) {
+  if (!videoEl) return false;
+  try {
+    const p = videoEl.play?.();
+    if (p && typeof p.then === 'function') await p;
+    return true;
+  } catch (_) {
+    const retry = () => {
+      videoEl.play?.().catch(() => {});
+      window.removeEventListener('touchstart', retry, true);
+      window.removeEventListener('click', retry, true);
+    };
+    window.addEventListener('touchstart', retry, true);
+    window.addEventListener('click', retry, true);
+    return false;
+  }
+}
+
+function updateShareUiState() {
+  const canShare = !!navigator.mediaDevices?.getDisplayMedia;
+  const occupiedByOther = !!currentSharerSid && currentSharerSid !== 'local';
+  if (shareScreenBtn) {
+    shareScreenBtn.disabled = !canShare || occupiedByOther;
+    shareScreenBtn.title = !canShare
+      ? {{ ('当前设备/浏览器不支持共享屏幕' if lang == 'zh' else 'This device/browser does not support screen sharing')|tojson }}
+      : (occupiedByOther ? {{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }} : '');
+  }
+  if (virtualBgBtn) {
+    const disabledByShare = !!isSharingScreen || !!currentSharerSid;
+    virtualBgBtn.disabled = disabledByShare;
+    virtualBgBtn.title = disabledByShare ? {{ ('共享屏幕期间不可使用虚拟背景' if lang == 'zh' else 'Virtual background is unavailable during screen sharing')|tojson }} : '';
+  }
 }
 
 const roomDebugEnabled = ROOM_TEST_PARAMS.get('debugRoom') === '1';
@@ -471,6 +499,9 @@ function ensureCard(sid, displayName = null, isLocal = false) {
     videoEl.autoplay = true;
     videoEl.playsInline = true;
   }
+  videoEl.setAttribute('autoplay', 'autoplay');
+  videoEl.setAttribute('playsinline', 'playsinline');
+  videoEl.setAttribute('webkit-playsinline', 'true');
   videoEl.className = 'video-el';
   card.prepend(videoEl);
 
@@ -606,12 +637,13 @@ function renderLayout(force = false) {
   });
 
   videoStage.classList.toggle('sidebar-hidden', hiddenSidebar || sidebarCards.length === 0);
+  updateShareUiState();
 }
 
 function focusParticipant(sid, opts = {}) {
   focusedSid = sid;
   if (typeof opts.hideSidebar === 'boolean') hiddenSidebar = opts.hideSidebar;
-  if (opts.screenShare) currentSharerSid = sid;
+  if (Object.prototype.hasOwnProperty.call(opts, 'screenShare')) currentSharerSid = opts.screenShare ? sid : null;
   renderLayout();
 }
 
@@ -685,6 +717,7 @@ function deactivateVirtualBackground(message = null) {
 function useLocalOutputStream(stream) {
   localStream = stream;
   localVideo.srcObject = stream;
+  safePlayVideo(localVideo);
   const localCard = ensureCard('local', getDisplayName('local'), true);
   updatePlaceholder(localCard, !!stream?.getVideoTracks?.()[0]?.enabled);
   syncPeerMedia().catch(err => console.error(err));
@@ -745,24 +778,39 @@ async function transcodeRecordingBlob(blob, filename = 'meeting-recording.webm')
   return await response.blob();
 }
 
-async function requestMedia(forceFacingMode = null, manualRequest = false) {
+async function requestMedia(forceFacingMode = null, manualRequest = false, preferredKinds = null) {
+  const wantsVideo = Array.isArray(preferredKinds) ? preferredKinds.includes('video') : (manualRequest ? true : !!PREF_AUTO_ENABLE_CAMERA);
+  const wantsAudio = Array.isArray(preferredKinds) ? preferredKinds.includes('audio') : (manualRequest ? true : !!PREF_AUTO_ENABLE_MICROPHONE);
+  if (!wantsVideo && !wantsAudio) {
+    setStatus({{ ('当前未设置自动打开摄像头或麦克风，请手动开启。' if lang == 'zh' else 'Camera and microphone are both off by default. Enable either one manually when needed.')|tojson }});
+    return null;
+  }
   try {
-    if (rawCameraStream) stopStreamTracks(rawCameraStream);
-    disableVirtualBackgroundState({ stopCanvas: true });
-
-    const wantsVideo = manualRequest ? true : !!PREF_AUTO_ENABLE_CAMERA;
-    const wantsAudio = manualRequest ? true : !!PREF_AUTO_ENABLE_MICROPHONE;
-    if (!wantsVideo && !wantsAudio) {
-      setStatus({{ ('当前偏好为入会不自动开启摄像头与麦克风，可手动点击“申请摄像头/麦克风权限”' if lang == 'zh' else 'Your preferences keep camera and microphone off when joining. Use the media button to enable them manually.')|tojson }});
-      return;
-    }
     const constraints = {
       audio: wantsAudio,
-      video: wantsVideo ? (forceFacingMode ? { facingMode: { ideal: forceFacingMode } } : true) : false,
+      video: wantsVideo ? (forceFacingMode && !IS_IOS ? { facingMode: { ideal: forceFacingMode } } : true) : false,
     };
-    rawCameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    const nextRawStream = await navigator.mediaDevices.getUserMedia(constraints);
+    const nextVideoTrack = nextRawStream.getVideoTracks()[0] || null;
+    const nextAudioTrack = nextRawStream.getAudioTracks()[0] || null;
+
+    if (rawCameraStream) {
+      const oldVideoTrack = rawCameraStream.getVideoTracks()[0] || null;
+      const oldAudioTrack = rawCameraStream.getAudioTracks()[0] || null;
+      if (oldVideoTrack && nextVideoTrack && oldVideoTrack !== nextVideoTrack) { try { oldVideoTrack.stop(); } catch (_) {} }
+      if (oldAudioTrack && nextAudioTrack && oldAudioTrack !== nextAudioTrack) { try { oldAudioTrack.stop(); } catch (_) {} }
+      const merged = new MediaStream();
+      if (nextVideoTrack || oldVideoTrack) merged.addTrack(nextVideoTrack || oldVideoTrack);
+      if (nextAudioTrack || oldAudioTrack) merged.addTrack(nextAudioTrack || oldAudioTrack);
+      rawCameraStream = merged;
+    } else {
+      rawCameraStream = nextRawStream;
+    }
+
+    disableVirtualBackgroundState({ stopCanvas: true });
     rawPreviewVideo.srcObject = rawCameraStream;
-    await rawPreviewVideo.play().catch(() => {});
+    await safePlayVideo(rawPreviewVideo);
+
     if (!manualRequest) {
       rawCameraStream.getVideoTracks().forEach(track => { track.enabled = !!PREF_AUTO_ENABLE_CAMERA; });
       rawCameraStream.getAudioTracks().forEach(track => { track.enabled = !!PREF_AUTO_ENABLE_MICROPHONE; });
@@ -770,7 +818,7 @@ async function requestMedia(forceFacingMode = null, manualRequest = false) {
 
     useLocalOutputStream(rawCameraStream);
 
-    if (virtualBgImageDataUrl) {
+    if (virtualBgImageDataUrl && !isSharingScreen && !currentSharerSid) {
       try {
         await activateVirtualBackground();
       } catch (vbgErr) {
@@ -780,10 +828,19 @@ async function requestMedia(forceFacingMode = null, manualRequest = false) {
     } else {
       setStatus(TEXT_PERMISSION_READY);
     }
+    return rawCameraStream;
   } catch (err) {
     console.error(err);
     setStatus(TEXT_PERMISSION_FAILED + ': ' + err.message, 'error');
+    return null;
   }
+}
+
+async function ensureRequestedTrack(kind) {
+  const track = kind === 'video' ? rawCameraStream?.getVideoTracks?.()[0] : rawCameraStream?.getAudioTracks?.()[0];
+  if (track) return track;
+  const stream = await requestMedia(currentFacingMode, true, [kind]);
+  return kind === 'video' ? stream?.getVideoTracks?.()[0] : stream?.getAudioTracks?.()[0];
 }
 
 async function syncPeerMedia(targetSid = null) {
@@ -864,7 +921,9 @@ function addRemoteParticipant(sid, name) {
 
 function addRemoteVideo(sid, stream) {
   const card = ensureCard(sid, getDisplayName(sid), false);
-  card.querySelector('video').srcObject = stream;
+  const videoEl = card.querySelector('video');
+  videoEl.srcObject = stream;
+  safePlayVideo(videoEl);
   updatePlaceholder(card, true);
   renderLayout();
 }
@@ -878,6 +937,7 @@ function removeRemoteVideo(sid) {
     hiddenSidebar = false;
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
   }
+  updateShareUiState();
   const totalCards = document.querySelectorAll('.video-card').length;
   const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
   currentGridPage = Math.min(currentGridPage, totalPages - 1);
@@ -1338,11 +1398,53 @@ function appendChatMessage(data) {
 }
 
 async function copyText(text) {
-  if (!text) return;
+  if (!text) return false;
+
   try {
-    await navigator.clipboard.writeText(text);
-    setStatus(TEXT_COPY_SUCCESS);
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      setStatus(TEXT_COPY_SUCCESS);
+      return true;
+    }
   } catch (_) {}
+
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', 'readonly');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    ta.style.pointerEvents = 'none';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) {
+      setStatus(TEXT_COPY_SUCCESS);
+      return true;
+    }
+  } catch (_) {}
+
+  try {
+    const input = document.getElementById('inviteInput');
+    if (input) {
+      input.focus();
+      input.removeAttribute('readonly');
+      input.select();
+      input.setSelectionRange(0, input.value.length);
+      input.setAttribute('readonly', 'readonly');
+    }
+  } catch (_) {}
+
+  try {
+    window.prompt({{ ('复制失败，请手动复制下面的链接：' if lang == 'zh' else 'Copy failed. Please copy this link manually:')|tojson }}, text);
+  } catch (_) {}
+
+  setStatus({{ ('复制失败，请长按或手动复制' if lang == 'zh' else 'Copy failed, please copy manually')|tojson }}, 'error');
+  return false;
 }
 
 async function translateToEnglish(item, text) {
@@ -1808,6 +1910,14 @@ socket.on('join_ok', async (data) => {
   focusParticipant('local');
   if (IS_GRID_TEST_MODE) seedFakeParticipants();
   danmakuEnabled = !!data.danmaku_enabled;
+  currentSharerSid = data?.active_sharer_sid || null;
+  if (currentSharerSid) {
+    focusedSid = currentSharerSid;
+    hiddenSidebar = true;
+    renderLayout();
+  } else {
+    updateShareUiState();
+  }
   if (data && data.host_present === false && IS_HOST) {
     setStatus(TEXT_HOST_RETURNED_ROOM);
   } else if (data && data.host_present === false) {
@@ -1933,13 +2043,19 @@ socket.on('signal', async (data) => {
 socket.on('room_ui_event', (data) => {
   if (!data || !data.type) return;
   if (data.type === 'screen_share_started') {
-    focusParticipant(data.from, { hideSidebar: !!data.hideSidebar, screenShare: true });
+    currentSharerSid = data.from;
+    focusParticipant(data.from, { hideSidebar: true, screenShare: true });
+    setStatus(TEXT_SCREEN_SHARE_MODE);
   } else if (data.type === 'screen_share_stopped') {
     currentSharerSid = null;
     hiddenSidebar = false;
     focusedSid = 'local';
     renderLayout();
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
+  } else if (data.type === 'screen_share_denied') {
+    currentSharerSid = data.activeSharerSid || currentSharerSid;
+    updateShareUiState();
+    setStatus(data.message || {{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }}, 'warning');
   } else if (data.type === 'danmaku_toggled') {
     danmakuEnabled = !!data.enabled;
     setStatus(danmakuEnabled ? TEXT_DANMAKU_ON : TEXT_DANMAKU_OFF);
@@ -1996,17 +2112,16 @@ videoNextPageBtn?.addEventListener('click', () => {
   currentGridPage += 1;
   renderLayout();
 });
+videoHomePageBtn?.addEventListener('click', () => {
+  if (currentGridPage <= 0) return;
+  currentGridPage = 0;
+  renderLayout();
+});
 
-document.getElementById('requestMediaBtn').onclick = () => requestMedia(currentFacingMode, true);
-document.getElementById('switchCameraBtn').onclick = async () => {
-  currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-  await requestMedia(currentFacingMode, true);
-};
 document.getElementById('toggleMicBtn').onclick = async () => {
   let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
   if (!rawTrack) {
-    await requestMedia(currentFacingMode, true);
-    rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
+    rawTrack = await ensureRequestedTrack('audio');
     if (!rawTrack) return;
   }
   rawTrack.enabled = !rawTrack.enabled;
@@ -2018,8 +2133,7 @@ document.getElementById('toggleCameraBtn').onclick = async () => {
   let rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
   const localCard = ensureCard('local', getDisplayName('local'), true);
   if (!rawTrack) {
-    await requestMedia(currentFacingMode, true);
-    rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
+    rawTrack = await ensureRequestedTrack('video');
     if (!rawTrack) return;
   }
   rawTrack.enabled = !rawTrack.enabled;
@@ -2032,6 +2146,14 @@ document.getElementById('toggleCameraBtn').onclick = async () => {
   setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 };
 document.getElementById('shareScreenBtn').onclick = async () => {
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    setStatus({{ ('当前设备/浏览器不支持共享屏幕' if lang == 'zh' else 'This device/browser does not support screen sharing')|tojson }}, 'warning');
+    return;
+  }
+  if (currentSharerSid && currentSharerSid !== 'local') {
+    setStatus({{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }}, 'warning');
+    return;
+  }
   try {
     const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
     const screenTrack = screenStream.getVideoTracks()[0];
@@ -2041,11 +2163,15 @@ document.getElementById('shareScreenBtn').onclick = async () => {
       if (sender) sender.replaceTrack(screenTrack);
     });
     localVideo.srcObject = screenStream;
+    safePlayVideo(localVideo);
     updatePlaceholder(screenCard, true);
     isSharingScreen = true;
-    focusParticipant('local', { hideSidebar: false, screenShare: true });
+    currentSharerSid = 'local';
+    hiddenSidebar = true;
+    focusedSid = 'local';
+    renderLayout();
     setStatus(TEXT_SCREEN_SHARE_MODE);
-    broadcastUiEvent({ type: 'screen_share_started', hideSidebar: false });
+    broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true });
 
     screenTrack.onended = async () => {
       isSharingScreen = false;
@@ -2054,7 +2180,7 @@ document.getElementById('shareScreenBtn').onclick = async () => {
       } else if (rawCameraStream) {
         fallbackToRawCamera();
       } else {
-        await requestMedia(currentFacingMode, true);
+        await requestMedia(currentFacingMode, true, ['video', 'audio']);
       }
       currentSharerSid = null;
       hiddenSidebar = false;
@@ -2068,6 +2194,10 @@ document.getElementById('shareScreenBtn').onclick = async () => {
   }
 };
 document.getElementById('virtualBgBtn').onclick = async () => {
+  if (isSharingScreen || currentSharerSid) {
+    setStatus({{ ('共享屏幕期间不可使用虚拟背景' if lang == 'zh' else 'Virtual background is unavailable during screen sharing')|tojson }}, 'warning');
+    return;
+  }
   if (virtualBgEnabled) {
     deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF);
     return;
@@ -2135,9 +2265,27 @@ document.getElementById('switchRoomBtn').onclick = async () => {
   leaveMeetingAndExit(null, `/room/${nextRoomId}?pwd=${encodeURIComponent(nextPwd)}`);
 };
 document.getElementById('copyInviteBtn').onclick = async () => {
-  await navigator.clipboard.writeText(document.getElementById('inviteInput').value);
-  setStatus(TEXT_COPIED);
+  await copyText(document.getElementById('inviteInput').value);
 };
+
+const inviteQrWrap = document.getElementById('inviteQrWrap');
+const inviteQrImg = document.getElementById('inviteQrImg');
+const toggleInviteQrBtn = document.getElementById('toggleInviteQrBtn');
+if (toggleInviteQrBtn && inviteQrWrap && inviteQrImg) {
+  const inviteText = (document.getElementById('inviteInput')?.value || '').trim();
+  const qrUrl = inviteText
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(inviteText)}`
+    : '';
+  if (qrUrl) inviteQrImg.src = qrUrl;
+  toggleInviteQrBtn.onclick = () => {
+    const willShow = inviteQrWrap.classList.contains('hidden');
+    if (willShow && qrUrl && !inviteQrImg.src) inviteQrImg.src = qrUrl;
+    inviteQrWrap.classList.toggle('hidden', !willShow);
+    toggleInviteQrBtn.textContent = willShow
+      ? {{ ('隐藏二维码' if lang == 'zh' else 'Hide QR')|tojson }}
+      : {{ ('显示二维码' if lang == 'zh' else 'Show QR')|tojson }};
+  };
+}
 
 window.addEventListener('beforeunload', () => {
   if (!hasLeftMeeting) {
