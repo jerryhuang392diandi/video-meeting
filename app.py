@@ -1379,6 +1379,42 @@ def unbind_user_socket(user_id, sid):
         user_active_sids.pop(user_id, None)
 
 
+def prune_duplicate_room_sockets(room_id, user_id, keep_sid=None):
+    if not room_id or not user_id:
+        return []
+    room = rooms.get(room_id)
+    if not room:
+        return []
+    removed = []
+    for stale_sid, participant_info in list(room.get("participants", {}).items()):
+        if stale_sid == keep_sid:
+            continue
+        if participant_info.get("user_id") != user_id:
+            continue
+        removed.append({
+            "sid": stale_sid,
+            "name": participant_info.get("name") or "Guest",
+        })
+        room["participants"].pop(stale_sid, None)
+        sid_to_user.pop(stale_sid, None)
+        unbind_user_socket(user_id, stale_sid)
+        try:
+            socketio.server.leave_room(stale_sid, room_id, namespace='/')
+        except Exception as exc:
+            debug_log('SOCKET_DUPLICATE_LEAVE_ROOM_ERROR', room_id=room_id, user_id=user_id, sid=stale_sid, error=str(exc))
+        participant = MeetingParticipant.query.filter_by(sid=stale_sid).order_by(MeetingParticipant.id.desc()).first()
+        if participant and not participant.left_at:
+            participant.left_at = datetime.utcnow()
+        try:
+            socketio.server.disconnect(stale_sid, namespace='/')
+        except Exception as exc:
+            debug_log('SOCKET_DUPLICATE_DISCONNECT_ERROR', room_id=room_id, user_id=user_id, sid=stale_sid, error=str(exc))
+    if removed:
+        debug_log('SOCKET_DUPLICATE_PRUNED', room_id=room_id, user_id=user_id, keep_sid=keep_sid, removed=removed, remaining_participants=list(room.get("participants", {}).keys()))
+    return removed
+
+
+
 @app.before_request
 def ensure_default_lang():
     session.setdefault("lang", "zh")
@@ -2060,12 +2096,13 @@ def on_join_room(data):
         return
 
     cancel_room_cleanup(room_id)
-    existing = [{"sid": osid, "name": info["name"]} for osid, info in room["participants"].items()]
+    existing = [{"sid": osid, "name": info["name"]} for osid, info in room["participants"].items() if info.get("user_id") != current_user.id]
     room["participants"][sid] = {"name": user_name, "joined_at": time.time(), "user_id": current_user.id}
     sid_to_user[sid] = {"room_id": room_id, "name": user_name, "user_id": current_user.id}
     bind_user_socket(current_user.id, sid)
     join_room(room_id)
-    debug_log('SOCKET_JOIN_ROOM_REGISTERED', sid=sid, room_id=room_id, user_id=current_user.id, room_participants=list(room['participants'].keys()), user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids}, sid_to_user_entry=sid_to_user.get(sid))
+    pruned_duplicates = prune_duplicate_room_sockets(room_id, current_user.id, keep_sid=sid)
+    debug_log('SOCKET_JOIN_ROOM_REGISTERED', sid=sid, room_id=room_id, user_id=current_user.id, pruned_duplicates=pruned_duplicates, room_participants=list(room['participants'].keys()), user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids}, sid_to_user_entry=sid_to_user.get(sid))
 
     host_returned = False
     danmaku_auto_enabled_by_host = False
@@ -2107,6 +2144,12 @@ def on_join_room(data):
         room=room_id,
         include_self=False,
     )
+    for removed in pruned_duplicates:
+        socketio.emit(
+            "participant_left",
+            {"sid": removed["sid"], "name": removed["name"], "participant_count": len(room["participants"])},
+            room=room_id,
+        )
     broadcast_room_participant_snapshot(room_id)
 
     if host_returned:
@@ -2775,10 +2818,19 @@ def on_leave_room(*_args):
         name = room["participants"][sid]["name"]
         del room["participants"][sid]
         host_left = False
-        if current_user.is_authenticated and current_user.id == room.get("host_user_id"):
-            if room.get("host_present"):
-                host_left = True
-            room["host_present"] = False
+        leaving_user_id = info.get("user_id")
+        if leaving_user_id and leaving_user_id == room.get("host_user_id"):
+            remaining_host_sids = [
+                psid for psid, pinfo in room.get("participants", {}).items()
+                if psid != sid and pinfo.get("user_id") == leaving_user_id
+            ]
+            if remaining_host_sids:
+                room["host_present"] = True
+                debug_log('SOCKET_LEAVE_HOST_DUPLICATE_REMAINING', sid=sid, room_id=room_id, remaining_host_sids=remaining_host_sids)
+            else:
+                if room.get("host_present"):
+                    host_left = True
+                room["host_present"] = False
         participant = MeetingParticipant.query.filter_by(sid=sid).order_by(MeetingParticipant.id.desc()).first()
         if participant and not participant.left_at:
             participant.left_at = datetime.utcnow()
