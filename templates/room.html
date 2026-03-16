@@ -158,6 +158,7 @@ const TEXT_CAMERA_ON = {{ t('camera_on')|tojson }};
 const TEXT_CAMERA_OFF = {{ t('camera_off')|tojson }};
 const TEXT_SCREEN_SHARE_MODE = {{ ('共享屏幕模式已开启' if lang == 'zh' else 'Screen share mode enabled')|tojson }};
 const TEXT_SCREEN_SHARE_STOPPED = {{ ('共享屏幕模式已结束' if lang == 'zh' else 'Screen share mode ended')|tojson }};
+const TEXT_ACTION_UNAVAILABLE_DURING_SCREEN_SHARE = {{ ('共享屏幕期间该操作不可用，请先结束共享屏幕' if lang == 'zh' else 'This action is unavailable while screen sharing. Please stop screen sharing first.')|tojson }};
 const TEXT_NO_VIDEO = {{ ('未开启摄像头' if lang == 'zh' else 'Camera off')|tojson }};
 const TEXT_RECORD_STOP = {{ ('停止录屏' if lang == 'zh' else 'Stop recording')|tojson }};
 const TEXT_RECORD_SAVED = {{ ('录屏文件已保存' if lang == 'zh' else 'Recording saved')|tojson }};
@@ -222,6 +223,9 @@ let screenShareSpotlightSid = null;
 let screenShareRotationTimer = null;
 let localRaisedHand = false;
 let preScreenShareLayoutState = null;
+let localScreenShareStream = null;
+let localScreenShareTrack = null;
+let localScreenShareMonitorTimer = null;
 
 function getGridPageSize() {
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
@@ -534,6 +538,70 @@ function stopScreenShareRotationTimer() {
     clearInterval(screenShareRotationTimer);
     screenShareRotationTimer = null;
   }
+}
+
+function normalizeParticipantSid(sid) {
+  if (!sid) return sid;
+  return sid === socket.id ? 'local' : sid;
+}
+
+function stopLocalScreenShareMonitor() {
+  if (localScreenShareMonitorTimer) {
+    clearInterval(localScreenShareMonitorTimer);
+    localScreenShareMonitorTimer = null;
+  }
+}
+
+function startLocalScreenShareMonitor() {
+  stopLocalScreenShareMonitor();
+  localScreenShareMonitorTimer = setInterval(() => {
+    if (!isSharingScreen) {
+      stopLocalScreenShareMonitor();
+      return;
+    }
+    const ended = !localScreenShareTrack || localScreenShareTrack.readyState === 'ended' || localScreenShareStream?.active === false;
+    if (ended) {
+      endLocalScreenShare({ broadcast: true, statusMessage: TEXT_SCREEN_SHARE_STOPPED });
+    }
+  }, 500);
+}
+
+async function endLocalScreenShare({ broadcast = true, statusMessage = TEXT_SCREEN_SHARE_STOPPED } = {}) {
+  if (!isSharingScreen && !localScreenShareStream && currentSharerSid !== 'local') return;
+  isSharingScreen = false;
+  stopLocalScreenShareMonitor();
+  const endedStream = localScreenShareStream;
+  localScreenShareStream = null;
+  localScreenShareTrack = null;
+
+  if (virtualBgImageDataUrl) {
+    try {
+      await activateVirtualBackground();
+    } catch (vbgErr) {
+      console.error(vbgErr);
+      fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (vbgErr.message || 'unknown error'));
+    }
+  } else if (rawCameraStream) {
+    fallbackToRawCamera();
+  } else {
+    await requestMedia(currentFacingMode, true);
+  }
+
+  currentSharerSid = null;
+  restorePreScreenShareLayoutState();
+  screenShareSpotlightSid = null;
+  stopScreenShareRotationTimer();
+  if (getRenderableCards().length <= getGridPageSize()) hiddenSidebar = false;
+  renderLayout(true);
+
+  if (broadcast) broadcastUiEvent({ type: 'screen_share_stopped' });
+  if (statusMessage) setStatus(statusMessage);
+
+  try {
+    endedStream?.getTracks?.().forEach(track => {
+      try { track.stop(); } catch (_) {}
+    });
+  } catch (_) {}
 }
 
 function capturePreScreenShareLayoutState() {
@@ -2044,6 +2112,9 @@ function cleanupMeetingSession() {
   if (hasLeftMeeting) return;
   hasLeftMeeting = true;
   fakeParticipantMeta = {};
+  stopLocalScreenShareMonitor();
+  localScreenShareStream = null;
+  localScreenShareTrack = null;
   try {
     if (activeRecorder && activeRecorder.state !== 'inactive') activeRecorder.stop();
   } catch (_) {}
@@ -2083,7 +2154,11 @@ socket.on('join_ok', async (data) => {
   focusParticipant('local');
   if (IS_GRID_TEST_MODE) seedFakeParticipants();
   danmakuEnabled = !!data.danmaku_enabled;
-  currentSharerSid = data?.current_sharer_sid || null;
+  const snapshotSharerSid = normalizeParticipantSid(data?.current_sharer_sid || null);
+  currentSharerSid = snapshotSharerSid || null;
+  if (!snapshotSharerSid && (isSharingScreen || localScreenShareStream)) {
+    endLocalScreenShare({ broadcast: false, statusMessage: '' }).catch(err => console.error(err));
+  }
   stageRotationEnabled = typeof data?.stage_rotation_enabled === 'boolean' ? !!data.stage_rotation_enabled : !!PREF_STAGE_ROTATION_ENABLED;
   stageRotationSeconds = Number(data?.stage_rotation_seconds || PREF_STAGE_ROTATION_SECONDS || 15) || 15;
   raisedHands = new Set(Array.isArray(data?.raised_hands) ? data.raised_hands : []);
@@ -2112,7 +2187,11 @@ socket.on('participant_left', (data) => {
 socket.on('participant_snapshot', (data) => {
   const list = Array.isArray(data?.participants) ? data.participants : [];
   const count = Number(data?.participant_count || list.length || 0);
-  currentSharerSid = data?.current_sharer_sid || null;
+  const snapshotSharerSid = normalizeParticipantSid(data?.current_sharer_sid || null);
+  currentSharerSid = snapshotSharerSid || null;
+  if (!snapshotSharerSid && (isSharingScreen || localScreenShareStream)) {
+    endLocalScreenShare({ broadcast: false, statusMessage: '' }).catch(err => console.error(err));
+  }
   stageRotationEnabled = typeof data?.stage_rotation_enabled === 'boolean' ? !!data.stage_rotation_enabled : stageRotationEnabled;
   stageRotationSeconds = Number(data?.stage_rotation_seconds || stageRotationSeconds || 15) || 15;
   const keep = new Set();
@@ -2220,12 +2299,21 @@ socket.on('signal', async (data) => {
 socket.on('room_ui_event', (data) => {
   if (!data || !data.type) return;
   if (data.type === 'screen_share_started') {
+    const sharerSid = normalizeParticipantSid(data.from);
     capturePreScreenShareLayoutState();
-    currentSharerSid = data.from;
-    if (currentSharerSid !== 'local') isSharingScreen = false;
+    currentSharerSid = sharerSid;
+    if (sharerSid !== 'local') isSharingScreen = false;
     syncScreenShareSpotlight(true);
-    focusParticipant(data.from, { hideSidebar: true, screenShare: true });
+    focusParticipant(sharerSid, { hideSidebar: true, screenShare: true });
   } else if (data.type === 'screen_share_stopped') {
+    const stoppedSid = normalizeParticipantSid(data.from);
+    if (stoppedSid === 'local' && (isSharingScreen || currentSharerSid === 'local' || localScreenShareStream)) {
+      endLocalScreenShare({ broadcast: false, statusMessage: TEXT_SCREEN_SHARE_STOPPED }).catch(err => {
+        console.error(err);
+        setStatus(TEXT_SCREEN_SHARE_STOPPED);
+      });
+      return;
+    }
     currentSharerSid = null;
     restorePreScreenShareLayoutState();
     screenShareSpotlightSid = null;
@@ -2312,6 +2400,10 @@ videoNextPageBtn?.addEventListener('click', () => {
 
 document.getElementById('requestMediaBtn')?.addEventListener('click', () => requestMedia(currentFacingMode, true));
 document.getElementById('switchCameraBtn').onclick = async () => {
+  if (isSharingScreen || currentSharerSid === 'local') {
+    setStatus(TEXT_ACTION_UNAVAILABLE_DURING_SCREEN_SHARE, 'warning');
+    return;
+  }
   try {
     const micTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0] || null;
     const micWasEnabled = !!micTrack?.enabled;
@@ -2365,6 +2457,10 @@ document.getElementById('toggleCameraBtn').onclick = async () => {
 };
 
 document.getElementById('shareScreenBtn').onclick = async () => {
+  if (isSharingScreen || currentSharerSid === 'local') {
+    await endLocalScreenShare({ broadcast: true, statusMessage: TEXT_SCREEN_SHARE_STOPPED });
+    return;
+  }
   if (currentSharerSid && currentSharerSid !== 'local') {
     setStatus(TEXT_SINGLE_SCREEN_SHARE_ONLY, 'warning');
     return;
@@ -2373,6 +2469,9 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     capturePreScreenShareLayoutState();
     const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
     const screenTrack = screenStream.getVideoTracks()[0];
+    if (!screenTrack) throw new Error('No screen track available');
+    localScreenShareStream = screenStream;
+    localScreenShareTrack = screenTrack;
     const screenCard = ensureCard('local', getDisplayName('local'), true);
     Object.values(peerConnections).forEach(pc => {
       const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
@@ -2387,30 +2486,32 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     focusParticipant('local', { hideSidebar: true, screenShare: true });
     setStatus(TEXT_SCREEN_SHARE_MODE);
     broadcastUiEvent({ type: 'screen_share_started', hideSidebar: false });
+    startLocalScreenShareMonitor();
 
-    screenTrack.onended = async () => {
-      isSharingScreen = false;
-      if (virtualBgImageDataUrl) {
-        await activateVirtualBackground();
-      } else if (rawCameraStream) {
-        fallbackToRawCamera();
-      } else {
-        await requestMedia(currentFacingMode, true);
-      }
-      currentSharerSid = null;
-      restorePreScreenShareLayoutState();
-      screenShareSpotlightSid = null;
-      stopScreenShareRotationTimer();
-      if (getRenderableCards().length <= getGridPageSize()) hiddenSidebar = false;
-      renderLayout(true);
-      broadcastUiEvent({ type: 'screen_share_stopped' });
-      setStatus(TEXT_SCREEN_SHARE_STOPPED);
+    screenTrack.onended = () => {
+      endLocalScreenShare({ broadcast: true, statusMessage: TEXT_SCREEN_SHARE_STOPPED }).catch(err => {
+        console.error(err);
+        setStatus(TEXT_SCREEN_SHARE_STOPPED);
+      });
+    };
+    screenStream.oninactive = () => {
+      endLocalScreenShare({ broadcast: true, statusMessage: TEXT_SCREEN_SHARE_STOPPED }).catch(err => {
+        console.error(err);
+        setStatus(TEXT_SCREEN_SHARE_STOPPED);
+      });
     };
   } catch (err) {
+    localScreenShareStream = null;
+    localScreenShareTrack = null;
+    stopLocalScreenShareMonitor();
     setStatus(err.message, 'error');
   }
 };
 document.getElementById('virtualBgBtn').onclick = async () => {
+  if (isSharingScreen || currentSharerSid === 'local') {
+    setStatus(TEXT_ACTION_UNAVAILABLE_DURING_SCREEN_SHARE, 'warning');
+    return;
+  }
   if (virtualBgEnabled) {
     deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF);
     return;
