@@ -222,6 +222,28 @@ let stageRotationSeconds = Number(PREF_STAGE_ROTATION_SECONDS || 15) || 15;
 let screenShareSpotlightSid = null;
 let screenShareRotationTimer = null;
 let localRaisedHand = false;
+let activeScreenShareStream = null;
+let activeScreenShareOutputStream = null;
+let activeScreenShareVideoTrack = null;
+let stoppingScreenShare = false;
+
+function getSelfSid() {
+  return socket?.id || null;
+}
+
+function toCardSid(sid) {
+  if (!sid) return null;
+  if (sid === 'local') return 'local';
+  return sid === getSelfSid() ? 'local' : sid;
+}
+
+function normalizeSidList(values) {
+  return (Array.isArray(values) ? values : []).map(toCardSid).filter(Boolean);
+}
+
+function normalizeSidSet(values) {
+  return new Set(normalizeSidList(values));
+}
 
 function getGridPageSize() {
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
@@ -308,31 +330,8 @@ function setStatus(msg, cls='') {
   statusBox.textContent = msg;
 }
 
-function getLocalParticipantSid() {
-  return socket?.id || null;
-}
-
-function canonicalParticipantSid(sid) {
-  if (!sid) return sid;
-  if (sid === 'local') return getLocalParticipantSid() || 'local';
-  return sid;
-}
-
-function toCardSid(participantSid) {
-  const localSid = getLocalParticipantSid();
-  if (!participantSid) return participantSid;
-  if (participantSid === 'local') return 'local';
-  if (localSid && participantSid === localSid) return 'local';
-  return participantSid;
-}
-
 function getDisplayName(sid) {
-  const canonicalSid = canonicalParticipantSid(sid);
-  const localSid = getLocalParticipantSid();
-  if (canonicalSid === 'local' || (localSid && canonicalSid === localSid)) {
-    return `${USER_NAME} · {{ t('local_you') }}`;
-  }
-  return participantMeta[canonicalSid]?.name || fakeParticipantMeta[canonicalSid]?.name || canonicalSid;
+  return sid === 'local' ? `${USER_NAME} · {{ t('local_you') }}` : (participantMeta[sid]?.name || sid);
 }
 
 const roomDebugEnabled = ROOM_TEST_PARAMS.get('debugRoom') === '1';
@@ -525,26 +524,19 @@ function updateRaisedHandBadge(card, visible) {
 }
 
 function applyRaisedHandState(sid, raised) {
-  const canonicalSid = canonicalParticipantSid(sid);
-  if (!canonicalSid) return;
-  if (raised) raisedHands.add(canonicalSid);
-  else raisedHands.delete(canonicalSid);
-  const card = document.getElementById('card-' + CSS.escape(toCardSid(canonicalSid)));
-  if (card) updateRaisedHandBadge(card, raisedHands.has(canonicalSid));
+  if (!sid) return;
+  if (raised) raisedHands.add(sid);
+  else raisedHands.delete(sid);
+  const card = document.getElementById('card-' + sid);
+  if (card) updateRaisedHandBadge(card, raisedHands.has(sid));
 }
 
 function orderedScreenShareCandidates() {
   if (!currentSharerSid) return [];
-  const localSid = getLocalParticipantSid();
-  const base = [localSid || 'local', ...Object.keys(participantMeta), ...Object.keys(fakeParticipantMeta)]
-    .map((sid) => canonicalParticipantSid(sid))
-    .filter((sid) => sid && sid !== currentSharerSid);
-  const seen = new Set();
+  const base = ['local', ...Object.keys(participantMeta), ...Object.keys(fakeParticipantMeta)].filter((sid) => sid !== currentSharerSid);
   const prioritized = [];
   const normal = [];
   base.forEach((sid) => {
-    if (seen.has(sid)) return;
-    seen.add(sid);
     if (raisedHands.has(sid)) prioritized.push(sid);
     else normal.push(sid);
   });
@@ -699,13 +691,13 @@ function renderLayout(force = false) {
   const totalPages = Math.max(1, Math.ceil(cards.length / pageSize));
   currentGridPage = Math.max(0, Math.min(currentGridPage, totalPages - 1));
 
-  const focusTarget = document.getElementById('card-' + CSS.escape(toCardSid(canonicalParticipantSid(focusedSid || 'local')) || 'local')) || document.getElementById('card-local') || cards[0];
+  const focusTarget = document.getElementById('card-' + (focusedSid || 'local')) || document.getElementById('card-local') || cards[0];
   if (!focusTarget) return;
 
   if (currentSharerSid) {
     syncScreenShareSpotlight();
-    const sharerCard = document.getElementById('card-' + CSS.escape(toCardSid(currentSharerSid))) || focusTarget;
-    const spotlightCard = screenShareSpotlightSid ? document.getElementById('card-' + CSS.escape(toCardSid(screenShareSpotlightSid))) : null;
+    const sharerCard = document.getElementById('card-' + currentSharerSid) || focusTarget;
+    const spotlightCard = screenShareSpotlightSid ? document.getElementById('card-' + screenShareSpotlightSid) : null;
     const queueSids = orderedScreenShareQueueSids().filter((sid) => sid !== currentSharerSid && sid !== screenShareSpotlightSid);
     videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
     videoStage.classList.add('focus-layout', 'screen-share-mode', 'screen-share-stacked');
@@ -714,7 +706,7 @@ function renderLayout(force = false) {
     videoSidebar.innerHTML = '';
 
     cards.forEach((card) => {
-      const sid = canonicalParticipantSid(card.dataset.sid || '');
+      const sid = card.dataset.sid || '';
       const visible = sid === currentSharerSid || sid === screenShareSpotlightSid;
       setPagedCardVisibility(card, visible);
     });
@@ -809,10 +801,9 @@ function renderLayout(force = false) {
 }
 
 function focusParticipant(sid, opts = {}) {
-  const canonicalSid = canonicalParticipantSid(sid);
-  focusedSid = toCardSid(canonicalSid || sid);
+  focusedSid = sid;
   if (typeof opts.hideSidebar === 'boolean') hiddenSidebar = opts.hideSidebar;
-  if (opts.screenShare) currentSharerSid = canonicalSid || sid;
+  if (opts.screenShare) currentSharerSid = sid;
   renderLayout();
 }
 
@@ -895,6 +886,90 @@ function useLocalOutputStream(stream) {
   syncPeerMedia().catch(err => console.error(err));
   renderLayout();
   schedulePlaybackRecovery('local-stream-update');
+}
+
+function getPreferredOutgoingAudioTrack() {
+  return rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0] || null;
+}
+
+function buildScreenShareOutputStream(screenStream) {
+  const output = new MediaStream();
+  const videoTrack = screenStream?.getVideoTracks?.()[0] || null;
+  if (videoTrack) output.addTrack(videoTrack);
+  const audioTrack = getPreferredOutgoingAudioTrack();
+  if (audioTrack && !output.getAudioTracks().length) output.addTrack(audioTrack);
+  return output;
+}
+
+function cleanupActiveScreenShareStreams({ stopDisplayTracks = false } = {}) {
+  if (stopDisplayTracks && activeScreenShareStream) stopStreamTracks(activeScreenShareStream);
+  if (activeScreenShareOutputStream && activeScreenShareOutputStream !== activeScreenShareStream) {
+    const outputTracks = activeScreenShareOutputStream.getTracks();
+    outputTracks.forEach((track) => {
+      if (track === activeScreenShareVideoTrack) return;
+      if (rawCameraStream?.getTracks?.().includes(track)) return;
+      try { track.stop(); } catch (_) {}
+    });
+  }
+  activeScreenShareStream = null;
+  activeScreenShareOutputStream = null;
+  activeScreenShareVideoTrack = null;
+}
+
+async function restorePostScreenShareOutput() {
+  if (virtualBgImageDataUrl) {
+    const ok = await activateVirtualBackground();
+    if (ok) return;
+  }
+  if (rawCameraStream) {
+    fallbackToRawCamera();
+    return;
+  }
+  await requestMedia(currentFacingMode, true);
+}
+
+async function stopLocalScreenShare({ broadcast = true, message = TEXT_SCREEN_SHARE_STOPPED, stopDisplayTracks = true } = {}) {
+  if (stoppingScreenShare) return;
+  stoppingScreenShare = true;
+  try {
+    if (!isSharingScreen && currentSharerSid !== 'local' && !activeScreenShareStream) return;
+    isSharingScreen = false;
+    cleanupActiveScreenShareStreams({ stopDisplayTracks });
+    await restorePostScreenShareOutput();
+    currentSharerSid = null;
+    hiddenSidebar = false;
+    focusedSid = 'local';
+    screenShareSpotlightSid = null;
+    stopScreenShareRotationTimer();
+    renderLayout();
+    if (broadcast) broadcastUiEvent({ type: 'screen_share_stopped' });
+    if (message) setStatus(message);
+  } finally {
+    stoppingScreenShare = false;
+  }
+}
+
+async function startLocalScreenShare(screenStream) {
+  const screenTrack = screenStream?.getVideoTracks?.()[0];
+  if (!screenTrack) throw new Error('Screen video track unavailable');
+  cleanupActiveScreenShareStreams({ stopDisplayTracks: false });
+  activeScreenShareStream = screenStream;
+  activeScreenShareVideoTrack = screenTrack;
+  activeScreenShareOutputStream = buildScreenShareOutputStream(screenStream);
+  useLocalOutputStream(activeScreenShareOutputStream);
+  isSharingScreen = true;
+  currentSharerSid = 'local';
+  screenShareSpotlightSid = orderedScreenShareCandidates()[0] || null;
+  syncScreenShareSpotlight(true);
+  focusParticipant('local', { hideSidebar: false, screenShare: true });
+  setStatus(TEXT_SCREEN_SHARE_MODE);
+  broadcastUiEvent({ type: 'screen_share_started', hideSidebar: false });
+  screenTrack.onended = () => {
+    stopLocalScreenShare({ broadcast: true, message: TEXT_SCREEN_SHARE_STOPPED, stopDisplayTracks: false }).catch((err) => {
+      console.error(err);
+      setStatus(err?.message || TEXT_SCREEN_SHARE_STOPPED, 'warning');
+    });
+  };
 }
 
 function getScaledSize(width, height) {
@@ -1095,8 +1170,8 @@ function removeRemoteVideo(sid) {
     stopScreenShareRotationTimer();
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
   }
-  raisedHands.delete(canonicalParticipantSid(sid));
-  if (screenShareSpotlightSid === canonicalParticipantSid(sid)) screenShareSpotlightSid = null;
+  raisedHands.delete(sid);
+  if (screenShareSpotlightSid === sid) screenShareSpotlightSid = null;
   const totalCards = document.querySelectorAll('.video-card').length;
   const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
   currentGridPage = Math.min(currentGridPage, totalPages - 1);
@@ -1986,8 +2061,8 @@ raiseHandBtn?.addEventListener('click', () => {
   localRaisedHand = !localRaisedHand;
   applyRaisedHandState('local', localRaisedHand);
   refreshRaiseHandButton();
-  if (localRaisedHand && currentSharerSid && currentSharerSid !== canonicalParticipantSid('local')) {
-    screenShareSpotlightSid = canonicalParticipantSid('local');
+  if (localRaisedHand && currentSharerSid && currentSharerSid !== 'local') {
+    screenShareSpotlightSid = 'local';
     syncScreenShareSpotlight(true);
     renderLayout();
   }
@@ -2046,10 +2121,10 @@ socket.on('join_ok', async (data) => {
   focusParticipant('local');
   if (IS_GRID_TEST_MODE) seedFakeParticipants();
   danmakuEnabled = !!data.danmaku_enabled;
-  currentSharerSid = data?.current_sharer_sid || null;
+  currentSharerSid = toCardSid(data?.current_sharer_sid) || null;
   stageRotationEnabled = typeof data?.stage_rotation_enabled === 'boolean' ? !!data.stage_rotation_enabled : !!PREF_STAGE_ROTATION_ENABLED;
   stageRotationSeconds = Number(data?.stage_rotation_seconds || PREF_STAGE_ROTATION_SECONDS || 15) || 15;
-  raisedHands = new Set(Array.isArray(data?.raised_hands) ? data.raised_hands : []);
+  raisedHands = normalizeSidSet(data?.raised_hands);
   applyRaisedHandState('local', localRaisedHand);
   syncScreenShareSpotlight(true);
   if (data && data.host_present === false && IS_HOST) {
@@ -2075,7 +2150,7 @@ socket.on('participant_left', (data) => {
 socket.on('participant_snapshot', (data) => {
   const list = Array.isArray(data?.participants) ? data.participants : [];
   const count = Number(data?.participant_count || list.length || 0);
-  currentSharerSid = data?.current_sharer_sid || null;
+  currentSharerSid = toCardSid(data?.current_sharer_sid) || null;
   stageRotationEnabled = typeof data?.stage_rotation_enabled === 'boolean' ? !!data.stage_rotation_enabled : stageRotationEnabled;
   stageRotationSeconds = Number(data?.stage_rotation_seconds || stageRotationSeconds || 15) || 15;
   const keep = new Set();
@@ -2089,7 +2164,7 @@ socket.on('participant_snapshot', (data) => {
       const labelEl = document.querySelector(`#card-${CSS.escape(item.sid)} .video-label`);
       if (labelEl) labelEl.textContent = item.name || item.sid;
     }
-    applyRaisedHandState(item.sid, !!item.raised_hand);
+    applyRaisedHandState(toCardSid(item.sid), !!item.raised_hand);
   });
   Object.keys(participantMeta).forEach((sid) => {
     if (!keep.has(sid)) removeRemoteVideo(sid);
@@ -2102,9 +2177,10 @@ socket.on('participant_snapshot', (data) => {
 
 socket.on('participant_updated', (data) => {
   if (!data || !data.sid) return;
-  if (data.sid === socket.id) { USER_NAME = data.name; }
-  if (participantMeta[data.sid]) participantMeta[data.sid].name = data.name;
-  const card = document.getElementById('card-' + data.sid);
+  const participantSid = toCardSid(data.sid);
+  if (participantSid === 'local') { USER_NAME = data.name; }
+  if (participantMeta[participantSid]) participantMeta[participantSid].name = data.name;
+  const card = document.getElementById('card-' + participantSid);
   const labelEl = card?.querySelector('.video-label');
   if (labelEl) labelEl.textContent = data.name;
   renderMentionPicker();
@@ -2182,11 +2258,12 @@ socket.on('signal', async (data) => {
 
 socket.on('room_ui_event', (data) => {
   if (!data || !data.type) return;
+  const fromSid = toCardSid(data.from);
   if (data.type === 'screen_share_started') {
-    currentSharerSid = canonicalParticipantSid(data.from);
-    if (currentSharerSid !== canonicalParticipantSid('local')) isSharingScreen = false;
+    currentSharerSid = fromSid;
+    if (fromSid !== 'local') isSharingScreen = false;
     syncScreenShareSpotlight(true);
-    focusParticipant(data.from, { hideSidebar: false, screenShare: true });
+    focusParticipant(fromSid || 'local', { hideSidebar: false, screenShare: true });
   } else if (data.type === 'screen_share_stopped') {
     currentSharerSid = null;
     hiddenSidebar = false;
@@ -2202,9 +2279,9 @@ socket.on('room_ui_event', (data) => {
     danmakuEnabled = !!data.enabled;
     setStatus(danmakuEnabled ? TEXT_DANMAKU_ON : TEXT_DANMAKU_OFF);
   } else if (data.type === 'raise_hand') {
-    applyRaisedHandState(data.from, !!data.raised);
-    if (!!data.raised && currentSharerSid && data.from !== currentSharerSid) {
-      screenShareSpotlightSid = canonicalParticipantSid(data.from);
+    applyRaisedHandState(fromSid, !!data.raised);
+    if (!!data.raised && currentSharerSid && fromSid && fromSid !== currentSharerSid) {
+      screenShareSpotlightSid = fromSid;
       syncScreenShareSpotlight(true);
       renderLayout();
     }
@@ -2317,46 +2394,22 @@ document.getElementById('toggleCameraBtn').onclick = async () => {
 };
 
 document.getElementById('shareScreenBtn').onclick = async () => {
-  if (currentSharerSid && currentSharerSid !== canonicalParticipantSid('local')) {
+  if (isSharingScreen && currentSharerSid === 'local') {
+    await stopLocalScreenShare({ broadcast: true, message: TEXT_SCREEN_SHARE_STOPPED, stopDisplayTracks: true });
+    return;
+  }
+  if (currentSharerSid && currentSharerSid !== 'local') {
     setStatus(TEXT_SINGLE_SCREEN_SHARE_ONLY, 'warning');
     return;
   }
   try {
-    const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-    const screenTrack = screenStream.getVideoTracks()[0];
-    const screenCard = ensureCard('local', getDisplayName('local'), true);
-    Object.values(peerConnections).forEach(pc => {
-      const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-      if (sender) sender.replaceTrack(screenTrack);
-    });
-    localVideo.srcObject = screenStream;
-    updatePlaceholder(screenCard, true);
-    isSharingScreen = true;
-    currentSharerSid = canonicalParticipantSid('local');
-    screenShareSpotlightSid = orderedScreenShareCandidates()[0] || null;
-    syncScreenShareSpotlight(true);
-    focusParticipant(canonicalParticipantSid('local'), { hideSidebar: false, screenShare: true });
-    setStatus(TEXT_SCREEN_SHARE_MODE);
-    broadcastUiEvent({ type: 'screen_share_started', hideSidebar: false });
-
-    screenTrack.onended = async () => {
-      isSharingScreen = false;
-      if (virtualBgImageDataUrl) {
-        await activateVirtualBackground();
-      } else if (rawCameraStream) {
-        fallbackToRawCamera();
-      } else {
-        await requestMedia(currentFacingMode, true);
-      }
-      currentSharerSid = null;
-      hiddenSidebar = false;
-      focusedSid = 'local';
-      screenShareSpotlightSid = null;
-      stopScreenShareRotationTimer();
-      renderLayout();
-      broadcastUiEvent({ type: 'screen_share_stopped' });
-      setStatus(TEXT_SCREEN_SHARE_STOPPED);
-    };
+    let screenStream = null;
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    } catch (audioErr) {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    }
+    await startLocalScreenShare(screenStream);
   } catch (err) {
     setStatus(err.message, 'error');
   }
