@@ -3758,97 +3758,6 @@ button,
 
 /* unified screen-share participant drawer */
 .video-panel { position: relative; }
-.video-stage-toolbar {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 8;
-  display: flex;
-  justify-content: flex-end;
-  pointer-events: none;
-}
-.participant-drawer-toggle {
-  pointer-events: auto;
-  box-shadow: 0 12px 30px rgba(0,0,0,.24);
-}
-.participant-drawer-toggle.hidden { display: none !important; }
-.participant-drawer-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  border-radius: inherit;
-  border: 0;
-  background: rgba(3, 8, 18, .38);
-}
-.participant-drawer-backdrop.hidden { display: none; }
-.video-stage.screen-share-mode {
-  position: relative;
-  grid-template-columns: minmax(0, 1fr) !important;
-}
-.video-stage.screen-share-mode .video-sidebar {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  bottom: 16px;
-  width: min(340px, 32vw);
-  display: none;
-  grid-template-columns: 1fr;
-  align-content: start;
-  gap: 12px;
-  overflow: auto;
-  padding: 12px;
-  border-radius: 20px;
-  background: rgba(8,16,32,.92);
-  border: 1px solid rgba(255,255,255,.1);
-  box-shadow: 0 22px 60px rgba(0,0,0,.32);
-  backdrop-filter: blur(18px);
-  z-index: 6;
-}
-.video-stage.screen-share-mode.screen-share-sidebar-open .video-sidebar {
-  display: grid !important;
-}
-.video-stage.screen-share-mode .video-sidebar .video-card {
-  min-width: 0 !important;
-  width: 100% !important;
-  min-height: 136px !important;
-}
-.video-stage.screen-share-mode .video-sidebar .video-card .video-el,
-.video-stage.screen-share-mode .video-sidebar .video-card video {
-  height: 136px !important;
-  min-height: 136px !important;
-}
-@media (max-width: 960px) {
-  .video-stage-toolbar {
-    top: 12px;
-    right: 12px;
-  }
-  .video-stage.screen-share-mode .video-sidebar {
-    top: auto;
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
-    width: auto;
-    max-height: min(46vh, 380px);
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .video-stage.screen-share-mode .video-sidebar .video-card {
-    min-height: 112px !important;
-  }
-  .video-stage.screen-share-mode .video-sidebar .video-card .video-el,
-  .video-stage.screen-share-mode .video-sidebar .video-card video {
-    height: 112px !important;
-    min-height: 112px !important;
-  }
-}
-@media (max-width: 640px) {
-  .video-stage.screen-share-mode .video-sidebar {
-    grid-template-columns: 1fr;
-    max-height: min(52vh, 360px);
-  }
-}
-
-
-/* v6.4.20 mobile/share layout repair */
 .room-video-panel {
   display: flex;
   flex-direction: column;
@@ -3859,8 +3768,11 @@ button,
   order: 1;
   display: flex;
   justify-content: flex-start;
-  pointer-events: auto;
+  align-items: center;
+  width: 100%;
   margin: 0;
+  pointer-events: auto;
+  z-index: 2;
 }
 .room-video-panel > #videoStage { order: 2; }
 .room-video-panel > #videoPager { order: 3; margin-top: 0 !important; }
@@ -3869,234 +3781,64 @@ button,
 .room-video-panel > #chatWindow { order: 6; }
 .room-video-panel > #chatContextMenu { order: 7; }
 
+.participant-drawer-toggle {
+  box-shadow: 0 12px 30px rgba(0,0,0,.24);
+}
+.participant-drawer-toggle.hidden { display: none !important; }
+.participant-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  border: 0;
+  background: rgba(3, 8, 18, .38);
+}
+.participant-drawer-backdrop.hidden { display: none !important; }
+
+.video-stage.screen-share-mode {
+  position: relative;
+}
 .video-stage.screen-share-mode:not(.screen-share-sidebar-open) .video-sidebar,
 .video-stage.screen-share-mode.sidebar-hidden .video-sidebar {
   display: none !important;
 }
-
-.video-stage.screen-share-mode.screen-share-sidebar-open .video-sidebar {
-  display: grid !important;
+.video-stage.screen-share-mode .video-main {
+  min-width: 0;
+}
+.video-stage.screen-share-mode .video-main .video-card {
+  width: 100%;
+  min-width: 0;
 }
 
 @media (min-width: 769px) {
-  .room-video-panel > .video-stage-toolbar {
-    align-self: flex-start;
+  .participant-drawer-backdrop {
+    display: none !important;
   }
 
   .video-stage.screen-share-mode {
     grid-template-columns: minmax(0, 1fr) !important;
   }
 
-  .video-stage.screen-share-mode.screen-share-sidebar-open {
+  .video-stage.screen-share-mode.screen-share-sidebar-open:not(.sidebar-hidden) {
     grid-template-columns: minmax(0, 1fr) minmax(260px, 320px) !important;
     align-items: start;
   }
 
   .video-stage.screen-share-mode .video-sidebar {
     position: static !important;
+    display: none;
     width: auto !important;
+    max-width: 320px;
     max-height: min(62vh, 560px);
-    padding: 12px;
-    background: rgba(8,16,32,.92);
-    border: 1px solid rgba(255,255,255,.1);
-    border-radius: 20px;
-    box-shadow: 0 22px 60px rgba(0,0,0,.28);
     overflow: auto;
+    padding: 12px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,.1);
+    background: rgba(8,16,32,.92);
+    box-shadow: 0 22px 60px rgba(0,0,0,.28);
+    backdrop-filter: blur(18px);
     grid-template-columns: 1fr;
     align-content: start;
-  }
-
-  .participant-drawer-backdrop {
-    display: none !important;
-  }
-}
-
-@media (max-width: 768px) {
-  .room-video-panel {
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 12px !important;
-  }
-
-  .room-video-panel > .video-stage-toolbar {
-    width: 100%;
-    justify-content: center !important;
-    margin-top: 2px;
-    margin-bottom: 0;
-  }
-
-  .participant-drawer-toggle {
-    min-width: min(100%, 280px);
-  }
-
-  .room-video-panel > #videoStage {
-    margin-bottom: 0 !important;
-  }
-
-  .room-video-panel > #videoPager {
-    width: 100% !important;
-    align-self: stretch !important;
-    justify-self: stretch !important;
-  }
-
-  .video-stage.screen-share-mode {
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 12px !important;
-  }
-
-  .video-stage.screen-share-mode .video-main {
-    order: 1;
-  }
-
-  .video-stage.screen-share-mode .video-sidebar {
-    position: static !important;
-    order: 2;
-    width: 100% !important;
-    max-height: none !important;
-    padding: 0 !important;
-    border: 0 !important;
-    background: transparent !important;
-    box-shadow: none !important;
-    backdrop-filter: none !important;
-    overflow: visible !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 10px !important;
-  }
-
-  .video-stage.screen-share-mode .video-sidebar .video-card {
-    min-height: 110px !important;
-    height: auto !important;
-  }
-
-  .video-stage.screen-share-mode .video-sidebar .video-card .video-el,
-  .video-stage.screen-share-mode .video-sidebar .video-card video {
-    min-height: 110px !important;
-    height: 110px !important;
-    max-height: 110px !important;
-  }
-
-  .participant-drawer-backdrop {
-    display: none !important;
-  }
-}
-
-@media (max-width: 480px) {
-  .video-stage.screen-share-mode .video-sidebar {
-    grid-template-columns: 1fr !important;
-  }
-}
-
-
-/* v6.4.30 rollback-based share toolbar stabilization */
-.room-video-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.room-video-panel > .video-stage-toolbar {
-  position: static !important;
-  display: flex;
-  justify-content: flex-start;
-  pointer-events: auto;
-  order: 1;
-  margin: 0;
-}
-.room-video-panel > #videoStage { order: 2; }
-.room-video-panel > #videoPager { order: 3; }
-.participant-drawer-toggle.hidden { display: none !important; }
-.participant-drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(5, 10, 24, 0.38);
-  border: 0;
-  z-index: 90;
-}
-.participant-drawer-backdrop.hidden { display: none !important; }
-@media (min-width: 769px) {
-  .participant-drawer-backdrop { display: none !important; }
-}
-@media (max-width: 768px) {
-  .room-video-panel > .video-stage-toolbar {
-    width: 100%;
-    justify-content: center;
-  }
-  .participant-drawer-toggle {
-    min-width: min(100%, 280px);
-  }
-}
-
-
-/* mobile participant drawer stabilization on top of full logic reset */
-@media (max-width: 768px) {
-  .room-video-panel {
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 12px !important;
-  }
-
-  .room-video-panel > .video-stage-toolbar {
-    position: static !important;
-    order: 1 !important;
-    display: flex !important;
-    justify-content: center !important;
-    align-items: center !important;
-    width: 100% !important;
-    margin: 0 !important;
-    pointer-events: auto !important;
-    z-index: 2 !important;
-  }
-
-  .room-video-panel > #videoStage { order: 2 !important; }
-  .room-video-panel > #videoPager {
-    order: 3 !important;
-    margin-top: 0 !important;
-    align-self: stretch !important;
-  }
-  .room-video-panel > #danmakuLayer { order: 4 !important; }
-  .room-video-panel > #chatShowBtn { order: 5 !important; }
-  .room-video-panel > #chatWindow { order: 6 !important; }
-
-  .participant-drawer-toggle {
-    display: inline-flex;
-    justify-content: center;
-    align-items: center;
-    min-width: min(100%, 280px);
-    min-height: 44px;
-  }
-
-  .video-stage.screen-share-mode {
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 12px !important;
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-
-  .video-stage.screen-share-mode .video-main {
-    width: 100% !important;
-    min-width: 0 !important;
-  }
-
-  .video-stage.screen-share-mode .video-main .video-card {
-    min-height: clamp(260px, 40vh, 460px) !important;
-    max-height: none !important;
-  }
-
-  .video-stage.screen-share-mode .video-sidebar {
-    display: none !important;
-    position: static !important;
-    width: 100% !important;
-    max-height: min(42vh, 320px) !important;
-    overflow: auto !important;
-    padding: 0 !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-    box-shadow: none !important;
-    backdrop-filter: none !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 10px !important;
-    align-content: start !important;
+    gap: 12px;
   }
 
   .video-stage.screen-share-mode.screen-share-sidebar-open:not(.sidebar-hidden) .video-sidebar {
@@ -4104,8 +3846,92 @@ button,
   }
 
   .video-stage.screen-share-mode .video-sidebar .video-card {
-    min-height: 110px !important;
+    min-width: 0 !important;
+    width: 100% !important;
+    min-height: 136px !important;
+  }
+
+  .video-stage.screen-share-mode .video-sidebar .video-card .video-el,
+  .video-stage.screen-share-mode .video-sidebar .video-card video {
+    height: 136px !important;
+    min-height: 136px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .room-video-panel {
+    gap: 12px !important;
+  }
+
+  .room-video-panel > .video-stage-toolbar {
+    justify-content: center !important;
+  }
+
+  .participant-drawer-toggle {
+    min-width: min(100%, 280px);
+    min-height: 44px;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .participant-drawer-backdrop {
+    display: none !important;
+  }
+
+  .video-stage.screen-share-mode {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-items: stretch;
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  .video-stage.screen-share-mode .video-main {
+    order: 1;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .video-stage.screen-share-mode .video-main .video-card {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: clamp(240px, 40vh, 460px) !important;
+    max-width: 100% !important;
+  }
+
+  .video-stage.screen-share-mode.screen-share-sidebar-open:not(.sidebar-hidden) .video-sidebar {
+    display: grid !important;
+  }
+
+  .video-stage.screen-share-mode .video-sidebar {
+    order: 2;
+    position: static !important;
+    display: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: min(42vh, 320px) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    align-content: start !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .video-stage.screen-share-mode .video-sidebar .video-card {
+    min-width: 0 !important;
+    width: 100% !important;
     height: auto !important;
+    min-height: 110px !important;
   }
 
   .video-stage.screen-share-mode .video-sidebar .video-card .video-el,
@@ -4113,10 +3939,6 @@ button,
     min-height: 110px !important;
     height: 110px !important;
     max-height: 110px !important;
-  }
-
-  .participant-drawer-backdrop {
-    display: none !important;
   }
 }
 
