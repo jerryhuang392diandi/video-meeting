@@ -1,4 +1,152 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('meeting_room') }}{% endblock %}
+{% block content %}
+<header class="topbar compact">
+  <div>
+    <div class="brand">{{ t('meeting_room') }}</div>
+    <div class="muted">{{ t('room_id') }}: {{ room_id }}</div>
+    <div class="muted">{{ t('record_password_label') }}: {{ room_password }}</div>
+  </div>
+  <div class="top-actions">
+    <div class="lang-switch">
+      <a class="chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}">{{ t('lang_zh') }}</a>
+      <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
+    </div>
+    <span class="user-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
+    <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
+  </div>
+</header>
 
+<section class="grid room-grid-layout room-page-layout">
+  <aside class="panel side-panel panel-glow room-control-panel">
+    <h2>{{ t('permissions') }}</h2>
+    <div class="stack-controls button-grid-2">
+      <button class="ghost-btn" id="shareScreenBtn">{{ t('share_screen') }}</button>
+      <button class="ghost-btn" id="virtualBgBtn">{{ t('virtual_bg') }}</button>
+      <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
+      <button class="ghost-btn" id="toggleMicBtn">{{ t('mic') }}</button>
+      <button class="ghost-btn" id="toggleCameraBtn">{{ t('camera') }}</button>
+      <button class="ghost-btn danger" id="leaveMeetingBtn">{{ t('leave') }}</button>
+      {% if is_host %}<button class="ghost-btn danger" id="hostEndMeetingBtn">{{ t('host_end_meeting') }}</button>{% endif %}
+    </div>
+    <input id="virtualBgInput" type="file" accept="image/*" class="hidden" />
+    <div id="statusBox" class="notice">{{ t('room_ready') }}</div>
+    <div class="mini-panel">
+      <div class="muted">{{ t('profile_section') }}</div>
+      <label>{{ t('display_name') }}</label>
+      <div class="row-compact">
+        <input id="displayNameInput" maxlength="32" value="{{ preferred_display_name }}" />
+        <button class="ghost-btn" id="saveProfileBtn">{{ t('save') }}</button>
+      </div>
+    </div>
+
+    <div class="mini-panel" id="invitePanel">
+      <div class="muted">{{ ('邀请链接' if lang == 'zh' else 'Invite link') }}</div>
+      <label>{{ ('分享给参会者' if lang == 'zh' else 'Share with participants') }}</label>
+      <input id="inviteInput" value="{{ request.url }}" readonly />
+      <div class="row-compact">
+        <button class="ghost-btn" id="copyInviteBtn">{{ ('复制' if lang == 'zh' else 'Copy') }}</button>
+        <button class="ghost-btn" id="showQrBtn">{{ ('显示二维码' if lang == 'zh' else 'Show QR') }}</button>
+      </div>
+      <div id="inviteQrWrap" class="invite-qr-wrap hidden">
+        <img id="inviteQrImage" alt="{{ ('入会二维码' if lang == 'zh' else 'Join QR code') }}" />
+      </div>
+    </div>
+
+    <div class="mini-panel">
+      <div class="muted">{{ t('traffic_usage') }} · {{ t('traffic_turn_relay') }}</div>
+      <div class="status-grid">
+        <div><span>{{ t('monthly_quota') }}</span><strong id="trafficQuotaTotal">{{ traffic.monthly_quota_text }}</strong></div>
+        <div><span>{{ t('used_traffic') }}</span><strong id="trafficQuotaUsed">{{ traffic.used_traffic_text }}</strong></div>
+        <div><span>{{ t('remaining_traffic') }}</span><strong id="trafficQuotaRemaining">{{ traffic.remaining_traffic_text }}</strong></div>
+        <div><span>{{ t('reset_cycle') }}</span><strong id="trafficQuotaReset">{{ traffic.reset_at_text }}</strong></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="panel video-panel panel-glow room-video-panel">
+    <div class="video-stage-toolbar">
+      <button id="participantDrawerToggleBtn" class="ghost-btn participant-drawer-toggle hidden" type="button">{{ ('参会者' if lang == 'zh' else 'Participants') }}</button>
+    </div>
+    <div id="videoStage" class="video-stage">
+      <div id="videoMain" class="video-main"></div>
+      <div id="videoSidebar" class="video-sidebar"></div>
+    </div>
+    <button id="participantDrawerBackdrop" class="participant-drawer-backdrop hidden" type="button" aria-label="{{ ('关闭参会者面板' if lang == 'zh' else 'Close participants panel') }}"></button>
+    <div id="videoPager" class="video-pager hidden" aria-label="{{ '分页参会者视图' if lang == 'zh' else 'Paged participant view' }}">
+      <div class="video-pager-left">
+        <button id="videoHomePageBtn" class="ghost-btn pager-btn pager-home-btn" type="button" title="{{ '首页' if lang == 'zh' else 'First page' }}" aria-label="{{ '首页' if lang == 'zh' else 'First page' }}">⌂</button>
+        <button id="videoPrevPageBtn" class="ghost-btn pager-btn" type="button">{{ '上一页' if lang == 'zh' else 'Previous' }}</button>
+      </div>
+      <div class="video-pager-center">
+        <span id="videoPagerInfo" class="video-pager-info">1 / 1</span>
+      </div>
+      <div class="video-pager-right">
+        <button id="videoNextPageBtn" class="ghost-btn pager-btn" type="button">{{ '下一页' if lang == 'zh' else 'Next' }}</button>
+      </div>
+    </div>
+      <div id="danmakuLayer" class="danmaku-layer"></div>
+      <button id="chatShowBtn" class="chat-side-toggle chat-show-btn hidden" type="button">{{ t('chat_short') }} ◀</button>
+    <div id="chatWindow" class="chat-window">
+      <button id="chatMobileHandle" class="chat-mobile-handle" type="button" aria-label="{{ t('drag_chat_panel') }}">
+        <span></span>
+      </button>
+      <div id="chatHeader" class="chat-header">
+        <div>
+          <strong>{{ t('meeting_chat') }}</strong>
+          <div class="muted small-note">{{ t('meeting_chat_desc') }}</div>
+        </div>
+        <div class="row-compact">
+          <button class="card-btn" id="chatHideBtn">{{ t('hide') }} →</button>
+          <button class="card-btn" id="mentionBtn">@</button>
+          <button class="card-btn" id="clearChatBtn">{{ t('clear') }}</button>
+          {% if is_host %}<button class="card-btn" id="toggleDanmakuBtn">{{ t('danmaku_display') }}</button>{% endif %}
+        </div>
+      </div>
+      <div class="chat-toolbar">
+        <button class="chat-mode-btn active" data-mode="all">{{ t('everyone_visible') }}</button>
+        <button class="chat-mode-btn" data-mode="host">{{ t('host_only') }}</button>
+      </div>
+      <div id="mentionPicker" class="picker-panel hidden"></div>
+      <div id="chatMessages" class="chat-messages"></div>
+      <div id="chatAttachmentPreview" class="chat-attachment-preview hidden"></div>
+      <div class="chat-file-permission-row">
+        <label>{{ t('attachment_permission') }}</label>
+        <select id="chatAttachmentPermission">
+          <option value="download" {% if (current_user.default_attachment_permission or 'download') == 'download' %}selected{% endif %}>{{ t('download_allowed') }}</option>
+          <option value="view" {% if (current_user.default_attachment_permission or '') == 'view' %}selected{% endif %}>{{ t('view_only') }}</option>
+        </select>
+      </div>
+      <div class="chat-composer">
+        <div class="chat-input-row">
+          <textarea id="chatInput" rows="3" placeholder="{{ t('chat_input_placeholder') }}"></textarea>
+        </div>
+        <div id="emojiPopover" class="emoji-popover hidden">
+          <div class="emoji-popover-head">
+            <strong>{{ t('choose_emoji') }}</strong>
+            <button class="card-btn" id="emojiCloseBtn" type="button">{{ t('close') }}</button>
+          </div>
+          <div id="emojiPicker" class="emoji-picker"></div>
+        </div>
+        <div class="chat-actions">
+          <div class="chat-actions-left">
+            <label class="ghost-btn attachment-btn">{{ t('media_short') }}<input id="chatMediaInput" type="file" accept="image/*,video/*,.heic,.heif,.avi,.3gp" class="hidden" /></label>
+            <label class="ghost-btn attachment-btn">{{ t('docs_archive_short') }}<input id="chatDocInput" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,.rar,.7z" class="hidden" /></label>
+            <button class="ghost-btn" id="emojiBtn" type="button">😊 {{ t('emoji') }}</button>
+          </div>
+          <button class="primary-btn slim-btn" id="sendChatBtn">{{ t('send') }}</button>
+        </div>
+      </div>
+    </div>
+    <div id="chatContextMenu" class="chat-context-menu hidden"></div>
+  </main>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+<script>
 const ROOM_ID = {{ room_id|tojson }};
 const ROOM_PASSWORD = {{ room_password|tojson }};
 const DEFAULT_USER_NAME = {{ current_user.username|tojson }};
@@ -17,6 +165,8 @@ const TEXT_CAMERA_ON = {{ t('camera_on')|tojson }};
 const TEXT_CAMERA_OFF = {{ t('camera_off')|tojson }};
 const TEXT_SCREEN_SHARE_MODE = {{ ('共享屏幕模式已开启' if lang == 'zh' else 'Screen share mode enabled')|tojson }};
 const TEXT_SCREEN_SHARE_STOPPED = {{ ('共享屏幕模式已结束' if lang == 'zh' else 'Screen share mode ended')|tojson }};
+const TEXT_PARTICIPANTS = {{ ('参会者' if lang == 'zh' else 'Participants')|tojson }};
+const TEXT_HIDE_PARTICIPANTS = {{ ('收起参会者' if lang == 'zh' else 'Hide participants')|tojson }};
 const TEXT_NO_VIDEO = {{ ('未开启摄像头' if lang == 'zh' else 'Camera off')|tojson }};
 const TEXT_RECORD_STOP = {{ ('停止录屏' if lang == 'zh' else 'Stop recording')|tojson }};
 const TEXT_RECORD_SAVED = {{ ('录屏文件已保存' if lang == 'zh' else 'Recording saved')|tojson }};
@@ -121,6 +271,8 @@ const processingCtx = processingCanvas.getContext('2d');
 const videoStage = document.getElementById('videoStage');
 const videoMain = document.getElementById('videoMain');
 const videoSidebar = document.getElementById('videoSidebar');
+const participantDrawerToggleBtn = document.getElementById('participantDrawerToggleBtn');
+const participantDrawerBackdrop = document.getElementById('participantDrawerBackdrop');
 const participantCountEl = document.getElementById('participantCount');
 const statusBox = document.getElementById('statusBox');
 const recordingBtn = document.getElementById('recordingBtn');
@@ -206,6 +358,44 @@ function updateShareUiState() {
     virtualBgBtn.disabled = disabledByShare;
     virtualBgBtn.title = disabledByShare ? {{ ('共享屏幕期间不可使用虚拟背景' if lang == 'zh' else 'Virtual background is unavailable during screen sharing')|tojson }} : '';
   }
+}
+
+function updateParticipantDrawerUi(sidebarCount = null) {
+  const count = Number.isFinite(sidebarCount) ? sidebarCount : videoSidebar?.children?.length || 0;
+  const shouldShowToggle = !!currentSharerSid && count > 0;
+  const isOpen = shouldShowToggle && !hiddenSidebar;
+  if (participantDrawerToggleBtn) {
+    participantDrawerToggleBtn.classList.toggle('hidden', !shouldShowToggle);
+    participantDrawerToggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    participantDrawerToggleBtn.textContent = isOpen ? `${TEXT_HIDE_PARTICIPANTS} (${count})` : `${TEXT_PARTICIPANTS} (${count})`;
+  }
+  if (videoStage) {
+    videoStage.classList.toggle('screen-share-sidebar-open', isOpen);
+  }
+  if (participantDrawerBackdrop) {
+    participantDrawerBackdrop.classList.toggle('hidden', !isOpen);
+    participantDrawerBackdrop.classList.toggle('active', isOpen);
+  }
+}
+
+
+function refreshVisibleVideoPlayback() {
+  const videos = Array.from(document.querySelectorAll('.video-main video, .video-sidebar video, .video-main .video-el, .video-sidebar .video-el'));
+  videos.forEach((videoEl) => {
+    if (!videoEl || !videoEl.srcObject) return;
+    safePlayVideo(videoEl).catch?.(() => {});
+  });
+}
+
+let playbackRefreshFrame = 0;
+function schedulePlaybackRefresh() {
+  if (playbackRefreshFrame) {
+    try { cancelAnimationFrame(playbackRefreshFrame); } catch (_) {}
+  }
+  playbackRefreshFrame = requestAnimationFrame(() => {
+    playbackRefreshFrame = 0;
+    refreshVisibleVideoPlayback();
+  });
 }
 
 const roomDebugEnabled = ROOM_TEST_PARAMS.get('debugRoom') === '1';
@@ -435,6 +625,43 @@ function getRenderableCards() {
     ));
 }
 
+function isMobileViewport() {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function pickFocusCard(cards) {
+  if (!Array.isArray(cards) || !cards.length) return null;
+  if (currentSharerSid) {
+    const sharerCard = document.getElementById('card-' + currentSharerSid);
+    if (sharerCard && cards.includes(sharerCard)) {
+      focusedSid = currentSharerSid;
+      return sharerCard;
+    }
+    const fallbackRemoteCard = cards.find(card => card?.dataset?.sid && card.dataset.sid !== 'local');
+    if (fallbackRemoteCard) {
+      focusedSid = fallbackRemoteCard.dataset.sid || focusedSid;
+      return fallbackRemoteCard;
+    }
+  }
+  const desiredFocusCard = document.getElementById('card-' + (focusedSid || 'local'));
+  if (desiredFocusCard && cards.includes(desiredFocusCard)) return desiredFocusCard;
+  const localCard = document.getElementById('card-local');
+  if (localCard && cards.includes(localCard)) {
+    focusedSid = 'local';
+    return localCard;
+  }
+  focusedSid = cards[0]?.dataset?.sid || focusedSid || 'local';
+  return cards[0];
+}
+
+function getSidebarCards(cards, focusTarget) {
+  let sidebarCards = cards.filter(card => card !== focusTarget);
+  if (currentSharerSid && currentSharerSid !== 'local' && isMobileViewport()) {
+    sidebarCards = sidebarCards.filter(card => card?.dataset?.sid !== 'local');
+  }
+  return sidebarCards;
+}
+
 function renderLayout(force = false) {
   if (!videoMain || !videoSidebar || !videoStage) return;
   if (!force && hasActiveFullscreenSession()) {
@@ -449,6 +676,8 @@ function renderLayout(force = false) {
     videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid', 'focus-layout', 'grid-layout');
     videoStage.classList.add('sidebar-hidden');
     updateVideoPager(0, 1);
+    updateParticipantDrawerUi(0);
+    schedulePlaybackRefresh();
     return;
   }
 
@@ -462,7 +691,7 @@ function renderLayout(force = false) {
   const totalPages = Math.max(1, Math.ceil(cards.length / pageSize));
   currentGridPage = Math.max(0, Math.min(currentGridPage, totalPages - 1));
 
-  const focusTarget = document.getElementById('card-' + (focusedSid || 'local')) || document.getElementById('card-local') || cards[0];
+  const focusTarget = pickFocusCard(cards);
   if (!focusTarget) return;
 
   const canUseGrid = !currentSharerSid && !hiddenSidebar;
@@ -483,6 +712,7 @@ function renderLayout(force = false) {
     if (shouldUsePagedGrid) videoStage.classList.add('paged-grid');
     visibleCards.forEach(card => videoMain.appendChild(card));
     updateVideoPager(cards.length, totalPages);
+    schedulePlaybackRefresh();
     return;
   }
 
@@ -490,7 +720,7 @@ function renderLayout(force = false) {
   focusTarget.classList.add('is-focused');
   videoMain.appendChild(focusTarget);
 
-  const sidebarCards = cards.filter(card => card !== focusTarget);
+  const sidebarCards = getSidebarCards(cards, focusTarget);
   sidebarCards.forEach(card => {
     card.classList.add('is-sidebar');
     videoSidebar.appendChild(card);
@@ -498,6 +728,7 @@ function renderLayout(force = false) {
 
   videoStage.classList.toggle('sidebar-hidden', hiddenSidebar || sidebarCards.length === 0);
   updateShareUiState();
+  updateParticipantDrawerUi(sidebarCards.length);
 }
 
 function focusParticipant(sid, opts = {}) {
@@ -529,6 +760,22 @@ function seedFakeParticipants() {
   renderLayout();
   updateParticipantCount();
   setStatus(TEXT_TEST_GRID_ACTIVE);
+}
+
+
+if (participantDrawerToggleBtn) {
+  participantDrawerToggleBtn.addEventListener('click', () => {
+    if (!currentSharerSid) return;
+    hiddenSidebar = !hiddenSidebar;
+    renderLayout(true);
+  });
+}
+if (participantDrawerBackdrop) {
+  participantDrawerBackdrop.addEventListener('click', () => {
+    if (!currentSharerSid) return;
+    hiddenSidebar = true;
+    renderLayout(true);
+  });
 }
 
 function stopStreamTracks(stream) {
@@ -774,6 +1021,7 @@ function addRemoteParticipant(sid, name) {
   participantMeta[sid] = { name: name || sid };
   const card = ensureCard(sid, participantMeta[sid].name, false);
   updatePlaceholder(card, false);
+  if (currentSharerSid === sid) focusedSid = sid;
   currentGridPage = 0;
   renderLayout();
   updateParticipantCount();
@@ -785,6 +1033,9 @@ function addRemoteVideo(sid, stream) {
   videoEl.srcObject = stream;
   safePlayVideo(videoEl);
   updatePlaceholder(card, true);
+  if (currentSharerSid === sid) {
+    focusedSid = sid;
+  }
   renderLayout();
 }
 
@@ -1899,8 +2150,10 @@ socket.on('signal', async (data) => {
 socket.on('room_ui_event', (data) => {
   if (!data || !data.type) return;
   if (data.type === 'screen_share_started') {
-    currentSharerSid = data.from;
-    focusParticipant(data.from, { hideSidebar: true, screenShare: true });
+    const sharerSid = normalizeParticipantSid(data.from);
+    currentSharerSid = sharerSid;
+    focusedSid = sharerSid;
+    focusParticipant(sharerSid, { hideSidebar: true, screenShare: true });
     setStatus(TEXT_SCREEN_SHARE_MODE);
   } else if (data.type === 'screen_share_stopped') {
     currentSharerSid = null;
@@ -1972,6 +2225,22 @@ videoHomePageBtn?.addEventListener('click', () => {
   if (currentGridPage <= 0) return;
   currentGridPage = 0;
   renderLayout();
+});
+
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    schedulePlaybackRefresh();
+    if (hasActiveFullscreenSession()) return;
+    renderLayout(true);
+  }
+});
+window.addEventListener('pageshow', () => {
+  schedulePlaybackRefresh();
+  if (!hasActiveFullscreenSession()) renderLayout(true);
+});
+window.addEventListener('focus', () => {
+  schedulePlaybackRefresh();
 });
 
 document.getElementById('toggleMicBtn').onclick = async () => {
@@ -2111,15 +2380,51 @@ document.getElementById('saveProfileBtn').onclick = () => {
   renderMentionPicker();
   setStatus(TEXT_PROFILE_UPDATED);
 };
-document.getElementById('switchRoomBtn').onclick = async () => {
-  const nextRoomId = document.getElementById('switchRoomId').value.trim();
-  const nextPwd = document.getElementById('switchRoomPassword').value.trim();
-  if (!nextRoomId || !nextPwd) return;
-  const res = await fetch('/api/join_room', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room_id: nextRoomId, password: nextPwd }) });
-  const data = await res.json();
-  if (!res.ok || !data.success) { setStatus(data.message || 'failed', 'error'); return; }
-  leaveMeetingAndExit(null, `/room/${nextRoomId}?pwd=${encodeURIComponent(nextPwd)}`);
-};
+const inviteInput = document.getElementById('inviteInput');
+const copyInviteBtn = document.getElementById('copyInviteBtn');
+const showQrBtn = document.getElementById('showQrBtn');
+const inviteQrWrap = document.getElementById('inviteQrWrap');
+const inviteQrImage = document.getElementById('inviteQrImage');
+
+if (inviteInput) {
+  inviteInput.value = window.location.href;
+}
+
+if (copyInviteBtn) {
+  copyInviteBtn.onclick = async () => {
+    const text = inviteInput?.value || window.location.href;
+    const ok = await copyText(text);
+    if (!ok) {
+      try { window.prompt({{ ('请手动复制下面链接' if lang == 'zh' else 'Please copy this link manually')|tojson }}, text); } catch (_) {}
+    }
+  };
+}
+
+if (showQrBtn && inviteQrWrap && inviteQrImage) {
+  showQrBtn.onclick = () => {
+    const text = encodeURIComponent(inviteInput?.value || window.location.href);
+    inviteQrImage.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${text}`;
+    inviteQrWrap.classList.toggle('hidden');
+    const showing = !inviteQrWrap.classList.contains('hidden');
+    showQrBtn.textContent = showing
+      ? {{ ('隐藏二维码' if lang == 'zh' else 'Hide QR')|tojson }}
+      : {{ ('显示二维码' if lang == 'zh' else 'Show QR')|tojson }};
+  };
+}
+const switchRoomBtn = document.getElementById('switchRoomBtn');
+if (switchRoomBtn) {
+  switchRoomBtn.onclick = async () => {
+    const switchRoomIdInput = document.getElementById('switchRoomId');
+    const switchRoomPasswordInput = document.getElementById('switchRoomPassword');
+    const nextRoomId = (switchRoomIdInput?.value || '').trim();
+    const nextPwd = (switchRoomPasswordInput?.value || '').trim();
+    if (!nextRoomId || !nextPwd) return;
+    const res = await fetch('/api/join_room', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room_id: nextRoomId, password: nextPwd }) });
+    const data = await res.json();
+    if (!res.ok || !data.success) { setStatus(data.message || 'failed', 'error'); return; }
+    leaveMeetingAndExit(null, `/room/${nextRoomId}?pwd=${encodeURIComponent(nextPwd)}`);
+  };
+}
 
 window.addEventListener('beforeunload', () => {
   if (!hasLeftMeeting) {
@@ -2152,3 +2457,5 @@ async function refreshTrafficPanel() {
 
 refreshTrafficPanel();
 setInterval(refreshTrafficPanel, 20000);
+</script>
+{% endblock %}
