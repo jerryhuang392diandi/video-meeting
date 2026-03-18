@@ -592,9 +592,19 @@ function getRenderableCards() {
 }
 
 
-function getSidebarParticipantCount(cards = null) {
+function getSidebarCards(cards = null, focusCard = null) {
   const allCards = Array.isArray(cards) ? cards : getRenderableCards();
-  return Math.max(0, allCards.length - 1);
+  const resolvedFocus = focusCard || document.getElementById('card-' + (currentSharerSid || focusedSid || 'local')) || document.getElementById('card-local') || allCards[0] || null;
+  let sidebarCards = allCards.filter(card => card && card !== resolvedFocus);
+
+  if (currentSharerSid && currentSharerSid !== 'local' && isMobileDevice()) {
+    sidebarCards = sidebarCards.filter(card => card?.dataset?.sid !== 'local');
+  }
+  return sidebarCards;
+}
+
+function getSidebarParticipantCount(cards = null, focusCard = null) {
+  return getSidebarCards(cards, focusCard).length;
 }
 
 function setParticipantOverlayState(open) {
@@ -604,9 +614,9 @@ function setParticipantOverlayState(open) {
   if (videoStage) videoStage.classList.toggle('share-sidebar-open', shouldOpen);
 }
 
-function updateParticipantDrawerUi(cards = null) {
+function updateParticipantDrawerUi(cards = null, focusCard = null) {
   if (!participantDrawerToggle) return;
-  const count = getSidebarParticipantCount(cards);
+  const count = getSidebarParticipantCount(cards, focusCard);
   const shouldShow = !!currentSharerSid && count > 0;
   participantDrawerToggle.classList.toggle('hidden', !shouldShow);
   participantDrawerToggle.setAttribute('aria-expanded', shouldShow && !hiddenSidebar ? 'true' : 'false');
@@ -648,8 +658,15 @@ function renderLayout(force = false) {
   const totalPages = Math.max(1, Math.ceil(cards.length / pageSize));
   currentGridPage = Math.max(0, Math.min(currentGridPage, totalPages - 1));
 
-  const focusTarget = document.getElementById('card-' + (focusedSid || 'local')) || document.getElementById('card-local') || cards[0];
+  const focusSid = currentSharerSid || focusedSid || 'local';
+  const focusTarget = document.getElementById('card-' + focusSid) || document.getElementById('card-local') || cards[0];
   if (!focusTarget) return;
+  if (currentSharerSid && focusTarget.dataset.sid !== currentSharerSid) {
+    const sharerCard = document.getElementById('card-' + currentSharerSid);
+    if (sharerCard) {
+      focusedSid = currentSharerSid;
+    }
+  }
 
   const canUseGrid = !currentSharerSid && !hiddenSidebar;
   const shouldUseGrid = canUseGrid && cards.length <= pageSize;
@@ -669,7 +686,7 @@ function renderLayout(force = false) {
     if (shouldUsePagedGrid) videoStage.classList.add('paged-grid');
     visibleCards.forEach(card => videoMain.appendChild(card));
     setParticipantOverlayState(false);
-    updateParticipantDrawerUi(cards);
+    updateParticipantDrawerUi(cards, focusTarget);
     updateVideoPager(cards.length, totalPages);
     return;
   }
@@ -678,14 +695,14 @@ function renderLayout(force = false) {
   focusTarget.classList.add('is-focused');
   videoMain.appendChild(focusTarget);
 
-  const sidebarCards = cards.filter(card => card !== focusTarget);
+  const sidebarCards = getSidebarCards(cards, focusTarget);
   sidebarCards.forEach(card => {
     card.classList.add('is-sidebar');
     videoSidebar.appendChild(card);
   });
 
   videoStage.classList.toggle('sidebar-hidden', hiddenSidebar || sidebarCards.length === 0);
-  updateParticipantDrawerUi(cards);
+  updateParticipantDrawerUi(cards, focusTarget);
   updateShareUiState();
 }
 
