@@ -457,8 +457,16 @@ function renderLayout(force = false) {
   const totalPages = Math.max(1, Math.ceil(cards.length / pageSize));
   currentGridPage = Math.max(0, Math.min(currentGridPage, totalPages - 1));
 
-  const focusTarget = document.getElementById('card-' + (focusedSid || 'local')) || document.getElementById('card-local') || cards[0];
+  const focusTarget = getPreferredFocusCard(cards);
   if (!focusTarget) return;
+  if (currentSharerSid && focusTarget.dataset?.sid !== currentSharerSid) {
+    const sharerCard = getCurrentSharerCard();
+    if (sharerCard && cards.includes(sharerCard)) {
+      focusedSid = currentSharerSid;
+    }
+  } else if (focusTarget.dataset?.sid) {
+    focusedSid = focusTarget.dataset.sid;
+  }
 
   const canUseGrid = !currentSharerSid && !hiddenSidebar;
   const shouldUseGrid = canUseGrid && cards.length <= pageSize;
