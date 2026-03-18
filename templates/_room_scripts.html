@@ -1,141 +1,3 @@
-{% extends 'base.html' %}
-{% block title %}{{ t('meeting_room') }}{% endblock %}
-{% block content %}
-<header class="topbar compact">
-  <div>
-    <div class="brand">{{ t('meeting_room') }}</div>
-    <div class="muted">{{ t('room_id') }}: {{ room_id }}</div>
-    <div class="muted">{{ t('record_password_label') }}: {{ room_password }}</div>
-  </div>
-  <div class="top-actions">
-    <div class="lang-switch">
-      <a class="chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}">{{ t('lang_zh') }}</a>
-      <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
-    </div>
-    <span class="user-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
-    <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
-  </div>
-</header>
-
-<section class="grid room-grid-layout">
-  <aside class="panel side-panel panel-glow">
-    <h2>{{ t('permissions') }}</h2>
-    <div class="stack-controls button-grid-2">
-      <button class="primary-btn slim-btn" id="requestMediaBtn">{{ t('request_media') }}</button>
-      <button class="ghost-btn" id="switchCameraBtn">{{ t('switch_camera') }}</button>
-      <button class="ghost-btn" id="shareScreenBtn">{{ t('share_screen') }}</button>
-      <button class="ghost-btn" id="virtualBgBtn">{{ t('virtual_bg') }}</button>
-      <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
-      <button class="ghost-btn" id="toggleMicBtn">{{ t('mic') }}</button>
-      <button class="ghost-btn" id="toggleCameraBtn">{{ t('camera') }}</button>
-      <button class="ghost-btn danger" id="leaveMeetingBtn">{{ t('leave') }}</button>
-      {% if is_host %}<button class="ghost-btn danger" id="hostEndMeetingBtn">{{ t('host_end_meeting') }}</button>{% endif %}
-    </div>
-    <input id="virtualBgInput" type="file" accept="image/*" class="hidden" />
-    <div id="statusBox" class="notice">{{ t('room_ready') }}</div>
-    <div class="mini-panel">
-      <div class="muted">{{ t('profile_section') }}</div>
-      <label>{{ t('display_name') }}</label>
-      <div class="row-compact">
-        <input id="displayNameInput" maxlength="32" value="{{ preferred_display_name }}" />
-        <button class="ghost-btn" id="saveProfileBtn">{{ t('save') }}</button>
-      </div>
-    </div>
-    <div class="mini-panel">
-      <div class="muted">{{ t('invite_link') }}</div>
-      <div class="row-compact">
-        <input id="inviteInput" readonly value="{{ invite_url }}" />
-        <button class="ghost-btn" id="copyInviteBtn">{{ t('copy') }}</button>
-      </div>
-    </div>
-    <div class="mini-panel">
-      <div class="muted">{{ t('traffic_usage') }} · {{ t('traffic_turn_relay') }}</div>
-      <div class="status-grid">
-        <div><span>{{ t('monthly_quota') }}</span><strong id="trafficQuotaTotal">{{ traffic.monthly_quota_text }}</strong></div>
-        <div><span>{{ t('used_traffic') }}</span><strong id="trafficQuotaUsed">{{ traffic.used_traffic_text }}</strong></div>
-        <div><span>{{ t('remaining_traffic') }}</span><strong id="trafficQuotaRemaining">{{ traffic.remaining_traffic_text }}</strong></div>
-        <div><span>{{ t('reset_cycle') }}</span><strong id="trafficQuotaReset">{{ traffic.reset_at_text }}</strong></div>
-      </div>
-    </div>
-  </aside>
-
-  <main class="panel video-panel panel-glow">
-    <div id="videoStage" class="video-stage">
-      <div id="videoMain" class="video-main"></div>
-      <div id="videoSidebar" class="video-sidebar"></div>
-    </div>
-    <div id="videoPager" class="video-pager hidden" aria-label="{{ '分页参会者视图' if lang == 'zh' else 'Paged participant view' }}">
-      <div class="video-pager-left">
-        <button id="videoHomePageBtn" class="ghost-btn pager-btn pager-home-btn" type="button" title="{{ '首页' if lang == 'zh' else 'First page' }}" aria-label="{{ '首页' if lang == 'zh' else 'First page' }}">⌂</button>
-        <button id="videoPrevPageBtn" class="ghost-btn pager-btn" type="button">{{ '上一页' if lang == 'zh' else 'Previous' }}</button>
-      </div>
-      <div class="video-pager-center">
-        <span id="videoPagerInfo" class="video-pager-info">1 / 1</span>
-      </div>
-      <div class="video-pager-right">
-        <button id="videoNextPageBtn" class="ghost-btn pager-btn" type="button">{{ '下一页' if lang == 'zh' else 'Next' }}</button>
-      </div>
-    </div>
-      <div id="danmakuLayer" class="danmaku-layer"></div>
-      <button id="chatShowBtn" class="chat-side-toggle chat-show-btn hidden" type="button">{{ t('chat_short') }} ◀</button>
-    <div id="chatWindow" class="chat-window">
-      <button id="chatMobileHandle" class="chat-mobile-handle" type="button" aria-label="{{ t('drag_chat_panel') }}">
-        <span></span>
-      </button>
-      <div id="chatHeader" class="chat-header">
-        <div>
-          <strong>{{ t('meeting_chat') }}</strong>
-          <div class="muted small-note">{{ t('meeting_chat_desc') }}</div>
-        </div>
-        <div class="row-compact">
-          <button class="card-btn" id="chatHideBtn">{{ t('hide') }} →</button>
-          <button class="card-btn" id="mentionBtn">@</button>
-          <button class="card-btn" id="clearChatBtn">{{ t('clear') }}</button>
-          {% if is_host %}<button class="card-btn" id="toggleDanmakuBtn">{{ t('danmaku_display') }}</button>{% endif %}
-        </div>
-      </div>
-      <div class="chat-toolbar">
-        <button class="chat-mode-btn active" data-mode="all">{{ t('everyone_visible') }}</button>
-        <button class="chat-mode-btn" data-mode="host">{{ t('host_only') }}</button>
-      </div>
-      <div id="mentionPicker" class="picker-panel hidden"></div>
-      <div id="chatMessages" class="chat-messages"></div>
-      <div id="chatAttachmentPreview" class="chat-attachment-preview hidden"></div>
-      <div class="chat-file-permission-row">
-        <label>{{ t('attachment_permission') }}</label>
-        <select id="chatAttachmentPermission">
-          <option value="download" {% if (current_user.default_attachment_permission or 'download') == 'download' %}selected{% endif %}>{{ t('download_allowed') }}</option>
-          <option value="view" {% if (current_user.default_attachment_permission or '') == 'view' %}selected{% endif %}>{{ t('view_only') }}</option>
-        </select>
-      </div>
-      <div class="chat-composer">
-        <div class="chat-input-row">
-          <textarea id="chatInput" rows="3" placeholder="{{ t('chat_input_placeholder') }}"></textarea>
-        </div>
-        <div id="emojiPopover" class="emoji-popover hidden">
-          <div class="emoji-popover-head">
-            <strong>{{ t('choose_emoji') }}</strong>
-            <button class="card-btn" id="emojiCloseBtn" type="button">{{ t('close') }}</button>
-          </div>
-          <div id="emojiPicker" class="emoji-picker"></div>
-        </div>
-        <div class="chat-actions">
-          <div class="chat-actions-left">
-            <label class="ghost-btn attachment-btn">{{ t('media_short') }}<input id="chatMediaInput" type="file" accept="image/*,video/*,.heic,.heif,.avi,.3gp" class="hidden" /></label>
-            <label class="ghost-btn attachment-btn">{{ t('docs_archive_short') }}<input id="chatDocInput" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,.rar,.7z" class="hidden" /></label>
-            <button class="ghost-btn" id="emojiBtn" type="button">😊 {{ t('emoji') }}</button>
-            <button class="ghost-btn raise-hand-btn" id="raiseHandBtn" type="button">🙋 {{ t('raise_hand') }}</button>
-          </div>
-          <button class="primary-btn slim-btn" id="sendChatBtn">{{ t('send') }}</button>
-        </div>
-      </div>
-    </div>
-    <div id="chatContextMenu" class="chat-context-menu hidden"></div>
-  </main>
-</section>
-{% endblock %}
-
-{% block scripts %}
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
 <script>
@@ -146,8 +8,6 @@ const DEFAULT_PREFERRED_NAME = {{ preferred_display_name|tojson }};
 const PREF_ENABLE_DANMAKU = {{ 'true' if default_danmaku_enabled else 'false' }};
 const PREF_AUTO_ENABLE_CAMERA = {{ 'true' if auto_enable_camera else 'false' }};
 const PREF_AUTO_ENABLE_MICROPHONE = {{ 'true' if auto_enable_microphone else 'false' }};
-const PREF_STAGE_ROTATION_ENABLED = {{ 'true' if stage_rotation_enabled else 'false' }};
-const PREF_STAGE_ROTATION_SECONDS = {{ stage_rotation_seconds|int }};
 let USER_NAME = (localStorage.getItem('meeting_display_name') || DEFAULT_PREFERRED_NAME || DEFAULT_USER_NAME).trim() || DEFAULT_PREFERRED_NAME || DEFAULT_USER_NAME;
 const TEXT_PERMISSION_READY = {{ t('permission_ready')|tojson }};
 const TEXT_PERMISSION_FAILED = {{ t('permission_failed')|tojson }};
@@ -194,34 +54,25 @@ const TEXT_ATTACHMENT_LIMIT_IMAGE = {{ ('图片请控制在 25MB 以内' if lang
 const TEXT_ATTACHMENT_LIMIT_VIDEO = {{ ('视频请控制在 120MB 以内' if lang == 'zh' else 'Please keep videos under 120MB')|tojson }};
 const TEXT_ATTACHMENT_LIMIT_FILE = {{ ('文档或压缩包请控制在 25MB 以内' if lang == 'zh' else 'Please keep documents or archives under 25MB')|tojson }};
 const TEXT_ROOM_STORAGE_LIMIT = {{ ('当前会议附件空间已接近上限，请先清理聊天或稍后再试' if lang == 'zh' else 'Meeting attachment storage is nearly full. Please clear chat or try later')|tojson }};
-const TEXT_SINGLE_SCREEN_SHARE_ONLY = {{ t('single_screen_share_only')|tojson }};
-const TEXT_RAISE_HAND = {{ t('raise_hand')|tojson }};
-const TEXT_LOWER_HAND = {{ t('lower_hand')|tojson }};
-const TEXT_HAND_RAISED = {{ t('hand_raised')|tojson }};
 
 const socket = io();
 const rtcConfig = { iceServers: {{ turn_ice_servers|tojson }}, iceTransportPolicy: 'relay' };
-const ROOM_TEST_PARAMS = new URLSearchParams(window.location.search);
-const TEST_GRID_COUNT = Math.max(0, Math.min(120, parseInt(ROOM_TEST_PARAMS.get('testgrid') || ROOM_TEST_PARAMS.get('fake') || '0', 10) || 0));
-const IS_GRID_TEST_MODE = TEST_GRID_COUNT > 0;
-const TEXT_TEST_GRID_ACTIVE = {{ ('当前为布局测试模式：已生成虚拟参会者，仅用于测试视频宫格与分页。' if lang == 'zh' else 'Layout test mode is active: fake participants were added for grid and pagination testing only.')|tojson }};
 
 let localStream = null;
 let rawCameraStream = null;
 let currentFacingMode = 'user';
 let peerConnections = {};
 let participantMeta = {};
-let fakeParticipantMeta = {};
 let focusedSid = 'local';
 let hiddenSidebar = false;
 let currentSharerSid = null;
+
+function normalizeParticipantSid(sid) {
+  if (!sid) return sid;
+  return sid === socket.id ? 'local' : sid;
+}
 let currentGridPage = 0;
-let raisedHands = new Set();
-let stageRotationEnabled = !!PREF_STAGE_ROTATION_ENABLED;
-let stageRotationSeconds = Number(PREF_STAGE_ROTATION_SECONDS || 15) || 15;
-let screenShareSpotlightSid = null;
-let screenShareRotationTimer = null;
-let localRaisedHand = false;
+let videoSearchKeyword = '';
 
 function getGridPageSize() {
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
@@ -300,7 +151,11 @@ const videoPager = document.getElementById('videoPager');
 const videoPrevPageBtn = document.getElementById('videoPrevPageBtn');
 const videoNextPageBtn = document.getElementById('videoNextPageBtn');
 const videoHomePageBtn = document.getElementById('videoHomePageBtn');
+const videoSearchInput = document.getElementById('videoSearchInput');
 const videoPagerInfo = document.getElementById('videoPagerInfo');
+const shareScreenBtn = document.getElementById('shareScreenBtn');
+const virtualBgBtn = document.getElementById('virtualBgBtn');
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 function setStatus(msg, cls='') {
   if (!statusBox) return;
@@ -312,7 +167,45 @@ function getDisplayName(sid) {
   return sid === 'local' ? `${USER_NAME} · {{ t('local_you') }}` : (participantMeta[sid]?.name || sid);
 }
 
-const roomDebugEnabled = ROOM_TEST_PARAMS.get('debugRoom') === '1';
+function isMobileDevice() {
+  return window.matchMedia('(max-width: 768px)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+async function safePlayVideo(videoEl) {
+  if (!videoEl) return false;
+  try {
+    const p = videoEl.play?.();
+    if (p && typeof p.then === 'function') await p;
+    return true;
+  } catch (_) {
+    const retry = () => {
+      videoEl.play?.().catch(() => {});
+      window.removeEventListener('touchstart', retry, true);
+      window.removeEventListener('click', retry, true);
+    };
+    window.addEventListener('touchstart', retry, true);
+    window.addEventListener('click', retry, true);
+    return false;
+  }
+}
+
+function updateShareUiState() {
+  const canShare = !!navigator.mediaDevices?.getDisplayMedia;
+  const occupiedByOther = !!currentSharerSid && currentSharerSid !== 'local';
+  if (shareScreenBtn) {
+    shareScreenBtn.disabled = !canShare || occupiedByOther;
+    shareScreenBtn.title = !canShare
+      ? {{ ('当前设备/浏览器不支持共享屏幕' if lang == 'zh' else 'This device/browser does not support screen sharing')|tojson }}
+      : (occupiedByOther ? {{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }} : '');
+  }
+  if (virtualBgBtn) {
+    const disabledByShare = !!isSharingScreen || !!currentSharerSid;
+    virtualBgBtn.disabled = disabledByShare;
+    virtualBgBtn.title = disabledByShare ? {{ ('共享屏幕期间不可使用虚拟背景' if lang == 'zh' else 'Virtual background is unavailable during screen sharing')|tojson }} : '';
+  }
+}
+
+const roomDebugEnabled = new URLSearchParams(window.location.search).get('debugRoom') === '1';
 let simulatedFullscreenCardSid = null;
 let pendingLayoutAfterFullscreen = false;
 
@@ -463,14 +356,15 @@ function ensureCard(sid, displayName = null, isLocal = false) {
     videoEl.autoplay = true;
     videoEl.playsInline = true;
   }
+  videoEl.setAttribute('autoplay', 'autoplay');
+  videoEl.setAttribute('playsinline', 'playsinline');
+  videoEl.setAttribute('webkit-playsinline', 'true');
   videoEl.className = 'video-el';
   card.prepend(videoEl);
 
   if (!card.parentElement) {
     videoMain.appendChild(card);
   }
-
-  updateRaisedHandBadge(card, raisedHands.has(sid));
 
   card.querySelector('[data-action="fullscreen"]').addEventListener('click', async () => {
     try {
@@ -488,82 +382,6 @@ function updatePlaceholder(card, hasVideo) {
   card.classList.toggle('has-video', !!hasVideo);
 }
 
-function updateRaisedHandBadge(card, visible) {
-  if (!card) return;
-  let badge = card.querySelector('.raised-hand-badge');
-  if (!badge) {
-    badge = document.createElement('div');
-    badge.className = 'raised-hand-badge hidden';
-    badge.textContent = '🙋 ' + TEXT_HAND_RAISED;
-    card.appendChild(badge);
-  }
-  badge.classList.toggle('hidden', !visible);
-  card.classList.toggle('raised-hand-card', !!visible);
-}
-
-function applyRaisedHandState(sid, raised) {
-  if (!sid) return;
-  if (raised) raisedHands.add(sid);
-  else raisedHands.delete(sid);
-  const card = document.getElementById('card-' + sid);
-  if (card) updateRaisedHandBadge(card, raisedHands.has(sid));
-}
-
-function orderedScreenShareCandidates() {
-  if (!currentSharerSid) return [];
-  const base = ['local', ...Object.keys(participantMeta), ...Object.keys(fakeParticipantMeta)].filter((sid) => sid !== currentSharerSid);
-  const prioritized = [];
-  const normal = [];
-  base.forEach((sid) => {
-    if (raisedHands.has(sid)) prioritized.push(sid);
-    else normal.push(sid);
-  });
-  return [...prioritized, ...normal];
-}
-
-function orderedScreenShareQueueSids() {
-  const candidates = orderedScreenShareCandidates();
-  if (!candidates.length) return [];
-  const spotlightIndex = Math.max(0, candidates.indexOf(screenShareSpotlightSid));
-  const queueStart = spotlightIndex >= 0 ? spotlightIndex + 1 : 0;
-  return candidates.slice(queueStart).concat(candidates.slice(0, Math.max(0, spotlightIndex))).filter((sid) => sid !== screenShareSpotlightSid);
-}
-
-function stopScreenShareRotationTimer() {
-  if (screenShareRotationTimer) {
-    clearInterval(screenShareRotationTimer);
-    screenShareRotationTimer = null;
-  }
-}
-
-function syncScreenShareSpotlight(force = false) {
-  if (!currentSharerSid) {
-    screenShareSpotlightSid = null;
-    stopScreenShareRotationTimer();
-    return;
-  }
-  const candidates = orderedScreenShareCandidates();
-  if (!candidates.length) {
-    screenShareSpotlightSid = null;
-    stopScreenShareRotationTimer();
-    return;
-  }
-  if (force || !screenShareSpotlightSid || !candidates.includes(screenShareSpotlightSid)) {
-    screenShareSpotlightSid = candidates[0];
-  }
-  stopScreenShareRotationTimer();
-  if (stageRotationEnabled && candidates.length > 1) {
-    const intervalMs = Math.max(15, Number(stageRotationSeconds || 15)) * 1000;
-    screenShareRotationTimer = setInterval(() => {
-      const nextCandidates = orderedScreenShareCandidates();
-      if (!currentSharerSid || nextCandidates.length <= 1) return;
-      const currentIndex = Math.max(0, nextCandidates.indexOf(screenShareSpotlightSid));
-      screenShareSpotlightSid = nextCandidates[(currentIndex + 1) % nextCandidates.length];
-      renderLayout();
-    }, intervalMs);
-  }
-}
-
 function getGridColumns(cardCount) {
   if (cardCount <= 1) return 1;
   if (cardCount === 2) return 2;
@@ -574,72 +392,44 @@ function getGridColumns(cardCount) {
 function updateVideoPager(totalCards, totalPages) {
   if (!videoPager || !videoPrevPageBtn || !videoNextPageBtn || !videoPagerInfo) return;
   const pageSize = getGridPageSize();
-  const showPager = !currentSharerSid && totalCards > pageSize && totalPages > 1;
+  const hasSearch = !!getVideoSearchKeyword();
+  const showPager = !currentSharerSid && ((totalCards > pageSize && totalPages > 1) || hasSearch);
   videoPager.classList.toggle('hidden', !showPager);
   if (!showPager) {
     videoPagerInfo.textContent = '1 / 1';
     if (videoHomePageBtn) videoHomePageBtn.disabled = true;
+    if (videoSearchInput) videoSearchInput.value = videoSearchKeyword;
     return;
   }
   videoPagerInfo.textContent = `${currentGridPage + 1} / ${totalPages}`;
   videoPrevPageBtn.disabled = currentGridPage <= 0;
   videoNextPageBtn.disabled = currentGridPage >= totalPages - 1;
   if (videoHomePageBtn) videoHomePageBtn.disabled = currentGridPage <= 0;
+  if (videoSearchInput && videoSearchInput.value !== videoSearchKeyword) videoSearchInput.value = videoSearchKeyword;
+}
+
+function getVideoSearchKeyword() {
+  return String(videoSearchKeyword || '').trim().toLocaleLowerCase('zh-Hans-CN');
 }
 
 function getRenderableCards() {
-  const orderedSids = ['local', ...Object.keys(participantMeta), ...Object.keys(fakeParticipantMeta)];
+  const orderedSids = ['local', ...Object.keys(participantMeta)];
   const seen = new Set();
+  const keyword = getVideoSearchKeyword();
   return orderedSids
     .filter(sid => {
       if (seen.has(sid)) return false;
       seen.add(sid);
-      return true;
+      if (!keyword) return true;
+      const displayName = sid === 'local' ? getDisplayName('local') : getDisplayName(sid);
+      const haystack = `${displayName || ''} ${sid || ''} ${ROOM_ID || ''}`.toLocaleLowerCase('zh-Hans-CN');
+      return haystack.includes(keyword);
     })
     .map(sid => ensureCard(
       sid,
-      sid === 'local' ? getDisplayName('local') : (fakeParticipantMeta[sid]?.name || getDisplayName(sid)),
+      sid === 'local' ? getDisplayName('local') : getDisplayName(sid),
       sid === 'local'
     ));
-}
-
-let playbackRecoveryTimer = null;
-
-function resumeVisibleVideoPlayback() {
-  const videos = Array.from(document.querySelectorAll('#videoMain video, #videoSidebar video'));
-  videos.forEach(video => {
-    if (!(video instanceof HTMLVideoElement)) return;
-    if (!video.srcObject) return;
-    if (video.readyState >= 2 && !video.paused) return;
-    video.muted = video.id === 'localVideo';
-    video.playsInline = true;
-    const tryPlay = () => video.play().catch(() => {});
-    requestAnimationFrame(tryPlay);
-    setTimeout(tryPlay, 80);
-  });
-}
-
-function setPagedCardVisibility(card, visible) {
-  if (!card) return;
-  card.classList.toggle('page-hidden', !visible);
-  card.setAttribute('aria-hidden', visible ? 'false' : 'true');
-}
-
-function stableAppendCards(container, cards) {
-  if (!container) return;
-  cards.forEach(card => {
-    if (card.parentElement !== container || card !== container.lastElementChild) {
-      container.appendChild(card);
-    }
-  });
-}
-
-function schedulePlaybackRecovery(reason = 'layout') {
-  clearTimeout(playbackRecoveryTimer);
-  playbackRecoveryTimer = setTimeout(() => {
-    roomDebugLog('playback recovery', { reason, currentGridPage });
-    resumeVisibleVideoPlayback();
-  }, 40);
 }
 
 function renderLayout(force = false) {
@@ -651,7 +441,7 @@ function renderLayout(force = false) {
   }
   const cards = getRenderableCards();
   if (!cards.length) {
-    videoMain.innerHTML = '<div class="video-empty-state">' + escapeHtml({{ ('暂无可显示的参会者' if lang == 'zh' else 'No participants to display')|tojson }}) + '</div>';
+    videoMain.innerHTML = '<div class="video-empty-state">' + escapeHtml({{ ('未找到匹配的参会者' if lang == 'zh' else 'No matching participants found')|tojson }}) + '</div>';
     videoSidebar.innerHTML = '';
     videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid', 'focus-layout', 'grid-layout');
     videoStage.classList.add('sidebar-hidden');
@@ -659,82 +449,30 @@ function renderLayout(force = false) {
     return;
   }
 
-  cards.forEach(card => {
-    card.classList.remove('is-focused', 'is-sidebar', 'is-stage-spotlight', 'is-stage-queue');
-    setPagedCardVisibility(card, true);
-  });
-  videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid', 'screen-share-stacked');
+  videoMain.innerHTML = '';
+  videoSidebar.innerHTML = '';
+
+  cards.forEach(card => card.classList.remove('is-focused', 'is-sidebar'));
+  videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
 
   const pageSize = getGridPageSize();
   const totalPages = Math.max(1, Math.ceil(cards.length / pageSize));
   currentGridPage = Math.max(0, Math.min(currentGridPage, totalPages - 1));
 
-  const focusTarget = document.getElementById('card-' + (focusedSid || 'local')) || document.getElementById('card-local') || cards[0];
+  let focusTarget = null;
+  if (currentSharerSid) {
+    focusTarget = cards.find(card => card.dataset.sid === currentSharerSid)
+      || document.getElementById('card-' + currentSharerSid);
+  }
+  if (!focusTarget && focusedSid) {
+    focusTarget = cards.find(card => card.dataset.sid === focusedSid)
+      || document.getElementById('card-' + focusedSid);
+  }
+  if (!focusTarget) {
+    focusTarget = document.getElementById('card-local') || cards[0];
+  }
   if (!focusTarget) return;
 
-  if (currentSharerSid) {
-    syncScreenShareSpotlight();
-    const sharerCard = document.getElementById('card-' + currentSharerSid) || focusTarget;
-    const spotlightCard = screenShareSpotlightSid ? document.getElementById('card-' + screenShareSpotlightSid) : null;
-    const queueSids = orderedScreenShareQueueSids().filter((sid) => sid !== currentSharerSid && sid !== screenShareSpotlightSid);
-    videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
-    videoStage.classList.add('focus-layout', 'screen-share-mode', 'screen-share-stacked');
-    videoStage.classList.remove('grid-layout');
-    videoMain.innerHTML = '';
-    videoSidebar.innerHTML = '';
-
-    cards.forEach((card) => {
-      const sid = card.dataset.sid || '';
-      const visible = sid === currentSharerSid || sid === screenShareSpotlightSid;
-      setPagedCardVisibility(card, visible);
-    });
-
-    const hostSlot = document.createElement('div');
-    hostSlot.className = 'screen-share-host-slot';
-    sharerCard.classList.add('is-focused', 'is-screen-host');
-    setPagedCardVisibility(sharerCard, true);
-    hostSlot.appendChild(sharerCard);
-    videoMain.appendChild(hostSlot);
-
-    const stageSlot = document.createElement('div');
-    stageSlot.className = 'screen-share-stage-slot';
-    if (spotlightCard) {
-      spotlightCard.classList.add('is-stage-spotlight');
-      setPagedCardVisibility(spotlightCard, true);
-      stageSlot.appendChild(spotlightCard);
-    } else {
-      stageSlot.innerHTML = '<div class="video-empty-state">' + escapeHtml({{ ('当前暂无候场用户' if lang == 'zh' else 'No one is currently on stage')|tojson }}) + '</div>';
-    }
-    videoMain.appendChild(stageSlot);
-
-    if (queueSids.length) {
-      const queueWrap = document.createElement('div');
-      queueWrap.className = 'screen-share-queue-list';
-      const queueTitle = document.createElement('div');
-      queueTitle.className = 'screen-share-queue-title';
-      queueTitle.textContent = {{ ('右侧候场队列' if lang == 'zh' else 'Queue')|tojson }};
-      queueWrap.appendChild(queueTitle);
-      queueSids.forEach((sid, index) => {
-        const item = document.createElement('div');
-        item.className = 'screen-share-queue-item' + (raisedHands.has(sid) ? ' raised' : '');
-        item.dataset.sid = sid;
-        item.innerHTML = `
-          <span class="screen-share-queue-index">${index + 1}</span>
-          <span class="screen-share-queue-name">${escapeHtml(fakeParticipantMeta[sid]?.name || getDisplayName(sid))}</span>
-          ${raisedHands.has(sid) ? '<span class="screen-share-queue-badge">🙋</span>' : ''}
-        `;
-        queueWrap.appendChild(item);
-      });
-      videoSidebar.appendChild(queueWrap);
-    }
-
-    videoStage.classList.toggle('sidebar-hidden', queueSids.length === 0);
-    updateVideoPager(cards.length, totalPages);
-    schedulePlaybackRecovery('screen-share-layout');
-    return;
-  }
-
-  videoStage.classList.remove('screen-share-stacked');
   const canUseGrid = !currentSharerSid && !hiddenSidebar;
   const shouldUseGrid = canUseGrid && cards.length <= pageSize;
   const shouldUsePagedGrid = canUseGrid && cards.length > pageSize;
@@ -745,25 +483,17 @@ function renderLayout(force = false) {
 
   if (shouldUseGrid || shouldUsePagedGrid) {
     videoStage.classList.add('sidebar-hidden');
-    videoSidebar.innerHTML = '';
     const start = shouldUsePagedGrid ? currentGridPage * pageSize : 0;
     const end = shouldUsePagedGrid ? start + pageSize : cards.length;
     const visibleCards = cards.slice(start, end);
-    const visibleSet = new Set(visibleCards);
     const gridCols = getGridColumns(visibleCards.length);
     videoStage.classList.add(`grid-${gridCols}`);
     if (shouldUsePagedGrid) videoStage.classList.add('paged-grid');
-    stableAppendCards(videoMain, cards);
-    cards.forEach(card => setPagedCardVisibility(card, visibleSet.has(card)));
-    const emptyState = videoMain.querySelector('.video-empty-state');
-    if (emptyState) emptyState.remove();
+    visibleCards.forEach(card => videoMain.appendChild(card));
     updateVideoPager(cards.length, totalPages);
-    schedulePlaybackRecovery(shouldUsePagedGrid ? 'grid-page-switch' : 'grid-render');
     return;
   }
 
-  videoMain.innerHTML = '';
-  videoSidebar.innerHTML = '';
   updateVideoPager(cards.length, totalPages);
   focusTarget.classList.add('is-focused');
   videoMain.appendChild(focusTarget);
@@ -775,38 +505,18 @@ function renderLayout(force = false) {
   });
 
   videoStage.classList.toggle('sidebar-hidden', hiddenSidebar || sidebarCards.length === 0);
-  schedulePlaybackRecovery('focus-render');
+  updateShareUiState();
 }
 
 function focusParticipant(sid, opts = {}) {
   focusedSid = sid;
   if (typeof opts.hideSidebar === 'boolean') hiddenSidebar = opts.hideSidebar;
-  if (opts.screenShare) currentSharerSid = sid;
+  if (Object.prototype.hasOwnProperty.call(opts, 'screenShare')) currentSharerSid = opts.screenShare ? sid : null;
   renderLayout();
 }
 
 function updateParticipantCount() {
-  participantCountEl.textContent = 1 + Object.keys(participantMeta).length + Object.keys(fakeParticipantMeta).length;
-}
-
-function getFakeParticipantName(index) {
-  return {{ ('测试用户' if lang == 'zh' else 'Test User')|tojson }} + ' ' + String(index + 1);
-}
-
-function seedFakeParticipants() {
-  if (!IS_GRID_TEST_MODE) return;
-  fakeParticipantMeta = {};
-  for (let i = 0; i < TEST_GRID_COUNT; i += 1) {
-    const sid = `fake-${i + 1}`;
-    const name = getFakeParticipantName(i);
-    fakeParticipantMeta[sid] = { name };
-    const card = ensureCard(sid, name, false);
-    updatePlaceholder(card, false);
-  }
-  currentGridPage = 0;
-  renderLayout();
-  updateParticipantCount();
-  setStatus(TEXT_TEST_GRID_ACTIVE);
+  participantCountEl.textContent = 1 + Object.keys(participantMeta).length;
 }
 
 function stopStreamTracks(stream) {
@@ -855,15 +565,11 @@ function deactivateVirtualBackground(message = null) {
 function useLocalOutputStream(stream) {
   localStream = stream;
   localVideo.srcObject = stream;
-  localVideo.muted = true;
-  localVideo.playsInline = true;
-  localVideo.autoplay = true;
-  localVideo.play().catch(() => {});
+  safePlayVideo(localVideo);
   const localCard = ensureCard('local', getDisplayName('local'), true);
   updatePlaceholder(localCard, !!stream?.getVideoTracks?.()[0]?.enabled);
   syncPeerMedia().catch(err => console.error(err));
   renderLayout();
-  schedulePlaybackRecovery('local-stream-update');
 }
 
 function getScaledSize(width, height) {
@@ -920,26 +626,39 @@ async function transcodeRecordingBlob(blob, filename = 'meeting-recording.webm')
   return await response.blob();
 }
 
-async function requestMedia(forceFacingMode = null, options = false) {
+async function requestMedia(forceFacingMode = null, manualRequest = false, preferredKinds = null) {
+  const wantsVideo = Array.isArray(preferredKinds) ? preferredKinds.includes('video') : (manualRequest ? true : !!PREF_AUTO_ENABLE_CAMERA);
+  const wantsAudio = Array.isArray(preferredKinds) ? preferredKinds.includes('audio') : (manualRequest ? true : !!PREF_AUTO_ENABLE_MICROPHONE);
+  if (!wantsVideo && !wantsAudio) {
+    setStatus({{ ('当前未设置自动打开摄像头或麦克风，请手动开启。' if lang == 'zh' else 'Camera and microphone are both off by default. Enable either one manually when needed.')|tojson }});
+    return null;
+  }
   try {
-    const manualRequest = typeof options === 'object' ? !!options.manualRequest : !!options;
-    const wantsVideo = typeof options === 'object' && typeof options.wantsVideo === 'boolean' ? options.wantsVideo : (manualRequest ? true : !!PREF_AUTO_ENABLE_CAMERA);
-    const wantsAudio = typeof options === 'object' && typeof options.wantsAudio === 'boolean' ? options.wantsAudio : (manualRequest ? true : !!PREF_AUTO_ENABLE_MICROPHONE);
-
-    if (rawCameraStream) stopStreamTracks(rawCameraStream);
-    disableVirtualBackgroundState({ stopCanvas: true });
-
-    if (!wantsVideo && !wantsAudio) {
-      setStatus({{ ('当前偏好为入会不自动开启摄像头与麦克风，可手动点击“申请摄像头/麦克风权限”' if lang == 'zh' else 'Your preferences keep camera and microphone off when joining. Use the media button to enable them manually.')|tojson }});
-      return;
-    }
     const constraints = {
       audio: wantsAudio,
-      video: wantsVideo ? (forceFacingMode ? { facingMode: { ideal: forceFacingMode } } : true) : false,
+      video: wantsVideo ? (forceFacingMode && !IS_IOS ? { facingMode: { ideal: forceFacingMode } } : true) : false,
     };
-    rawCameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    const nextRawStream = await navigator.mediaDevices.getUserMedia(constraints);
+    const nextVideoTrack = nextRawStream.getVideoTracks()[0] || null;
+    const nextAudioTrack = nextRawStream.getAudioTracks()[0] || null;
+
+    if (rawCameraStream) {
+      const oldVideoTrack = rawCameraStream.getVideoTracks()[0] || null;
+      const oldAudioTrack = rawCameraStream.getAudioTracks()[0] || null;
+      if (oldVideoTrack && nextVideoTrack && oldVideoTrack !== nextVideoTrack) { try { oldVideoTrack.stop(); } catch (_) {} }
+      if (oldAudioTrack && nextAudioTrack && oldAudioTrack !== nextAudioTrack) { try { oldAudioTrack.stop(); } catch (_) {} }
+      const merged = new MediaStream();
+      if (nextVideoTrack || oldVideoTrack) merged.addTrack(nextVideoTrack || oldVideoTrack);
+      if (nextAudioTrack || oldAudioTrack) merged.addTrack(nextAudioTrack || oldAudioTrack);
+      rawCameraStream = merged;
+    } else {
+      rawCameraStream = nextRawStream;
+    }
+
+    disableVirtualBackgroundState({ stopCanvas: true });
     rawPreviewVideo.srcObject = rawCameraStream;
-    await rawPreviewVideo.play().catch(() => {});
+    await safePlayVideo(rawPreviewVideo);
+
     if (!manualRequest) {
       rawCameraStream.getVideoTracks().forEach(track => { track.enabled = !!PREF_AUTO_ENABLE_CAMERA; });
       rawCameraStream.getAudioTracks().forEach(track => { track.enabled = !!PREF_AUTO_ENABLE_MICROPHONE; });
@@ -947,7 +666,7 @@ async function requestMedia(forceFacingMode = null, options = false) {
 
     useLocalOutputStream(rawCameraStream);
 
-    if (virtualBgImageDataUrl) {
+    if (virtualBgImageDataUrl && !isSharingScreen && !currentSharerSid) {
       try {
         await activateVirtualBackground();
       } catch (vbgErr) {
@@ -957,10 +676,19 @@ async function requestMedia(forceFacingMode = null, options = false) {
     } else {
       setStatus(TEXT_PERMISSION_READY);
     }
+    return rawCameraStream;
   } catch (err) {
     console.error(err);
     setStatus(TEXT_PERMISSION_FAILED + ': ' + err.message, 'error');
+    return null;
   }
+}
+
+async function ensureRequestedTrack(kind) {
+  const track = kind === 'video' ? rawCameraStream?.getVideoTracks?.()[0] : rawCameraStream?.getAudioTracks?.()[0];
+  if (track) return track;
+  const stream = await requestMedia(currentFacingMode, true, [kind]);
+  return kind === 'video' ? stream?.getVideoTracks?.()[0] : stream?.getAudioTracks?.()[0];
 }
 
 async function syncPeerMedia(targetSid = null) {
@@ -1034,9 +762,7 @@ function addRemoteParticipant(sid, name) {
   participantMeta[sid] = { name: name || sid };
   const card = ensureCard(sid, participantMeta[sid].name, false);
   updatePlaceholder(card, false);
-  updateRaisedHandBadge(card, raisedHands.has(sid));
   currentGridPage = 0;
-  syncScreenShareSpotlight(true);
   renderLayout();
   updateParticipantCount();
 }
@@ -1045,12 +771,9 @@ function addRemoteVideo(sid, stream) {
   const card = ensureCard(sid, getDisplayName(sid), false);
   const videoEl = card.querySelector('video');
   videoEl.srcObject = stream;
-  videoEl.playsInline = true;
-  videoEl.autoplay = true;
-  videoEl.play().catch(() => {});
+  safePlayVideo(videoEl);
   updatePlaceholder(card, true);
   renderLayout();
-  schedulePlaybackRecovery('remote-stream-update');
 }
 
 function removeRemoteVideo(sid) {
@@ -1060,12 +783,9 @@ function removeRemoteVideo(sid) {
   if (currentSharerSid === sid) {
     currentSharerSid = null;
     hiddenSidebar = false;
-    screenShareSpotlightSid = null;
-    stopScreenShareRotationTimer();
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
   }
-  raisedHands.delete(sid);
-  if (screenShareSpotlightSid === sid) screenShareSpotlightSid = null;
+  updateShareUiState();
   const totalCards = document.querySelectorAll('.video-card').length;
   const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
   currentGridPage = Math.min(currentGridPage, totalPages - 1);
@@ -1329,7 +1049,6 @@ function getMentionablePeople() {
   const byName = new Map();
   [{ sid: 'local', name: USER_NAME }]
     .concat(Object.entries(participantMeta).map(([sid, info]) => ({ sid, name: info.name || sid })))
-    .concat(Object.entries(fakeParticipantMeta).map(([sid, info]) => ({ sid, name: info.name || sid })))
     .forEach(person => {
       const name = String(person?.name || '').trim();
       if (!name) return;
@@ -1526,11 +1245,49 @@ function appendChatMessage(data) {
 }
 
 async function copyText(text) {
-  if (!text) return;
+  if (!text) return false;
+
   try {
-    await navigator.clipboard.writeText(text);
-    setStatus(TEXT_COPY_SUCCESS);
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      setStatus(TEXT_COPY_SUCCESS);
+      return true;
+    }
   } catch (_) {}
+
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', 'readonly');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    ta.style.pointerEvents = 'none';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) {
+      setStatus(TEXT_COPY_SUCCESS);
+      return true;
+    }
+  } catch (_) {}
+
+  try {
+    const input = document.getElementById('inviteInput');
+    if (input) {
+      input.focus();
+      input.removeAttribute('readonly');
+      input.select();
+      input.setSelectionRange(0, input.value.length);
+      input.setAttribute('readonly', 'readonly');
+    }
+  } catch (_) {}
+
+  setStatus({{ ('复制失败，请长按或手动复制' if lang == 'zh' else 'Copy failed, please copy manually')|tojson }}, 'error');
+  return false;
 }
 
 async function translateToEnglish(item, text) {
@@ -1945,25 +1702,6 @@ function initChatUi() {
     e.target.value = '';
   });
   document.getElementById('toggleDanmakuBtn')?.addEventListener('click', () => socket.emit('toggle_danmaku', { enabled: !danmakuEnabled }));
-const raiseHandBtn = document.getElementById('raiseHandBtn');
-function refreshRaiseHandButton() {
-  if (!raiseHandBtn) return;
-  raiseHandBtn.textContent = '🙋 ' + (localRaisedHand ? TEXT_LOWER_HAND : TEXT_RAISE_HAND);
-  raiseHandBtn.classList.toggle('active', !!localRaisedHand);
-}
-raiseHandBtn?.addEventListener('click', () => {
-  localRaisedHand = !localRaisedHand;
-  applyRaisedHandState('local', localRaisedHand);
-  refreshRaiseHandButton();
-  if (localRaisedHand && currentSharerSid && currentSharerSid !== 'local') {
-    screenShareSpotlightSid = 'local';
-    syncScreenShareSpotlight(true);
-    renderLayout();
-  }
-  broadcastUiEvent({ type: 'raise_hand', raised: localRaisedHand });
-  setStatus(localRaisedHand ? TEXT_HAND_RAISED : TEXT_LOWER_HAND);
-});
-refreshRaiseHandButton();
   document.getElementById('chatHideBtn')?.addEventListener('click', () => setChatCollapsed(true));
   document.getElementById('chatShowBtn')?.addEventListener('click', () => setChatCollapsed(false));
 }
@@ -1975,7 +1713,6 @@ function broadcastUiEvent(payload) {
 function cleanupMeetingSession() {
   if (hasLeftMeeting) return;
   hasLeftMeeting = true;
-  fakeParticipantMeta = {};
   try {
     if (activeRecorder && activeRecorder.state !== 'inactive') activeRecorder.stop();
   } catch (_) {}
@@ -2004,7 +1741,6 @@ socket.on('connect', async () => {
   renderLayout();
   if ((PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream) await requestMedia(currentFacingMode, false);
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
-  seedFakeParticipants();
 });
 
 socket.on('join_ok', async (data) => {
@@ -2013,14 +1749,15 @@ socket.on('join_ok', async (data) => {
   for (const p of data.participants) addRemoteParticipant(p.sid, p.name);
   (data.chat_history || []).forEach(item => appendChatMessage(item));
   focusParticipant('local');
-  if (IS_GRID_TEST_MODE) seedFakeParticipants();
   danmakuEnabled = !!data.danmaku_enabled;
-  currentSharerSid = data?.current_sharer_sid || null;
-  stageRotationEnabled = typeof data?.stage_rotation_enabled === 'boolean' ? !!data.stage_rotation_enabled : !!PREF_STAGE_ROTATION_ENABLED;
-  stageRotationSeconds = Number(data?.stage_rotation_seconds || PREF_STAGE_ROTATION_SECONDS || 15) || 15;
-  raisedHands = new Set(Array.isArray(data?.raised_hands) ? data.raised_hands : []);
-  applyRaisedHandState('local', localRaisedHand);
-  syncScreenShareSpotlight(true);
+  currentSharerSid = normalizeParticipantSid(data?.active_sharer_sid || null);
+  if (currentSharerSid) {
+    focusedSid = currentSharerSid;
+    hiddenSidebar = true;
+    renderLayout();
+  } else {
+    updateShareUiState();
+  }
   if (data && data.host_present === false && IS_HOST) {
     setStatus(TEXT_HOST_RETURNED_ROOM);
   } else if (data && data.host_present === false) {
@@ -2044,9 +1781,6 @@ socket.on('participant_left', (data) => {
 socket.on('participant_snapshot', (data) => {
   const list = Array.isArray(data?.participants) ? data.participants : [];
   const count = Number(data?.participant_count || list.length || 0);
-  currentSharerSid = data?.current_sharer_sid || null;
-  stageRotationEnabled = typeof data?.stage_rotation_enabled === 'boolean' ? !!data.stage_rotation_enabled : stageRotationEnabled;
-  stageRotationSeconds = Number(data?.stage_rotation_seconds || stageRotationSeconds || 15) || 15;
   const keep = new Set();
   list.forEach((item) => {
     if (!item?.sid || item.sid === socket.id) return;
@@ -2058,14 +1792,11 @@ socket.on('participant_snapshot', (data) => {
       const labelEl = document.querySelector(`#card-${CSS.escape(item.sid)} .video-label`);
       if (labelEl) labelEl.textContent = item.name || item.sid;
     }
-    applyRaisedHandState(item.sid, !!item.raised_hand);
   });
   Object.keys(participantMeta).forEach((sid) => {
     if (!keep.has(sid)) removeRemoteVideo(sid);
   });
   participantCountEl.textContent = String(Math.max(1, count));
-  applyRaisedHandState('local', localRaisedHand);
-  syncScreenShareSpotlight(true);
   renderMentionPicker();
 });
 
@@ -2152,36 +1883,24 @@ socket.on('signal', async (data) => {
 socket.on('room_ui_event', (data) => {
   if (!data || !data.type) return;
   if (data.type === 'screen_share_started') {
-    currentSharerSid = data.from;
-    if (currentSharerSid !== 'local') isSharingScreen = false;
-    syncScreenShareSpotlight(true);
-    focusParticipant(data.from, { hideSidebar: false, screenShare: true });
+    const sharerSid = normalizeParticipantSid(data.from);
+    currentSharerSid = sharerSid;
+    focusedSid = sharerSid;
+    focusParticipant(sharerSid, { hideSidebar: true, screenShare: true });
+    setStatus(TEXT_SCREEN_SHARE_MODE);
   } else if (data.type === 'screen_share_stopped') {
     currentSharerSid = null;
     hiddenSidebar = false;
     focusedSid = 'local';
-    screenShareSpotlightSid = null;
-    stopScreenShareRotationTimer();
     renderLayout();
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
   } else if (data.type === 'screen_share_denied') {
-    isSharingScreen = false;
-    setStatus(data.message || TEXT_SINGLE_SCREEN_SHARE_ONLY, 'warning');
+    currentSharerSid = normalizeParticipantSid(data.activeSharerSid || currentSharerSid);
+    updateShareUiState();
+    setStatus(data.message || {{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }}, 'warning');
   } else if (data.type === 'danmaku_toggled') {
     danmakuEnabled = !!data.enabled;
     setStatus(danmakuEnabled ? TEXT_DANMAKU_ON : TEXT_DANMAKU_OFF);
-  } else if (data.type === 'raise_hand') {
-    applyRaisedHandState(data.from, !!data.raised);
-    if (!!data.raised && currentSharerSid && data.from !== currentSharerSid) {
-      screenShareSpotlightSid = data.from;
-      syncScreenShareSpotlight(true);
-      renderLayout();
-    }
-  } else if (data.type === 'stage_rotation_updated') {
-    stageRotationEnabled = !!data.enabled;
-    stageRotationSeconds = Number(data.seconds || stageRotationSeconds || 15) || 15;
-    syncScreenShareSpotlight(true);
-    renderLayout();
   }
 });
 
@@ -2223,11 +1942,6 @@ window.addEventListener('resize', () => {
   renderLayout();
 });
 
-videoHomePageBtn?.addEventListener('click', () => {
-  if (currentGridPage <= 0) return;
-  currentGridPage = 0;
-  renderLayout();
-});
 videoPrevPageBtn?.addEventListener('click', () => {
   if (currentGridPage <= 0) return;
   currentGridPage -= 1;
@@ -2240,26 +1954,16 @@ videoNextPageBtn?.addEventListener('click', () => {
   currentGridPage += 1;
   renderLayout();
 });
+videoHomePageBtn?.addEventListener('click', () => {
+  if (currentGridPage <= 0) return;
+  currentGridPage = 0;
+  renderLayout();
+});
 
-document.getElementById('requestMediaBtn').onclick = () => requestMedia(currentFacingMode, true);
-document.getElementById('switchCameraBtn').onclick = async () => {
-  const micWasEnabled = !!(rawCameraStream?.getAudioTracks?.()[0]?.enabled || localStream?.getAudioTracks?.()[0]?.enabled);
-  const camWasEnabled = !!(rawCameraStream?.getVideoTracks?.()[0]?.enabled || localStream?.getVideoTracks?.()[0]?.enabled);
-  currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-  await requestMedia(currentFacingMode, { manualRequest: true, wantsAudio: false, wantsVideo: true });
-  const nextAudioTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
-  const nextVideoTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
-  if (nextAudioTrack) nextAudioTrack.enabled = micWasEnabled;
-  if (nextVideoTrack) nextVideoTrack.enabled = camWasEnabled;
-  const localCard = ensureCard('local', getDisplayName('local'), true);
-  updatePlaceholder(localCard, !!nextVideoTrack?.enabled);
-  setStatus(camWasEnabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
-};
 document.getElementById('toggleMicBtn').onclick = async () => {
   let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
   if (!rawTrack) {
-    await requestMedia(currentFacingMode, true);
-    rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
+    rawTrack = await ensureRequestedTrack('audio');
     if (!rawTrack) return;
   }
   rawTrack.enabled = !rawTrack.enabled;
@@ -2271,8 +1975,7 @@ document.getElementById('toggleCameraBtn').onclick = async () => {
   let rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
   const localCard = ensureCard('local', getDisplayName('local'), true);
   if (!rawTrack) {
-    await requestMedia(currentFacingMode, true);
-    rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
+    rawTrack = await ensureRequestedTrack('video');
     if (!rawTrack) return;
   }
   rawTrack.enabled = !rawTrack.enabled;
@@ -2284,10 +1987,13 @@ document.getElementById('toggleCameraBtn').onclick = async () => {
   }
   setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 };
-
 document.getElementById('shareScreenBtn').onclick = async () => {
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    setStatus({{ ('当前设备/浏览器不支持共享屏幕' if lang == 'zh' else 'This device/browser does not support screen sharing')|tojson }}, 'warning');
+    return;
+  }
   if (currentSharerSid && currentSharerSid !== 'local') {
-    setStatus(TEXT_SINGLE_SCREEN_SHARE_ONLY, 'warning');
+    setStatus({{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }}, 'warning');
     return;
   }
   try {
@@ -2299,14 +2005,15 @@ document.getElementById('shareScreenBtn').onclick = async () => {
       if (sender) sender.replaceTrack(screenTrack);
     });
     localVideo.srcObject = screenStream;
+    safePlayVideo(localVideo);
     updatePlaceholder(screenCard, true);
     isSharingScreen = true;
     currentSharerSid = 'local';
-    screenShareSpotlightSid = orderedScreenShareCandidates()[0] || null;
-    syncScreenShareSpotlight(true);
-    focusParticipant('local', { hideSidebar: false, screenShare: true });
+    hiddenSidebar = true;
+    focusedSid = 'local';
+    renderLayout();
     setStatus(TEXT_SCREEN_SHARE_MODE);
-    broadcastUiEvent({ type: 'screen_share_started', hideSidebar: false });
+    broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true });
 
     screenTrack.onended = async () => {
       isSharingScreen = false;
@@ -2315,13 +2022,11 @@ document.getElementById('shareScreenBtn').onclick = async () => {
       } else if (rawCameraStream) {
         fallbackToRawCamera();
       } else {
-        await requestMedia(currentFacingMode, true);
+        await requestMedia(currentFacingMode, true, ['video', 'audio']);
       }
       currentSharerSid = null;
       hiddenSidebar = false;
       focusedSid = 'local';
-      screenShareSpotlightSid = null;
-      stopScreenShareRotationTimer();
       renderLayout();
       broadcastUiEvent({ type: 'screen_share_stopped' });
       setStatus(TEXT_SCREEN_SHARE_STOPPED);
@@ -2331,6 +2036,10 @@ document.getElementById('shareScreenBtn').onclick = async () => {
   }
 };
 document.getElementById('virtualBgBtn').onclick = async () => {
+  if (isSharingScreen || currentSharerSid) {
+    setStatus({{ ('共享屏幕期间不可使用虚拟背景' if lang == 'zh' else 'Virtual background is unavailable during screen sharing')|tojson }}, 'warning');
+    return;
+  }
   if (virtualBgEnabled) {
     deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF);
     return;
@@ -2388,11 +2097,44 @@ document.getElementById('saveProfileBtn').onclick = () => {
   renderMentionPicker();
   setStatus(TEXT_PROFILE_UPDATED);
 };
+const inviteInput = document.getElementById('inviteInput');
+const copyInviteBtn = document.getElementById('copyInviteBtn');
+const showQrBtn = document.getElementById('showQrBtn');
+const inviteQrWrap = document.getElementById('inviteQrWrap');
+const inviteQrImage = document.getElementById('inviteQrImage');
+
+if (inviteInput) {
+  inviteInput.value = window.location.href;
+}
+
+if (copyInviteBtn) {
+  copyInviteBtn.onclick = async () => {
+    const text = inviteInput?.value || window.location.href;
+    const ok = await copyText(text);
+    if (!ok) {
+      try { window.prompt({{ ('请手动复制下面链接' if lang == 'zh' else 'Please copy this link manually')|tojson }}, text); } catch (_) {}
+    }
+  };
+}
+
+if (showQrBtn && inviteQrWrap && inviteQrImage) {
+  showQrBtn.onclick = () => {
+    const text = encodeURIComponent(inviteInput?.value || window.location.href);
+    inviteQrImage.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${text}`;
+    inviteQrWrap.classList.toggle('hidden');
+    const showing = !inviteQrWrap.classList.contains('hidden');
+    showQrBtn.textContent = showing
+      ? {{ ('隐藏二维码' if lang == 'zh' else 'Hide QR')|tojson }}
+      : {{ ('显示二维码' if lang == 'zh' else 'Show QR')|tojson }};
+  };
+}
 const switchRoomBtn = document.getElementById('switchRoomBtn');
 if (switchRoomBtn) {
   switchRoomBtn.onclick = async () => {
-    const nextRoomId = document.getElementById('switchRoomId')?.value?.trim() || '';
-    const nextPwd = document.getElementById('switchRoomPassword')?.value?.trim() || '';
+    const switchRoomIdInput = document.getElementById('switchRoomId');
+    const switchRoomPasswordInput = document.getElementById('switchRoomPassword');
+    const nextRoomId = (switchRoomIdInput?.value || '').trim();
+    const nextPwd = (switchRoomPasswordInput?.value || '').trim();
     if (!nextRoomId || !nextPwd) return;
     const res = await fetch('/api/join_room', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room_id: nextRoomId, password: nextPwd }) });
     const data = await res.json();
@@ -2400,10 +2142,6 @@ if (switchRoomBtn) {
     leaveMeetingAndExit(null, `/room/${nextRoomId}?pwd=${encodeURIComponent(nextPwd)}`);
   };
 }
-document.getElementById('copyInviteBtn').onclick = async () => {
-  await navigator.clipboard.writeText(document.getElementById('inviteInput').value);
-  setStatus(TEXT_COPIED);
-};
 
 window.addEventListener('beforeunload', () => {
   if (!hasLeftMeeting) {
@@ -2437,4 +2175,3 @@ async function refreshTrafficPanel() {
 refreshTrafficPanel();
 setInterval(refreshTrafficPanel, 20000);
 </script>
-{% endblock %}

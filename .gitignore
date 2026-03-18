@@ -3,3 +3,11 @@ __pycache__/
 *.pyc
 instance/
 .env
+*.py[cod]
+*.swp
+*.swo
+*.bak
+*.tmp
+.DS_Store
+Thumbs.db
+instance/*.db

@@ -1,0 +1,136 @@
+<header class="topbar compact">
+  <div>
+    <div class="brand">{{ t('meeting_room') }}</div>
+    <div class="muted">{{ t('room_id') }}: {{ room_id }}</div>
+    <div class="muted">{{ t('record_password_label') }}: {{ room_password }}</div>
+  </div>
+  <div class="top-actions">
+    <div class="lang-switch">
+      <a class="chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}">{{ t('lang_zh') }}</a>
+      <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
+    </div>
+    <span class="user-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
+    <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
+  </div>
+</header>
+
+<section class="grid room-grid-layout">
+  <aside class="panel side-panel panel-glow">
+    <h2>{{ t('permissions') }}</h2>
+    <div class="stack-controls button-grid-2">
+      <button class="ghost-btn" id="shareScreenBtn">{{ t('share_screen') }}</button>
+      <button class="ghost-btn" id="virtualBgBtn">{{ t('virtual_bg') }}</button>
+      <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
+      <button class="ghost-btn" id="toggleMicBtn">{{ t('mic') }}</button>
+      <button class="ghost-btn" id="toggleCameraBtn">{{ t('camera') }}</button>
+      <button class="ghost-btn danger" id="leaveMeetingBtn">{{ t('leave') }}</button>
+      {% if is_host %}<button class="ghost-btn danger" id="hostEndMeetingBtn">{{ t('host_end_meeting') }}</button>{% endif %}
+    </div>
+    <input id="virtualBgInput" type="file" accept="image/*" class="hidden" />
+    <div id="statusBox" class="notice">{{ t('room_ready') }}</div>
+    <div class="mini-panel">
+      <div class="muted">{{ t('profile_section') }}</div>
+      <label>{{ t('display_name') }}</label>
+      <div class="row-compact">
+        <input id="displayNameInput" maxlength="32" value="{{ preferred_display_name }}" />
+        <button class="ghost-btn" id="saveProfileBtn">{{ t('save') }}</button>
+      </div>
+    </div>
+
+    <div class="mini-panel" id="invitePanel">
+      <div class="muted">{{ ('邀请链接' if lang == 'zh' else 'Invite link') }}</div>
+      <label>{{ ('分享给参会者' if lang == 'zh' else 'Share with participants') }}</label>
+      <input id="inviteInput" value="{{ request.url }}" readonly />
+      <div class="row-compact">
+        <button class="ghost-btn" id="copyInviteBtn">{{ ('复制' if lang == 'zh' else 'Copy') }}</button>
+        <button class="ghost-btn" id="showQrBtn">{{ ('显示二维码' if lang == 'zh' else 'Show QR') }}</button>
+      </div>
+      <div id="inviteQrWrap" class="invite-qr-wrap hidden">
+        <img id="inviteQrImage" alt="{{ ('入会二维码' if lang == 'zh' else 'Join QR code') }}" />
+      </div>
+    </div>
+
+    <div class="mini-panel">
+      <div class="muted">{{ t('traffic_usage') }} · {{ t('traffic_turn_relay') }}</div>
+      <div class="status-grid">
+        <div><span>{{ t('monthly_quota') }}</span><strong id="trafficQuotaTotal">{{ traffic.monthly_quota_text }}</strong></div>
+        <div><span>{{ t('used_traffic') }}</span><strong id="trafficQuotaUsed">{{ traffic.used_traffic_text }}</strong></div>
+        <div><span>{{ t('remaining_traffic') }}</span><strong id="trafficQuotaRemaining">{{ traffic.remaining_traffic_text }}</strong></div>
+        <div><span>{{ t('reset_cycle') }}</span><strong id="trafficQuotaReset">{{ traffic.reset_at_text }}</strong></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="panel video-panel panel-glow">
+    <div id="videoStage" class="video-stage">
+      <div id="videoMain" class="video-main"></div>
+      <div id="videoSidebar" class="video-sidebar"></div>
+    </div>
+    <div id="videoPager" class="video-pager hidden" aria-label="{{ '分页参会者视图' if lang == 'zh' else 'Paged participant view' }}">
+      <div class="video-pager-left">
+        <button id="videoHomePageBtn" class="ghost-btn pager-btn pager-home-btn" type="button" title="{{ '首页' if lang == 'zh' else 'First page' }}" aria-label="{{ '首页' if lang == 'zh' else 'First page' }}">⌂</button>
+        <button id="videoPrevPageBtn" class="ghost-btn pager-btn" type="button">{{ '上一页' if lang == 'zh' else 'Previous' }}</button>
+      </div>
+      <div class="video-pager-center">
+        <span id="videoPagerInfo" class="video-pager-info">1 / 1</span>
+      </div>
+      <div class="video-pager-right">
+        <button id="videoNextPageBtn" class="ghost-btn pager-btn" type="button">{{ '下一页' if lang == 'zh' else 'Next' }}</button>
+      </div>
+    </div>
+      <div id="danmakuLayer" class="danmaku-layer"></div>
+      <button id="chatShowBtn" class="chat-side-toggle chat-show-btn hidden" type="button">{{ t('chat_short') }} ◀</button>
+    <div id="chatWindow" class="chat-window">
+      <button id="chatMobileHandle" class="chat-mobile-handle" type="button" aria-label="{{ t('drag_chat_panel') }}">
+        <span></span>
+      </button>
+      <div id="chatHeader" class="chat-header">
+        <div>
+          <strong>{{ t('meeting_chat') }}</strong>
+          <div class="muted small-note">{{ t('meeting_chat_desc') }}</div>
+        </div>
+        <div class="row-compact">
+          <button class="card-btn" id="chatHideBtn">{{ t('hide') }} →</button>
+          <button class="card-btn" id="mentionBtn">@</button>
+          <button class="card-btn" id="clearChatBtn">{{ t('clear') }}</button>
+          {% if is_host %}<button class="card-btn" id="toggleDanmakuBtn">{{ t('danmaku_display') }}</button>{% endif %}
+        </div>
+      </div>
+      <div class="chat-toolbar">
+        <button class="chat-mode-btn active" data-mode="all">{{ t('everyone_visible') }}</button>
+        <button class="chat-mode-btn" data-mode="host">{{ t('host_only') }}</button>
+      </div>
+      <div id="mentionPicker" class="picker-panel hidden"></div>
+      <div id="chatMessages" class="chat-messages"></div>
+      <div id="chatAttachmentPreview" class="chat-attachment-preview hidden"></div>
+      <div class="chat-file-permission-row">
+        <label>{{ t('attachment_permission') }}</label>
+        <select id="chatAttachmentPermission">
+          <option value="download" {% if (current_user.default_attachment_permission or 'download') == 'download' %}selected{% endif %}>{{ t('download_allowed') }}</option>
+          <option value="view" {% if (current_user.default_attachment_permission or '') == 'view' %}selected{% endif %}>{{ t('view_only') }}</option>
+        </select>
+      </div>
+      <div class="chat-composer">
+        <div class="chat-input-row">
+          <textarea id="chatInput" rows="3" placeholder="{{ t('chat_input_placeholder') }}"></textarea>
+        </div>
+        <div id="emojiPopover" class="emoji-popover hidden">
+          <div class="emoji-popover-head">
+            <strong>{{ t('choose_emoji') }}</strong>
+            <button class="card-btn" id="emojiCloseBtn" type="button">{{ t('close') }}</button>
+          </div>
+          <div id="emojiPicker" class="emoji-picker"></div>
+        </div>
+        <div class="chat-actions">
+          <div class="chat-actions-left">
+            <label class="ghost-btn attachment-btn">{{ t('media_short') }}<input id="chatMediaInput" type="file" accept="image/*,video/*,.heic,.heif,.avi,.3gp" class="hidden" /></label>
+            <label class="ghost-btn attachment-btn">{{ t('docs_archive_short') }}<input id="chatDocInput" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,.rar,.7z" class="hidden" /></label>
+            <button class="ghost-btn" id="emojiBtn" type="button">😊 {{ t('emoji') }}</button>
+          </div>
+          <button class="primary-btn slim-btn" id="sendChatBtn">{{ t('send') }}</button>
+        </div>
+      </div>
+    </div>
+    <div id="chatContextMenu" class="chat-context-menu hidden"></div>
+  </main>
+</section>
