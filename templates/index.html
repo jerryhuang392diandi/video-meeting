@@ -131,43 +131,10 @@
 const TEXT_COPY = {{ t('copy')|tojson }};
 const TEXT_COPIED = {{ t('copied')|tojson }};
 const TEXT_FAILED = {{ t('failed')|tojson }};
-const TEXT_LOGIN_REQUIRED = {{ t('login_required')|tojson }};
 
 const copyText = async (text) => {
   await navigator.clipboard.writeText(text);
   return true;
-};
-
-const requestJson = async (url, payload) => {
-  const res = await fetch(url, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload || {})
-  });
-
-  const contentType = res.headers.get('content-type') || '';
-  let data = null;
-
-  if (contentType.includes('application/json')) {
-    data = await res.json();
-  } else {
-    const text = await res.text();
-    if (res.status === 401 || res.redirected || /<html|<!DOCTYPE html/i.test(text)) {
-      alert(TEXT_LOGIN_REQUIRED);
-      window.location.href = '/login';
-      return null;
-    }
-    throw new Error(`Unexpected response type: ${contentType || 'unknown'}`);
-  }
-
-  if (res.status === 401) {
-    alert((data && data.message) || TEXT_LOGIN_REQUIRED);
-    window.location.href = '/login';
-    return null;
-  }
-
-  return { res, data };
 };
 
 const saveDisplayName = () => {
@@ -182,58 +149,54 @@ document.getElementById('hostName').addEventListener('input', (e) => {
 saveDisplayName();
 
 document.getElementById('createBtn').addEventListener('click', async () => {
-  try {
-    const host_name = document.getElementById('hostName').value.trim();
-    if (host_name) localStorage.setItem('meeting_display_name', host_name);
-    const result = await requestJson('/api/create_room', { host_name });
-    if (!result) return;
-    const { data } = result;
-    if (!data.success) return alert(data.message || TEXT_FAILED);
+  const host_name = document.getElementById('hostName').value.trim();
+  if (host_name) localStorage.setItem('meeting_display_name', host_name);
+  const res = await fetch('/api/create_room', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ host_name })
+  });
+  const data = await res.json();
+  if (!data.success) return alert(data.message || TEXT_FAILED);
 
-    const box = document.getElementById('createResult');
-    box.classList.remove('hidden');
-    box.innerHTML = `
-      <div><strong>{{ t('room_id') }}:</strong> ${data.room_id}</div>
-      <div><strong>{{ t('room_password') }}:</strong> ${data.password}</div>
-      <div class="row-compact mt-12">
-        <input value="${data.join_url}" readonly />
-        <button class="ghost-btn" id="copyInvite">${TEXT_COPY}</button>
-      </div>
-      <div class="row-compact mt-12">
-        <a class="primary-btn anchor-btn" href="/room/${data.room_id}?pwd=${data.password}">{{ t('enter_room') }}</a>
-      </div>
-    `;
-    document.getElementById('copyInvite').onclick = async () => {
-      await copyText(data.join_url);
-      alert(TEXT_COPIED);
-    };
-  } catch (err) {
-    console.error('create room failed:', err);
-    alert(TEXT_FAILED);
-  }
+  const box = document.getElementById('createResult');
+  box.classList.remove('hidden');
+  box.innerHTML = `
+    <div><strong>{{ t('room_id') }}:</strong> ${data.room_id}</div>
+    <div><strong>{{ t('room_password') }}:</strong> ${data.password}</div>
+    <div class="row-compact mt-12">
+      <input value="${data.join_url}" readonly />
+      <button class="ghost-btn" id="copyInvite">${TEXT_COPY}</button>
+    </div>
+    <div class="row-compact mt-12">
+      <a class="primary-btn anchor-btn" href="/room/${data.room_id}?pwd=${data.password}">{{ t('enter_room') }}</a>
+    </div>
+  `;
+  document.getElementById('copyInvite').onclick = async () => {
+    await copyText(data.join_url);
+    alert(TEXT_COPIED);
+  };
 });
 
 document.getElementById('joinBtn').addEventListener('click', async () => {
-  try {
-    saveDisplayName();
-    const payload = {
-      room_id: document.getElementById('joinRoomId').value.trim(),
-      password: document.getElementById('joinPassword').value.trim(),
-    };
-    const result = await requestJson('/api/join_room', payload);
-    if (!result) return;
-    const { res, data } = result;
-    if (!res.ok || !data.success) {
-      alert(data.message || TEXT_FAILED);
-      return;
-    }
-    const roomId = document.getElementById('joinRoomId').value.trim();
-    const pwd = document.getElementById('joinPassword').value.trim();
-    window.location.href = `/room/${roomId}?pwd=${encodeURIComponent(pwd)}`;
-  } catch (err) {
-    console.error('join room failed:', err);
-    alert(TEXT_FAILED);
+  saveDisplayName();
+  const payload = {
+    room_id: document.getElementById('joinRoomId').value.trim(),
+    password: document.getElementById('joinPassword').value.trim(),
+  };
+  const res = await fetch('/api/join_room', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    alert(data.message || TEXT_FAILED);
+    return;
   }
+  const roomId = document.getElementById('joinRoomId').value.trim();
+  const pwd = document.getElementById('joinPassword').value.trim();
+  window.location.href = `/room/${roomId}?pwd=${encodeURIComponent(pwd)}`;
 });
 
 
