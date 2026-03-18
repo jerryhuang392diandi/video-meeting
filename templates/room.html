@@ -65,10 +65,12 @@
   </aside>
 
   <main class="panel video-panel panel-glow">
+    <div class="stage-toolbar">
+      <button id="participantDrawerToggle" class="ghost-btn participant-drawer-toggle hidden" type="button">{{ ('参会者' if lang == 'zh' else 'Participants') }}</button>
+    </div>
     <div id="videoStage" class="video-stage">
       <div id="videoMain" class="video-main"></div>
       <div id="videoSidebar" class="video-sidebar"></div>
-      <button id="participantDrawerToggle" class="ghost-btn participant-drawer-toggle hidden" type="button">{{ ('参会者' if lang == 'zh' else 'Participants') }}</button>
     </div>
     <div id="participantOverlayBackdrop" class="participant-overlay-backdrop hidden" aria-hidden="true"></div>
     <div id="videoPager" class="video-pager hidden" aria-label="{{ '分页参会者视图' if lang == 'zh' else 'Paged participant view' }}">
