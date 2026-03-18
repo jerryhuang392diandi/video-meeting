@@ -149,54 +149,92 @@ document.getElementById('hostName').addEventListener('input', (e) => {
 saveDisplayName();
 
 document.getElementById('createBtn').addEventListener('click', async () => {
-  const host_name = document.getElementById('hostName').value.trim();
-  if (host_name) localStorage.setItem('meeting_display_name', host_name);
-  const res = await fetch('/api/create_room', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ host_name })
-  });
-  const data = await res.json();
-  if (!data.success) return alert(data.message || TEXT_FAILED);
+  try {
+    const host_name = document.getElementById('hostName').value.trim();
+    if (host_name) localStorage.setItem('meeting_display_name', host_name);
 
-  const box = document.getElementById('createResult');
-  box.classList.remove('hidden');
-  box.innerHTML = `
-    <div><strong>{{ t('room_id') }}:</strong> ${data.room_id}</div>
-    <div><strong>{{ t('room_password') }}:</strong> ${data.password}</div>
-    <div class="row-compact mt-12">
-      <input value="${data.join_url}" readonly />
-      <button class="ghost-btn" id="copyInvite">${TEXT_COPY}</button>
-    </div>
-    <div class="row-compact mt-12">
-      <a class="primary-btn anchor-btn" href="/room/${data.room_id}?pwd=${data.password}">{{ t('enter_room') }}</a>
-    </div>
-  `;
-  document.getElementById('copyInvite').onclick = async () => {
-    await copyText(data.join_url);
-    alert(TEXT_COPIED);
-  };
+    const res = await fetch('/api/create_room', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ host_name })
+    });
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const text = await res.text();
+      if (res.redirected || /<!DOCTYPE html|<html/i.test(text)) {
+        alert({{ ('登录状态可能已失效，请重新登录。' if lang == 'zh' else 'Your login session may have expired. Please sign in again.')|tojson }});
+        window.location.href = '/login';
+        return;
+      }
+      throw new Error('Server did not return JSON.');
+    }
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      alert(data.message || TEXT_FAILED);
+      return;
+    }
+
+    const box = document.getElementById('createResult');
+    box.classList.remove('hidden');
+    box.innerHTML = `
+      <div><strong>{{ t('room_id') }}:</strong> ${data.room_id}</div>
+      <div><strong>{{ t('room_password') }}:</strong> ${data.password}</div>
+      <div class="row-compact mt-12">
+        <input value="${data.join_url}" readonly />
+        <button class="ghost-btn" id="copyInvite">${TEXT_COPY}</button>
+      </div>
+      <div class="row-compact mt-12">
+        <a class="primary-btn anchor-btn" href="/room/${data.room_id}?pwd=${data.password}">{{ t('enter_room') }}</a>
+      </div>
+    `;
+    document.getElementById('copyInvite').onclick = async () => {
+      await copyText(data.join_url);
+      alert(TEXT_COPIED);
+    };
+  } catch (err) {
+    console.error('create room failed:', err);
+    alert({{ ('创建会议失败，请检查登录状态或服务器日志。' if lang == 'zh' else 'Failed to create the meeting. Please check your sign-in status or server logs.')|tojson }});
+  }
 });
 
 document.getElementById('joinBtn').addEventListener('click', async () => {
-  saveDisplayName();
-  const payload = {
-    room_id: document.getElementById('joinRoomId').value.trim(),
-    password: document.getElementById('joinPassword').value.trim(),
-  };
-  const res = await fetch('/api/join_room', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    alert(data.message || TEXT_FAILED);
-    return;
+  try {
+    saveDisplayName();
+    const payload = {
+      room_id: document.getElementById('joinRoomId').value.trim(),
+      password: document.getElementById('joinPassword').value.trim(),
+    };
+    const res = await fetch('/api/join_room', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const text = await res.text();
+      if (res.redirected || /<!DOCTYPE html|<html/i.test(text)) {
+        alert({{ ('登录状态可能已失效，请重新登录。' if lang == 'zh' else 'Your login session may have expired. Please sign in again.')|tojson }});
+        window.location.href = '/login';
+        return;
+      }
+      throw new Error('Server did not return JSON.');
+    }
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      alert(data.message || TEXT_FAILED);
+      return;
+    }
+    const roomId = document.getElementById('joinRoomId').value.trim();
+    const pwd = document.getElementById('joinPassword').value.trim();
+    window.location.href = `/room/${roomId}?pwd=${encodeURIComponent(pwd)}`;
+  } catch (err) {
+    console.error('join room failed:', err);
+    alert({{ ('加入会议失败，请检查登录状态或服务器日志。' if lang == 'zh' else 'Failed to join the meeting. Please check your sign-in status or server logs.')|tojson }});
   }
-  const roomId = document.getElementById('joinRoomId').value.trim();
-  const pwd = document.getElementById('joinPassword').value.trim();
-  window.location.href = `/room/${roomId}?pwd=${encodeURIComponent(pwd)}`;
 });
 
 
