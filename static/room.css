@@ -1,351 +1,652 @@
-/* Canonical room layout overrides.
-   Keep room-specific sizing here so it doesn't get corrupted by repeated hotfixes in style.css. */
+/* =========================
+   Room page only
+   稳定版：桌面三栏 / 手机单栏
+   重点修复：
+   1. 聊天区高度被压缩
+   2. 附件/图片预览挡住发送按钮
+   3. 共享屏幕时中间区域稳定
+   ========================= */
 
+:root {
+    --room-bg: #071a3a;
+    --room-panel: rgba(10, 25, 56, 0.92);
+    --room-panel-2: rgba(18, 35, 70, 0.95);
+    --room-border: rgba(255, 255, 255, 0.08);
+    --room-text: #eef4ff;
+    --room-text-2: rgba(238, 244, 255, 0.78);
+    --room-btn: rgba(255, 255, 255, 0.08);
+    --room-btn-hover: rgba(255, 255, 255, 0.14);
+    --room-primary: linear-gradient(135deg, #8fc2ff, #63b8ff);
+    --room-danger: #ff6b7a;
+    --room-radius: 22px;
+    --room-shadow: 0 14px 40px rgba(0, 0, 0, 0.28);
+}
+
+/* 页面基础 */
+body.room-page,
+.room-page {
+    background:
+        radial-gradient(circle at top left, rgba(46, 102, 255, 0.16), transparent 30%),
+        radial-gradient(circle at top right, rgba(0, 204, 255, 0.10), transparent 26%),
+        linear-gradient(180deg, #06152f 0%, #071a3a 100%);
+    color: var(--room-text);
+}
+
+/* 最外层 */
+.room-shell,
+.room-container,
+.room-layout,
+.room-main,
 .room-grid-layout {
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) !important;
-  gap: 18px !important;
-  align-items: start !important;
+    box-sizing: border-box;
 }
 
-.room-grid-layout > .side-panel {
-  position: sticky;
-  top: 20px;
-  min-width: 0;
-  max-height: calc(100vh - 40px);
-  overflow: auto;
+.room-shell,
+.room-container,
+.room-main {
+    width: 100%;
 }
 
-.room-grid-layout > .video-panel {
-  position: relative;
-  min-width: 0;
-  min-height: 640px;
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) clamp(400px, 30vw, 460px) !important;
-  grid-template-rows: auto auto;
-  gap: 18px !important;
-  align-items: start !important;
-  overflow: hidden;
+/* 三栏主布局 */
+.room-grid-layout {
+    display: grid;
+    grid-template-columns: 320px minmax(0, 1fr) 420px;
+    gap: 22px;
+    align-items: stretch;
+    min-height: calc(100vh - 110px);
+    padding: 18px 22px 22px;
 }
 
-.room-grid-layout > .video-panel.chat-collapsed-layout {
-  grid-template-columns: minmax(0, 1fr) 0 !important;
+/* 左侧控制区 */
+.control-panel,
+.device-panel,
+.left-panel {
+    min-width: 0;
+    background: var(--room-panel);
+    border: 1px solid var(--room-border);
+    border-radius: var(--room-radius);
+    box-shadow: var(--room-shadow);
+    padding: 20px;
+    overflow-y: auto;
+    min-height: 0;
 }
 
-.room-grid-layout > .video-panel > #videoStage {
-  grid-column: 1;
-  grid-row: 1;
-  min-width: 0;
+/* 中间视频区 */
+.video-panel,
+.center-panel,
+.media-panel {
+    min-width: 0;
+    background: var(--room-panel);
+    border: 1px solid var(--room-border);
+    border-radius: var(--room-radius);
+    box-shadow: var(--room-shadow);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
 }
 
-.room-grid-layout > .video-panel > #videoPager {
-  grid-column: 1;
-  grid-row: 2;
-  width: 100%;
-  justify-self: center;
-  margin: 12px 0 0;
+/* 右侧聊天区 */
+.chat-panel,
+.right-panel {
+    min-width: 0;
+    background: var(--room-panel);
+    border: 1px solid var(--room-border);
+    border-radius: var(--room-radius);
+    box-shadow: var(--room-shadow);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: calc(100vh - 146px);
+    max-height: calc(100vh - 146px);
+    overflow: hidden;
 }
 
-.room-grid-layout > .video-panel > #chatWindow {
-  grid-column: 2;
-  grid-row: 1 / span 2;
+/* 通用标题 */
+.control-panel h2,
+.control-panel h3,
+.device-panel h2,
+.device-panel h3,
+.chat-panel h2,
+.chat-panel h3,
+.video-panel h2,
+.video-panel h3 {
+    color: var(--room-text);
+    margin-top: 0;
 }
 
-.room-grid-layout > .video-panel > #chatShowBtn,
-.room-grid-layout > .video-panel > #chatContextMenu {
-  grid-column: 2;
+/* 按钮 */
+.control-panel button,
+.device-panel button,
+.chat-panel button,
+.video-panel button,
+.left-panel button,
+.right-panel button,
+.center-panel button,
+.room-btn,
+.btn,
+button {
+    border-radius: 16px;
 }
 
-.video-stage {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) 220px;
-  gap: 14px;
-  min-width: 0;
-  min-height: 0;
+.control-panel button,
+.device-panel button,
+.left-panel button {
+    min-height: 48px;
 }
 
-.video-stage.sidebar-hidden,
-.video-stage.focus-layout,
-.video-stage.grid-layout,
-.video-stage.screen-share-mode {
-  min-width: 0;
+/* 左侧操作按钮更统一 */
+.control-panel .btn,
+.device-panel .btn,
+.left-panel .btn,
+.control-panel button,
+.device-panel button,
+.left-panel button {
+    background: var(--room-btn);
+    color: var(--room-text);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: 0.2s ease;
 }
 
-.video-main {
-  min-width: 0;
-  min-height: 0;
-  display: grid;
-  gap: 14px;
-  align-content: start;
+.control-panel .btn:hover,
+.device-panel .btn:hover,
+.left-panel .btn:hover,
+.control-panel button:hover,
+.device-panel button:hover,
+.left-panel button:hover {
+    background: var(--room-btn-hover);
 }
 
-.video-stage.grid-1 .video-main { grid-template-columns: minmax(0, 1fr); }
-.video-stage.grid-2 .video-main { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.video-stage.grid-3 .video-main { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.video-stage.focus-layout .video-main { grid-template-columns: 1fr; }
-.video-stage.sidebar-hidden { grid-template-columns: minmax(0, 1fr) 0 !important; }
-.video-stage.sidebar-hidden .video-sidebar { display: none !important; }
-
-.video-stage.grid-layout .video-main .video-card,
-.video-stage.paged-grid .video-main .video-card {
-  aspect-ratio: 16 / 9;
-  min-height: 0 !important;
+button.danger,
+.btn-danger,
+.leave-btn,
+.end-btn {
+    color: #ffd7dc !important;
 }
 
-.video-stage.focus-layout .video-main .video-card {
-  min-height: clamp(320px, 52vh, 520px) !important;
-}
+/* =========================
+   中间视频区域
+   ========================= */
 
-.video-stage.screen-share-mode .video-main .video-card {
-  min-height: clamp(340px, 58vh, 580px) !important;
-}
-
-.video-sidebar {
-  min-width: 0;
-  max-height: min(62vh, 520px);
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.video-sidebar .video-card {
-  min-height: 118px;
+.video-grid,
+.video-container,
+.videos,
+#video-grid,
+#videos {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    width: 100%;
+    align-content: start;
+    min-height: 0;
 }
 
 .video-card,
-.video-card .video-el,
-.video-card video {
-  width: 100%;
+.video-box,
+.participant-video,
+.remote-video-wrapper,
+.local-video-wrapper,
+.screen-share-wrapper {
+    position: relative;
+    background: #020812;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    overflow: hidden;
+    min-height: 220px;
 }
 
-.video-card .video-el,
-.video-card video {
-  min-height: 0 !important;
-  height: 100%;
-  object-fit: cover;
+.video-card video,
+.video-box video,
+.participant-video video,
+.remote-video-wrapper video,
+.local-video-wrapper video,
+.screen-share-wrapper video,
+.video-card iframe,
+.video-box iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: #000;
 }
 
-.danmaku-layer {
-  right: clamp(418px, 30vw + 18px, 478px) !important;
+.screen-share-wrapper,
+.video-card.screen-share,
+.video-box.screen-share {
+    min-height: 420px;
 }
 
-.video-panel.chat-collapsed-layout .danmaku-layer {
-  right: 12px !important;
+.video-label,
+.participant-name,
+.video-name {
+    position: absolute;
+    left: 14px;
+    bottom: 12px;
+    z-index: 2;
+    color: #fff;
+    font-size: 14px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.34);
 }
 
+/* =========================
+   聊天区：重点修复高度
+   ========================= */
+
+/* 整体聊天窗 */
 .chat-window,
-#chatWindow.chat-window {
-  width: 100% !important;
-  min-width: 0 !important;
-  min-height: 620px !important;
-  height: clamp(620px, calc(100vh - 140px), 820px) !important;
-  max-height: 820px !important;
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-  align-self: stretch;
+.chat-container,
+.chat-box,
+#chat-window {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    border-radius: 18px;
 }
 
-.chat-window.chat-collapsed,
-#chatWindow.chat-window.chat-collapsed {
-  display: none !important;
-}
-
+/* 聊天头部/权限控制区 */
 .chat-header,
-.chat-toolbar,
-.chat-composer,
-.chat-file-permission-row,
-.chat-attachment-preview {
-  flex: 0 0 auto;
+.chat-topbar,
+.chat-controls,
+.chat-permission-bar {
+    flex-shrink: 0;
 }
 
-.chat-header,
+/* 消息列表：关键，必须吃掉剩余空间 */
+.chat-messages,
+.chat-message-list,
+.messages,
+#messages,
+#chat-messages {
+    flex: 1 1 auto;
+    min-height: 180px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+    margin-bottom: 12px;
+    scrollbar-width: thin;
+}
+
+/* 单条消息 */
+.chat-message,
+.message-item,
+.message {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 14px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    word-break: break-word;
+    color: var(--room-text);
+}
+
+/* 聊天底部输入区 */
+.chat-input-area,
+.chat-input-wrapper,
+.chat-footer,
+.chat-compose,
+#chat-form {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+}
+
+/* 权限行 / 附件权限 */
 .chat-toolbar,
 .chat-actions,
-.chat-actions-left {
-  flex-wrap: wrap;
+.chat-extra-bar,
+.chat-permissions {
+    flex-shrink: 0;
 }
 
-.chat-header .row-compact {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.chat-file-permission-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.chat-file-permission-row select {
-  flex: 0 0 160px;
-  min-width: 0;
-}
-
-.chat-composer {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.chat-input-row {
-  min-height: 0;
-}
-
-.chat-input-row textarea {
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 96px;
-  max-height: 160px;
-}
-
-.chat-attachment-preview {
-  max-height: 112px;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-.chat-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.chat-actions-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.chat-actions > .primary-btn,
-.chat-actions > .slim-btn {
-  flex: 0 0 auto;
-}
-
-.chat-messages {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-}
-
-@media (max-width: 1360px) {
-  .room-grid-layout {
-    grid-template-columns: 280px minmax(0, 1fr) !important;
-  }
-
-  .room-grid-layout > .video-panel {
-    grid-template-columns: minmax(0, 1fr) 360px !important;
-  }
-
-  .danmaku-layer {
-    right: 378px !important;
-  }
-}
-
-@media (max-width: 1100px) {
-  .room-grid-layout {
-    grid-template-columns: 1fr !important;
-  }
-
-  .room-grid-layout > .side-panel {
-    position: static;
-    max-height: none;
-    overflow: visible;
-  }
-
-  .room-grid-layout > .video-panel {
-    grid-template-columns: 1fr !important;
-    grid-template-rows: auto auto auto;
-    min-height: auto;
-  }
-
-  .room-grid-layout > .video-panel > #videoStage,
-  .room-grid-layout > .video-panel > #videoPager,
-  .room-grid-layout > .video-panel > #chatWindow,
-  .room-grid-layout > .video-panel > #chatShowBtn,
-  .room-grid-layout > .video-panel > #chatContextMenu {
-    grid-column: 1;
-  }
-
-  .room-grid-layout > .video-panel > #videoStage { grid-row: 1; }
-  .room-grid-layout > .video-panel > #videoPager { grid-row: 2; }
-  .room-grid-layout > .video-panel > #chatWindow { grid-row: 3; }
-
-  .video-stage,
-  .video-stage.sidebar-hidden {
-    grid-template-columns: 1fr !important;
-  }
-
-  .video-sidebar {
-    max-height: none;
-    flex-direction: row;
-  }
-
-  .video-sidebar .video-card {
-    min-width: 180px;
-  }
-
-  .chat-window,
-  #chatWindow.chat-window {
-    min-height: 460px !important;
-    height: auto !important;
-    max-height: none !important;
-  }
-
-  .danmaku-layer {
-    right: 12px !important;
-  }
-}
-
-@media (max-width: 768px) {
-  .room-grid-layout {
-    gap: 14px !important;
-  }
-
-  .room-grid-layout > .video-panel {
-    gap: 14px !important;
-  }
-
-  .video-main,
-  .video-stage.grid-2 .video-main,
-  .video-stage.grid-3 .video-main {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .video-stage.focus-layout .video-main .video-card,
-  .video-stage.screen-share-mode .video-main .video-card {
-    min-height: 50vh !important;
-  }
-
-  .chat-window,
-  #chatWindow.chat-window {
-    min-height: 380px !important;
-  }
-}
-
-@media (max-width: 1360px) {
-  .chat-file-permission-row select {
-    flex-basis: 140px;
-  }
-}
-
-@media (max-width: 900px) {
-  .chat-actions {
-    align-items: stretch;
-  }
-
-  .chat-actions-left {
+/* 输入框 */
+.chat-input-area textarea,
+.chat-input-wrapper textarea,
+.chat-compose textarea,
+#message-input,
+textarea.chat-input {
     width: 100%;
-  }
+    min-height: 110px;
+    max-height: 180px;
+    resize: vertical;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--room-text);
+    padding: 14px 16px;
+    box-sizing: border-box;
+    outline: none;
+}
 
-  .chat-actions > .primary-btn,
-  .chat-actions > .slim-btn {
-    width: 100%;
-  }
+.chat-input-area textarea::placeholder,
+.chat-input-wrapper textarea::placeholder,
+.chat-compose textarea::placeholder,
+#message-input::placeholder,
+textarea.chat-input::placeholder {
+    color: var(--room-text-2);
+}
+
+/* 附件预览区：关键，不允许无限变高 */
+.chat-attachments,
+.attachment-preview,
+.preview-list,
+#attachment-preview,
+#image-preview,
+#file-preview {
+    flex-shrink: 0;
+    max-height: 140px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-radius: 14px;
+}
+
+/* 预览里的图片 */
+.chat-attachments img,
+.attachment-preview img,
+.preview-list img,
+#attachment-preview img,
+#image-preview img,
+#file-preview img {
+    max-width: 100%;
+    max-height: 120px;
+    object-fit: contain;
+    border-radius: 10px;
+    display: block;
+}
+
+/* 按钮行 */
+.chat-send-row,
+.chat-buttons,
+.chat-bottom-actions,
+.chat-action-row {
+    flex-shrink: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+/* 发送按钮 */
+.send-btn,
+#send-btn,
+.chat-send-btn,
+button[type="submit"] {
+    min-height: 52px;
+    min-width: 146px;
+    padding: 0 22px;
+    border: none;
+    border-radius: 18px;
+    background: var(--room-primary);
+    color: #082042;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.send-btn:hover,
+#send-btn:hover,
+.chat-send-btn:hover,
+button[type="submit"]:hover {
+    filter: brightness(1.04);
+}
+
+/* 选择框/下拉框 */
+.chat-panel select,
+.chat-window select,
+.chat-container select,
+select {
+    min-height: 46px;
+    border-radius: 14px;
+    padding: 0 14px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--room-text);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* 输入框/昵称框 */
+.chat-panel input,
+.control-panel input,
+.device-panel input,
+.left-panel input,
+.right-panel input {
+    min-height: 46px;
+    border-radius: 14px;
+    padding: 0 14px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--room-text);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-sizing: border-box;
+}
+
+/* =========================
+   防止图片或文件把按钮顶没
+   ========================= */
+
+.chat-panel > * {
+    min-width: 0;
+}
+
+.chat-window > *,
+.chat-container > *,
+.chat-box > * {
+    min-width: 0;
+}
+
+.chat-messages > *,
+.chat-message-list > *,
+.messages > * {
+    min-width: 0;
+}
+
+/* =========================
+   滚动条
+   ========================= */
+
+.chat-messages::-webkit-scrollbar,
+.chat-message-list::-webkit-scrollbar,
+.messages::-webkit-scrollbar,
+.chat-attachments::-webkit-scrollbar,
+.attachment-preview::-webkit-scrollbar,
+.preview-list::-webkit-scrollbar,
+.control-panel::-webkit-scrollbar,
+.device-panel::-webkit-scrollbar {
+    width: 8px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb,
+.chat-message-list::-webkit-scrollbar-thumb,
+.messages::-webkit-scrollbar-thumb,
+.chat-attachments::-webkit-scrollbar-thumb,
+.attachment-preview::-webkit-scrollbar-thumb,
+.preview-list::-webkit-scrollbar-thumb,
+.control-panel::-webkit-scrollbar-thumb,
+.device-panel::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+}
+
+/* =========================
+   共享屏幕状态提示
+   ========================= */
+
+.screen-share-banner,
+.share-status,
+.share-indicator {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    z-index: 1000;
+    background: rgba(15, 18, 28, 0.88);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: min(90vw, 560px);
+}
+
+/* =========================
+   平板
+   ========================= */
+
+@media (max-width: 1280px) {
+    .room-grid-layout {
+        grid-template-columns: 290px minmax(0, 1fr) 380px;
+        gap: 16px;
+        padding: 16px;
+    }
+
+    .chat-panel,
+    .right-panel {
+        height: calc(100vh - 132px);
+        max-height: calc(100vh - 132px);
+    }
+
+    .screen-share-wrapper,
+    .video-card.screen-share,
+    .video-box.screen-share {
+        min-height: 360px;
+    }
+}
+
+/* =========================
+   手机/窄屏
+   ========================= */
+
+@media (max-width: 980px) {
+    .room-grid-layout {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        min-height: auto;
+    }
+
+    .control-panel,
+    .device-panel,
+    .left-panel,
+    .video-panel,
+    .center-panel,
+    .media-panel,
+    .chat-panel,
+    .right-panel {
+        height: auto;
+        max-height: none;
+        min-height: 0;
+    }
+
+    .chat-panel,
+    .right-panel {
+        min-height: 620px;
+    }
+
+    .chat-window,
+    .chat-container,
+    .chat-box,
+    #chat-window {
+        min-height: 560px;
+    }
+
+    .chat-messages,
+    .chat-message-list,
+    .messages,
+    #messages,
+    #chat-messages {
+        min-height: 260px;
+    }
+
+    .screen-share-wrapper,
+    .video-card.screen-share,
+    .video-box.screen-share {
+        min-height: 260px;
+    }
+}
+
+@media (max-width: 640px) {
+    .room-grid-layout {
+        padding: 12px;
+        gap: 12px;
+    }
+
+    .control-panel,
+    .device-panel,
+    .left-panel,
+    .video-panel,
+    .center-panel,
+    .media-panel,
+    .chat-panel,
+    .right-panel {
+        padding: 14px;
+        border-radius: 18px;
+    }
+
+    .video-grid,
+    .video-container,
+    .videos,
+    #video-grid,
+    #videos {
+        grid-template-columns: 1fr;
+    }
+
+    .video-card,
+    .video-box,
+    .participant-video,
+    .remote-video-wrapper,
+    .local-video-wrapper {
+        min-height: 200px;
+    }
+
+    .chat-panel,
+    .right-panel {
+        min-height: 560px;
+    }
+
+    .chat-window,
+    .chat-container,
+    .chat-box,
+    #chat-window {
+        min-height: 500px;
+    }
+
+    .chat-messages,
+    .chat-message-list,
+    .messages,
+    #messages,
+    #chat-messages {
+        min-height: 220px;
+    }
+
+    .chat-input-area textarea,
+    .chat-input-wrapper textarea,
+    .chat-compose textarea,
+    #message-input,
+    textarea.chat-input {
+        min-height: 96px;
+    }
+
+    .chat-attachments,
+    .attachment-preview,
+    .preview-list,
+    #attachment-preview,
+    #image-preview,
+    #file-preview {
+        max-height: 120px;
+    }
+
+    .send-btn,
+    #send-btn,
+    .chat-send-btn,
+    button[type="submit"] {
+        min-width: 120px;
+        width: 100%;
+    }
 }
