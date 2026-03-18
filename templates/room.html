@@ -17,8 +17,8 @@
   </div>
 </header>
 
-<section class="grid room-grid-layout">
-  <aside class="panel side-panel panel-glow">
+<section class="grid room-grid-layout room-page-layout">
+  <aside class="panel side-panel panel-glow room-control-panel">
     <h2>{{ t('permissions') }}</h2>
     <div class="stack-controls button-grid-2">
       <button class="ghost-btn" id="shareScreenBtn">{{ t('share_screen') }}</button>
@@ -64,7 +64,7 @@
     </div>
   </aside>
 
-  <main class="panel video-panel panel-glow">
+  <main class="panel video-panel panel-glow room-video-panel">
     <div id="videoStage" class="video-stage">
       <div id="videoMain" class="video-main"></div>
       <div id="videoSidebar" class="video-sidebar"></div>
