@@ -3754,3 +3754,95 @@ button,
     right: 8px;
   }
 }
+
+
+/* unified screen-share participant drawer */
+.video-panel { position: relative; }
+.video-stage-toolbar {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 8;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.participant-drawer-toggle {
+  pointer-events: auto;
+  box-shadow: 0 12px 30px rgba(0,0,0,.24);
+}
+.participant-drawer-toggle.hidden { display: none !important; }
+.participant-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  border-radius: inherit;
+  border: 0;
+  background: rgba(3, 8, 18, .38);
+}
+.participant-drawer-backdrop.hidden { display: none; }
+.video-stage.screen-share-mode {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+.video-stage.screen-share-mode .video-sidebar {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  bottom: 16px;
+  width: min(340px, 32vw);
+  display: none;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 20px;
+  background: rgba(8,16,32,.92);
+  border: 1px solid rgba(255,255,255,.1);
+  box-shadow: 0 22px 60px rgba(0,0,0,.32);
+  backdrop-filter: blur(18px);
+  z-index: 6;
+}
+.video-stage.screen-share-mode.screen-share-sidebar-open .video-sidebar {
+  display: grid !important;
+}
+.video-stage.screen-share-mode .video-sidebar .video-card {
+  min-width: 0 !important;
+  width: 100% !important;
+  min-height: 136px !important;
+}
+.video-stage.screen-share-mode .video-sidebar .video-card .video-el,
+.video-stage.screen-share-mode .video-sidebar .video-card video {
+  height: 136px !important;
+  min-height: 136px !important;
+}
+@media (max-width: 960px) {
+  .video-stage-toolbar {
+    top: 12px;
+    right: 12px;
+  }
+  .video-stage.screen-share-mode .video-sidebar {
+    top: auto;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+    max-height: min(46vh, 380px);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .video-stage.screen-share-mode .video-sidebar .video-card {
+    min-height: 112px !important;
+  }
+  .video-stage.screen-share-mode .video-sidebar .video-card .video-el,
+  .video-stage.screen-share-mode .video-sidebar .video-card video {
+    height: 112px !important;
+    min-height: 112px !important;
+  }
+}
+@media (max-width: 640px) {
+  .video-stage.screen-share-mode .video-sidebar {
+    grid-template-columns: 1fr;
+    max-height: min(52vh, 360px);
+  }
+}

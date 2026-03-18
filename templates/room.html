@@ -65,10 +65,14 @@
   </aside>
 
   <main class="panel video-panel panel-glow room-video-panel">
+    <div class="video-stage-toolbar">
+      <button id="participantDrawerToggleBtn" class="ghost-btn participant-drawer-toggle hidden" type="button">{{ ('参会者' if lang == 'zh' else 'Participants') }}</button>
+    </div>
     <div id="videoStage" class="video-stage">
       <div id="videoMain" class="video-main"></div>
       <div id="videoSidebar" class="video-sidebar"></div>
     </div>
+    <button id="participantDrawerBackdrop" class="participant-drawer-backdrop hidden" type="button" aria-label="{{ ('关闭参会者面板' if lang == 'zh' else 'Close participants panel') }}"></button>
     <div id="videoPager" class="video-pager hidden" aria-label="{{ '分页参会者视图' if lang == 'zh' else 'Paged participant view' }}">
       <div class="video-pager-left">
         <button id="videoHomePageBtn" class="ghost-btn pager-btn pager-home-btn" type="button" title="{{ '首页' if lang == 'zh' else 'First page' }}" aria-label="{{ '首页' if lang == 'zh' else 'First page' }}">⌂</button>
@@ -161,6 +165,8 @@ const TEXT_CAMERA_ON = {{ t('camera_on')|tojson }};
 const TEXT_CAMERA_OFF = {{ t('camera_off')|tojson }};
 const TEXT_SCREEN_SHARE_MODE = {{ ('共享屏幕模式已开启' if lang == 'zh' else 'Screen share mode enabled')|tojson }};
 const TEXT_SCREEN_SHARE_STOPPED = {{ ('共享屏幕模式已结束' if lang == 'zh' else 'Screen share mode ended')|tojson }};
+const TEXT_PARTICIPANTS = {{ ('参会者' if lang == 'zh' else 'Participants')|tojson }};
+const TEXT_HIDE_PARTICIPANTS = {{ ('收起参会者' if lang == 'zh' else 'Hide participants')|tojson }};
 const TEXT_NO_VIDEO = {{ ('未开启摄像头' if lang == 'zh' else 'Camera off')|tojson }};
 const TEXT_RECORD_STOP = {{ ('停止录屏' if lang == 'zh' else 'Stop recording')|tojson }};
 const TEXT_RECORD_SAVED = {{ ('录屏文件已保存' if lang == 'zh' else 'Recording saved')|tojson }};
@@ -265,6 +271,8 @@ const processingCtx = processingCanvas.getContext('2d');
 const videoStage = document.getElementById('videoStage');
 const videoMain = document.getElementById('videoMain');
 const videoSidebar = document.getElementById('videoSidebar');
+const participantDrawerToggleBtn = document.getElementById('participantDrawerToggleBtn');
+const participantDrawerBackdrop = document.getElementById('participantDrawerBackdrop');
 const participantCountEl = document.getElementById('participantCount');
 const statusBox = document.getElementById('statusBox');
 const recordingBtn = document.getElementById('recordingBtn');
@@ -344,6 +352,24 @@ function updateShareUiState() {
     const disabledByShare = !!isSharingScreen || !!currentSharerSid;
     virtualBgBtn.disabled = disabledByShare;
     virtualBgBtn.title = disabledByShare ? {{ ('共享屏幕期间不可使用虚拟背景' if lang == 'zh' else 'Virtual background is unavailable during screen sharing')|tojson }} : '';
+  }
+}
+
+function updateParticipantDrawerUi(sidebarCount = null) {
+  const count = Number.isFinite(sidebarCount) ? sidebarCount : videoSidebar?.children?.length || 0;
+  const shouldShowToggle = !!currentSharerSid && count > 0;
+  const isOpen = shouldShowToggle && !hiddenSidebar;
+  if (participantDrawerToggleBtn) {
+    participantDrawerToggleBtn.classList.toggle('hidden', !shouldShowToggle);
+    participantDrawerToggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    participantDrawerToggleBtn.textContent = isOpen ? `${TEXT_HIDE_PARTICIPANTS} (${count})` : `${TEXT_PARTICIPANTS} (${count})`;
+  }
+  if (videoStage) {
+    videoStage.classList.toggle('screen-share-sidebar-open', isOpen);
+  }
+  if (participantDrawerBackdrop) {
+    participantDrawerBackdrop.classList.toggle('hidden', !isOpen);
+    participantDrawerBackdrop.classList.toggle('active', isOpen);
   }
 }
 
@@ -588,6 +614,7 @@ function renderLayout(force = false) {
     videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid', 'focus-layout', 'grid-layout');
     videoStage.classList.add('sidebar-hidden');
     updateVideoPager(0, 1);
+    updateParticipantDrawerUi(0);
     return;
   }
 
@@ -637,6 +664,7 @@ function renderLayout(force = false) {
 
   videoStage.classList.toggle('sidebar-hidden', hiddenSidebar || sidebarCards.length === 0);
   updateShareUiState();
+  updateParticipantDrawerUi(sidebarCards.length);
 }
 
 function focusParticipant(sid, opts = {}) {
@@ -668,6 +696,22 @@ function seedFakeParticipants() {
   renderLayout();
   updateParticipantCount();
   setStatus(TEXT_TEST_GRID_ACTIVE);
+}
+
+
+if (participantDrawerToggleBtn) {
+  participantDrawerToggleBtn.addEventListener('click', () => {
+    if (!currentSharerSid) return;
+    hiddenSidebar = !hiddenSidebar;
+    renderLayout(true);
+  });
+}
+if (participantDrawerBackdrop) {
+  participantDrawerBackdrop.addEventListener('click', () => {
+    if (!currentSharerSid) return;
+    hiddenSidebar = true;
+    renderLayout(true);
+  });
 }
 
 function stopStreamTracks(stream) {
