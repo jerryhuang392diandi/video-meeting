@@ -55,17 +55,12 @@ const TEXT_ROOM_STORAGE_LIMIT = {{ ('当前会议附件空间已接近上限，�
 
 const socket = io();
 const rtcConfig = { iceServers: {{ turn_ice_servers|tojson }}, iceTransportPolicy: 'relay' };
-const ROOM_TEST_PARAMS = new URLSearchParams(window.location.search);
-const TEST_GRID_COUNT = Math.max(0, Math.min(120, parseInt(ROOM_TEST_PARAMS.get('testgrid') || ROOM_TEST_PARAMS.get('fake') || '0', 10) || 0));
-const IS_GRID_TEST_MODE = TEST_GRID_COUNT > 0;
-const TEXT_TEST_GRID_ACTIVE = {{ ('当前为布局测试模式：已生成虚拟参会者，仅用于测试视频宫格与分页。' if lang == 'zh' else 'Layout test mode is active: fake participants were added for grid and pagination testing only.')|tojson }};
 
 let localStream = null;
 let rawCameraStream = null;
 let currentFacingMode = 'user';
 let peerConnections = {};
 let participantMeta = {};
-let fakeParticipantMeta = {};
 let focusedSid = 'local';
 let hiddenSidebar = false;
 let currentSharerSid = null;
@@ -165,11 +160,6 @@ function getDisplayName(sid) {
   return sid === 'local' ? `${USER_NAME} · {{ t('local_you') }}` : (participantMeta[sid]?.name || sid);
 }
 
-function normalizeParticipantSid(sid) {
-  if (!sid) return sid;
-  return sid === socket.id ? 'local' : sid;
-}
-
 function isMobileDevice() {
   return window.matchMedia('(max-width: 768px)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
@@ -208,7 +198,7 @@ function updateShareUiState() {
   }
 }
 
-const roomDebugEnabled = ROOM_TEST_PARAMS.get('debugRoom') === '1';
+const roomDebugEnabled = new URLSearchParams(window.location.search).get('debugRoom') === '1';
 let simulatedFullscreenCardSid = null;
 let pendingLayoutAfterFullscreen = false;
 
@@ -416,7 +406,7 @@ function getVideoSearchKeyword() {
 }
 
 function getRenderableCards() {
-  const orderedSids = ['local', ...Object.keys(participantMeta), ...Object.keys(fakeParticipantMeta)];
+  const orderedSids = ['local', ...Object.keys(participantMeta)];
   const seen = new Set();
   const keyword = getVideoSearchKeyword();
   return orderedSids
@@ -424,13 +414,13 @@ function getRenderableCards() {
       if (seen.has(sid)) return false;
       seen.add(sid);
       if (!keyword) return true;
-      const displayName = sid === 'local' ? getDisplayName('local') : (fakeParticipantMeta[sid]?.name || getDisplayName(sid));
+      const displayName = sid === 'local' ? getDisplayName('local') : getDisplayName(sid);
       const haystack = `${displayName || ''} ${sid || ''} ${ROOM_ID || ''}`.toLocaleLowerCase('zh-Hans-CN');
       return haystack.includes(keyword);
     })
     .map(sid => ensureCard(
       sid,
-      sid === 'local' ? getDisplayName('local') : (fakeParticipantMeta[sid]?.name || getDisplayName(sid)),
+      sid === 'local' ? getDisplayName('local') : getDisplayName(sid),
       sid === 'local'
     ));
 }
@@ -508,27 +498,7 @@ function focusParticipant(sid, opts = {}) {
 }
 
 function updateParticipantCount() {
-  participantCountEl.textContent = 1 + Object.keys(participantMeta).length + Object.keys(fakeParticipantMeta).length;
-}
-
-function getFakeParticipantName(index) {
-  return {{ ('测试用户' if lang == 'zh' else 'Test User')|tojson }} + ' ' + String(index + 1);
-}
-
-function seedFakeParticipants() {
-  if (!IS_GRID_TEST_MODE) return;
-  fakeParticipantMeta = {};
-  for (let i = 0; i < TEST_GRID_COUNT; i += 1) {
-    const sid = `fake-${i + 1}`;
-    const name = getFakeParticipantName(i);
-    fakeParticipantMeta[sid] = { name };
-    const card = ensureCard(sid, name, false);
-    updatePlaceholder(card, false);
-  }
-  currentGridPage = 0;
-  renderLayout();
-  updateParticipantCount();
-  setStatus(TEXT_TEST_GRID_ACTIVE);
+  participantCountEl.textContent = 1 + Object.keys(participantMeta).length;
 }
 
 function stopStreamTracks(stream) {
@@ -1061,7 +1031,6 @@ function getMentionablePeople() {
   const byName = new Map();
   [{ sid: 'local', name: USER_NAME }]
     .concat(Object.entries(participantMeta).map(([sid, info]) => ({ sid, name: info.name || sid })))
-    .concat(Object.entries(fakeParticipantMeta).map(([sid, info]) => ({ sid, name: info.name || sid })))
     .forEach(person => {
       const name = String(person?.name || '').trim();
       if (!name) return;
@@ -1726,7 +1695,6 @@ function broadcastUiEvent(payload) {
 function cleanupMeetingSession() {
   if (hasLeftMeeting) return;
   hasLeftMeeting = true;
-  fakeParticipantMeta = {};
   try {
     if (activeRecorder && activeRecorder.state !== 'inactive') activeRecorder.stop();
   } catch (_) {}
@@ -1755,7 +1723,6 @@ socket.on('connect', async () => {
   renderLayout();
   if ((PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream) await requestMedia(currentFacingMode, false);
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
-  seedFakeParticipants();
 });
 
 socket.on('join_ok', async (data) => {
@@ -1764,9 +1731,8 @@ socket.on('join_ok', async (data) => {
   for (const p of data.participants) addRemoteParticipant(p.sid, p.name);
   (data.chat_history || []).forEach(item => appendChatMessage(item));
   focusParticipant('local');
-  if (IS_GRID_TEST_MODE) seedFakeParticipants();
   danmakuEnabled = !!data.danmaku_enabled;
-  currentSharerSid = normalizeParticipantSid(data?.active_sharer_sid) || null;
+  currentSharerSid = data?.active_sharer_sid || null;
   if (currentSharerSid) {
     focusedSid = currentSharerSid;
     hiddenSidebar = true;
@@ -1909,7 +1875,7 @@ socket.on('room_ui_event', (data) => {
     renderLayout();
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
   } else if (data.type === 'screen_share_denied') {
-    currentSharerSid = normalizeParticipantSid(data.activeSharerSid) || currentSharerSid;
+    currentSharerSid = data.activeSharerSid || currentSharerSid;
     updateShareUiState();
     setStatus(data.message || {{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }}, 'warning');
   } else if (data.type === 'danmaku_toggled') {

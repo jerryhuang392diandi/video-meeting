@@ -13,6 +13,7 @@
     <span class="user-pill">{{ t('current_user') }}: {{ current_user.username }}</span>
     <a class="chip" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>
     <a class="chip" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
+    <button class="chip mobile-scan-trigger" id="mobileScanToggleBtn" type="button">{{ ('扫码入会' if lang == 'zh' else 'Scan QR') }}</button>
     {% if current_user.is_admin %}<a class="chip" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
     <a class="chip danger" href="{{ url_for('logout') }}">{{ t('nav_logout') }}</a>
   </div>
@@ -109,6 +110,20 @@
     </div>
   </div>
 </section>
+
+<div id="mobileQrScannerModal" class="scan-modal hidden" aria-hidden="true">
+  <div class="scan-modal-card">
+    <div class="scan-modal-head">
+      <strong>{{ ('扫码入会' if lang == 'zh' else 'Scan QR to join') }}</strong>
+      <button class="chip danger" id="mobileScanCloseBtn" type="button">{{ ('关闭' if lang == 'zh' else 'Close') }}</button>
+    </div>
+    <div class="scan-modal-body">
+      <video id="mobileQrVideo" class="scan-video" playsinline muted></video>
+      <div id="mobileScanHint" class="scan-hint">{{ ('点击“扫码入会”后才会调用相机。将二维码对准取景框即可。' if lang == 'zh' else 'The camera starts only after you tap Scan QR. Point the QR code at the frame.') }}</div>
+      <div class="scan-frame" aria-hidden="true"></div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -182,6 +197,123 @@ document.getElementById('joinBtn').addEventListener('click', async () => {
   const roomId = document.getElementById('joinRoomId').value.trim();
   const pwd = document.getElementById('joinPassword').value.trim();
   window.location.href = `/room/${roomId}?pwd=${encodeURIComponent(pwd)}`;
+});
+
+
+const mobileScanToggleBtn = document.getElementById('mobileScanToggleBtn');
+const mobileQrScannerModal = document.getElementById('mobileQrScannerModal');
+const mobileScanCloseBtn = document.getElementById('mobileScanCloseBtn');
+const mobileQrVideo = document.getElementById('mobileQrVideo');
+const mobileScanHint = document.getElementById('mobileScanHint');
+const TEXT_SCAN_NOT_SUPPORTED = {{ ('当前浏览器暂不支持扫码，请使用 Chrome 或 Safari 新版本。' if lang == 'zh' else 'This browser does not support QR scanning yet. Please use a recent Chrome or Safari browser.')|tojson }};
+const TEXT_SCAN_PERMISSION_FAILED = {{ ('无法打开相机，请检查浏览器权限。' if lang == 'zh' else 'Unable to access the camera. Please check browser permissions.')|tojson }};
+let mobileQrStream = null;
+let mobileQrScanFrame = 0;
+let mobileQrDetector = null;
+let mobileQrScanning = false;
+
+function isMobileViewport() {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function stopMobileQrScanner() {
+  mobileQrScanning = false;
+  if (mobileQrScanFrame) cancelAnimationFrame(mobileQrScanFrame);
+  mobileQrScanFrame = 0;
+  if (mobileQrStream) {
+    mobileQrStream.getTracks().forEach(track => { try { track.stop(); } catch (_) {} });
+    mobileQrStream = null;
+  }
+  if (mobileQrVideo) {
+    try { mobileQrVideo.pause(); } catch (_) {}
+    mobileQrVideo.srcObject = null;
+  }
+}
+
+function closeMobileQrModal() {
+  stopMobileQrScanner();
+  if (!mobileQrScannerModal) return;
+  mobileQrScannerModal.classList.add('hidden');
+  mobileQrScannerModal.setAttribute('aria-hidden', 'true');
+}
+
+function handleScannedQrText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return;
+  closeMobileQrModal();
+  try {
+    if (/^https?:\/\//i.test(raw)) {
+      window.location.href = raw;
+      return;
+    }
+    const roomMatch = raw.match(/\/room\/([^?\s#]+)/i);
+    if (roomMatch) {
+      const pwdMatch = raw.match(/[?&]pwd=([^&#]+)/i);
+      const pwd = pwdMatch ? decodeURIComponent(pwdMatch[1]) : '';
+      window.location.href = `/room/${roomMatch[1]}${pwd ? `?pwd=${encodeURIComponent(pwd)}` : ''}`;
+      return;
+    }
+    const shortRoomMatch = raw.match(/(?:room_id|room|会议号|房间号)[:：\s]+([A-Za-z0-9_-]{4,16})/i);
+    if (shortRoomMatch) {
+      document.getElementById('joinRoomId').value = shortRoomMatch[1];
+      return;
+    }
+    document.getElementById('joinRoomId').value = raw;
+  } catch (_) {
+    document.getElementById('joinRoomId').value = raw;
+  }
+}
+
+async function scanMobileQrLoop() {
+  if (!mobileQrScanning || !mobileQrVideo || !mobileQrDetector) return;
+  try {
+    const codes = await mobileQrDetector.detect(mobileQrVideo);
+    if (codes && codes.length) {
+      const value = codes[0].rawValue || '';
+      if (value) {
+        handleScannedQrText(value);
+        return;
+      }
+    }
+  } catch (_) {}
+  mobileQrScanFrame = requestAnimationFrame(scanMobileQrLoop);
+}
+
+async function openMobileQrModal() {
+  if (!isMobileViewport()) return;
+  if (!mobileQrScannerModal || !mobileQrVideo) return;
+  if (!('mediaDevices' in navigator) || !navigator.mediaDevices.getUserMedia || !('BarcodeDetector' in window)) {
+    alert(TEXT_SCAN_NOT_SUPPORTED);
+    return;
+  }
+  mobileQrScannerModal.classList.remove('hidden');
+  mobileQrScannerModal.setAttribute('aria-hidden', 'false');
+  mobileScanHint.textContent = {{ ('正在打开后置相机…' if lang == 'zh' else 'Opening the rear camera…')|tojson }};
+  try {
+    mobileQrDetector = new BarcodeDetector({ formats: ['qr_code'] });
+    mobileQrStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    mobileQrVideo.srcObject = mobileQrStream;
+    await mobileQrVideo.play();
+    mobileScanHint.textContent = {{ ('请将二维码置于框内' if lang == 'zh' else 'Place the QR code inside the frame')|tojson }};
+    mobileQrScanning = true;
+    scanMobileQrLoop();
+  } catch (_) {
+    closeMobileQrModal();
+    alert(TEXT_SCAN_PERMISSION_FAILED);
+  }
+}
+
+mobileScanToggleBtn?.addEventListener('click', openMobileQrModal);
+mobileScanCloseBtn?.addEventListener('click', closeMobileQrModal);
+mobileQrScannerModal?.addEventListener('click', (event) => {
+  if (event.target === mobileQrScannerModal) closeMobileQrModal();
+});
+window.addEventListener('pagehide', stopMobileQrScanner);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopMobileQrScanner();
 });
 
 async function refreshTrafficSummary() {
