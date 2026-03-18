@@ -355,28 +355,8 @@ function updateShareUiState() {
   }
 }
 
-function getCurrentSharerCard() {
-  if (!currentSharerSid) return null;
-  return document.getElementById('card-' + currentSharerSid);
-}
-
-function getPreferredFocusCard(cards) {
-  if (!Array.isArray(cards) || !cards.length) return null;
-  const sharerCard = getCurrentSharerCard();
-  if (currentSharerSid && sharerCard && cards.includes(sharerCard)) return sharerCard;
-  const focusedCard = focusedSid ? document.getElementById('card-' + focusedSid) : null;
-  if (focusedCard && cards.includes(focusedCard)) return focusedCard;
-  const localCard = document.getElementById('card-local');
-  if (!currentSharerSid && localCard && cards.includes(localCard)) return localCard;
-  const remoteVideoCard = cards.find((card) => card?.dataset?.sid !== 'local' && card.classList.contains('has-video'));
-  if (remoteVideoCard) return remoteVideoCard;
-  if (localCard && cards.includes(localCard)) return localCard;
-  return cards[0] || null;
-}
-
 function updateParticipantDrawerUi(sidebarCount = null) {
-  const fallbackCount = Math.max(0, getRenderableCards().length - (currentSharerSid ? 1 : 0));
-  const count = Number.isFinite(sidebarCount) ? sidebarCount : fallbackCount;
+  const count = Number.isFinite(sidebarCount) ? sidebarCount : videoSidebar?.children?.length || 0;
   const shouldShowToggle = !!currentSharerSid && count > 0;
   const isOpen = shouldShowToggle && !hiddenSidebar;
   if (participantDrawerToggleBtn) {
@@ -393,13 +373,6 @@ function updateParticipantDrawerUi(sidebarCount = null) {
   }
 }
 
-function normalizeShareFocusState() {
-  if (!currentSharerSid) return;
-  const sharerCard = document.getElementById('card-' + currentSharerSid);
-  if (sharerCard) {
-    focusedSid = currentSharerSid;
-  }
-}
 
 function refreshVisibleVideoPlayback() {
   const videos = Array.from(document.querySelectorAll('.video-main video, .video-sidebar video, .video-main .video-el, .video-sidebar .video-el'));
@@ -651,37 +624,35 @@ function isMobileViewport() {
   return window.matchMedia('(max-width: 768px)').matches;
 }
 
+function normalizeParticipantSid(sid) {
+  if (!sid) return sid;
+  return sid === socket.id ? 'local' : sid;
+}
+
 function pickFocusCard(cards) {
   if (!Array.isArray(cards) || !cards.length) return null;
   if (currentSharerSid) {
-    const sharerCard = document.getElementById('card-' + currentSharerSid);
+    const normalizedSharerSid = normalizeParticipantSid(currentSharerSid);
+    if (normalizedSharerSid !== currentSharerSid) currentSharerSid = normalizedSharerSid;
+    const sharerCard = document.getElementById('card-' + normalizedSharerSid);
     if (sharerCard && cards.includes(sharerCard)) {
-      focusedSid = currentSharerSid;
+      focusedSid = normalizedSharerSid;
       return sharerCard;
+    }
+    const localCard = document.getElementById('card-local');
+    if (normalizedSharerSid === 'local' && localCard && cards.includes(localCard)) {
+      focusedSid = 'local';
+      return localCard;
+    }
+    const fallbackRemoteCard = cards.find(card => card?.dataset?.sid && card.dataset.sid !== 'local');
+    if (fallbackRemoteCard) {
+      focusedSid = fallbackRemoteCard.dataset.sid || focusedSid;
+      return fallbackRemoteCard;
     }
   }
   const desiredFocusCard = document.getElementById('card-' + (focusedSid || 'local'));
-  if (desiredFocusCard && cards.includes(desiredFocusCard)) {
-    focusedSid = desiredFocusCard.dataset?.sid || focusedSid;
-    return desiredFocusCard;
-  }
-  if (currentSharerSid) {
-    const firstRemote = cards.find(card => card?.dataset?.sid && card.dataset.sid !== 'local');
-    if (firstRemote) {
-      focusedSid = firstRemote.dataset.sid || focusedSid;
-      return firstRemote;
-    }
-  }
+  if (desiredFocusCard && cards.includes(desiredFocusCard)) return desiredFocusCard;
   const localCard = document.getElementById('card-local');
-  if (localCard && cards.includes(localCard) && !currentSharerSid) {
-    focusedSid = 'local';
-    return localCard;
-  }
-  const remoteVideoCard = cards.find(card => card?.dataset?.sid !== 'local' && card.classList.contains('has-video'));
-  if (remoteVideoCard) {
-    focusedSid = remoteVideoCard.dataset?.sid || focusedSid;
-    return remoteVideoCard;
-  }
   if (localCard && cards.includes(localCard)) {
     focusedSid = 'local';
     return localCard;
@@ -700,7 +671,6 @@ function getSidebarCards(cards, focusTarget) {
 
 function renderLayout(force = false) {
   if (!videoMain || !videoSidebar || !videoStage) return;
-  normalizeShareFocusState();
   if (!force && hasActiveFullscreenSession()) {
     pendingLayoutAfterFullscreen = true;
     roomDebugLog('renderLayout deferred due to active fullscreen');
@@ -772,7 +742,7 @@ function focusParticipant(sid, opts = {}) {
   focusedSid = sid;
   if (typeof opts.hideSidebar === 'boolean') hiddenSidebar = opts.hideSidebar;
   if (Object.prototype.hasOwnProperty.call(opts, 'screenShare')) currentSharerSid = opts.screenShare ? sid : null;
-  renderLayout(true);
+  renderLayout();
 }
 
 function updateParticipantCount() {
@@ -1066,7 +1036,6 @@ function addRemoteParticipant(sid, name) {
 
 function addRemoteVideo(sid, stream) {
   const card = ensureCard(sid, getDisplayName(sid), false);
-  if (currentSharerSid === sid) focusedSid = sid;
   const videoEl = card.querySelector('video');
   videoEl.srcObject = stream;
   safePlayVideo(videoEl);
@@ -1074,7 +1043,7 @@ function addRemoteVideo(sid, stream) {
   if (currentSharerSid === sid) {
     focusedSid = sid;
   }
-  renderLayout(true);
+  renderLayout();
 }
 
 function removeRemoteVideo(sid) {
@@ -2055,11 +2024,10 @@ socket.on('join_ok', async (data) => {
   focusParticipant('local');
   if (IS_GRID_TEST_MODE) seedFakeParticipants();
   danmakuEnabled = !!data.danmaku_enabled;
-  currentSharerSid = data?.active_sharer_sid || null;
+  currentSharerSid = normalizeParticipantSid(data?.active_sharer_sid || null);
   if (currentSharerSid) {
     focusedSid = currentSharerSid;
     hiddenSidebar = true;
-    normalizeShareFocusState();
     renderLayout();
   } else {
     updateShareUiState();
@@ -2189,9 +2157,10 @@ socket.on('signal', async (data) => {
 socket.on('room_ui_event', (data) => {
   if (!data || !data.type) return;
   if (data.type === 'screen_share_started') {
-    currentSharerSid = data.from;
-    focusedSid = data.from;
-    focusParticipant(data.from, { hideSidebar: true, screenShare: true });
+    const sharerSid = normalizeParticipantSid(data.from);
+    currentSharerSid = sharerSid;
+    focusedSid = sharerSid;
+    focusParticipant(sharerSid, { hideSidebar: true, screenShare: true });
     setStatus(TEXT_SCREEN_SHARE_MODE);
   } else if (data.type === 'screen_share_stopped') {
     currentSharerSid = null;
@@ -2200,7 +2169,7 @@ socket.on('room_ui_event', (data) => {
     renderLayout();
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
   } else if (data.type === 'screen_share_denied') {
-    currentSharerSid = data.activeSharerSid || currentSharerSid;
+    currentSharerSid = normalizeParticipantSid(data.activeSharerSid || currentSharerSid);
     updateShareUiState();
     setStatus(data.message || {{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }}, 'warning');
   } else if (data.type === 'danmaku_toggled') {
