@@ -1,0 +1,263 @@
+/* Canonical room layout overrides.
+   Keep room-specific sizing here so it doesn't get corrupted by repeated hotfixes in style.css. */
+
+.room-grid-layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr) !important;
+  gap: 18px !important;
+  align-items: start !important;
+}
+
+.room-grid-layout > .side-panel {
+  position: sticky;
+  top: 20px;
+  min-width: 0;
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+}
+
+.room-grid-layout > .video-panel {
+  position: relative;
+  min-width: 0;
+  min-height: 640px;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 360px !important;
+  grid-template-rows: auto auto;
+  gap: 18px !important;
+  align-items: start !important;
+  overflow: hidden;
+}
+
+.room-grid-layout > .video-panel.chat-collapsed-layout {
+  grid-template-columns: minmax(0, 1fr) 0 !important;
+}
+
+.room-grid-layout > .video-panel > #videoStage {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+
+.room-grid-layout > .video-panel > #videoPager {
+  grid-column: 1;
+  grid-row: 2;
+  width: 100%;
+  justify-self: center;
+  margin: 12px 0 0;
+}
+
+.room-grid-layout > .video-panel > #chatWindow {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.room-grid-layout > .video-panel > #chatShowBtn,
+.room-grid-layout > .video-panel > #chatContextMenu {
+  grid-column: 2;
+}
+
+.video-stage {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.video-stage.sidebar-hidden,
+.video-stage.focus-layout,
+.video-stage.grid-layout,
+.video-stage.screen-share-mode {
+  min-width: 0;
+}
+
+.video-main {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.video-stage.grid-1 .video-main { grid-template-columns: minmax(0, 1fr); }
+.video-stage.grid-2 .video-main { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.video-stage.grid-3 .video-main { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.video-stage.focus-layout .video-main { grid-template-columns: 1fr; }
+.video-stage.sidebar-hidden { grid-template-columns: minmax(0, 1fr) 0 !important; }
+.video-stage.sidebar-hidden .video-sidebar { display: none !important; }
+
+.video-stage.grid-layout .video-main .video-card,
+.video-stage.paged-grid .video-main .video-card {
+  aspect-ratio: 16 / 9;
+  min-height: 0 !important;
+}
+
+.video-stage.focus-layout .video-main .video-card {
+  min-height: clamp(320px, 52vh, 520px) !important;
+}
+
+.video-stage.screen-share-mode .video-main .video-card {
+  min-height: clamp(340px, 58vh, 580px) !important;
+}
+
+.video-sidebar {
+  min-width: 0;
+  max-height: min(62vh, 520px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.video-sidebar .video-card {
+  min-height: 118px;
+}
+
+.video-card,
+.video-card .video-el,
+.video-card video {
+  width: 100%;
+}
+
+.video-card .video-el,
+.video-card video {
+  min-height: 0 !important;
+  height: 100%;
+  object-fit: cover;
+}
+
+.danmaku-layer {
+  right: 378px !important;
+}
+
+.video-panel.chat-collapsed-layout .danmaku-layer {
+  right: 12px !important;
+}
+
+.chat-window,
+#chatWindow.chat-window {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 620px !important;
+  height: calc(100vh - 140px) !important;
+  max-height: 820px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  align-self: stretch;
+}
+
+.chat-window.chat-collapsed,
+#chatWindow.chat-window.chat-collapsed {
+  display: none !important;
+}
+
+.chat-header,
+.chat-toolbar,
+.chat-composer,
+.chat-file-permission-row,
+.chat-attachment-preview {
+  flex: 0 0 auto;
+}
+
+.chat-messages {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+@media (max-width: 1360px) {
+  .room-grid-layout {
+    grid-template-columns: 280px minmax(0, 1fr) !important;
+  }
+
+  .room-grid-layout > .video-panel {
+    grid-template-columns: minmax(0, 1fr) 320px !important;
+  }
+
+  .danmaku-layer {
+    right: 338px !important;
+  }
+}
+
+@media (max-width: 1100px) {
+  .room-grid-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .room-grid-layout > .side-panel {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .room-grid-layout > .video-panel {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto auto auto;
+    min-height: auto;
+  }
+
+  .room-grid-layout > .video-panel > #videoStage,
+  .room-grid-layout > .video-panel > #videoPager,
+  .room-grid-layout > .video-panel > #chatWindow,
+  .room-grid-layout > .video-panel > #chatShowBtn,
+  .room-grid-layout > .video-panel > #chatContextMenu {
+    grid-column: 1;
+  }
+
+  .room-grid-layout > .video-panel > #videoStage { grid-row: 1; }
+  .room-grid-layout > .video-panel > #videoPager { grid-row: 2; }
+  .room-grid-layout > .video-panel > #chatWindow { grid-row: 3; }
+
+  .video-stage,
+  .video-stage.sidebar-hidden {
+    grid-template-columns: 1fr !important;
+  }
+
+  .video-sidebar {
+    max-height: none;
+    flex-direction: row;
+  }
+
+  .video-sidebar .video-card {
+    min-width: 180px;
+  }
+
+  .chat-window,
+  #chatWindow.chat-window {
+    min-height: 460px !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  .danmaku-layer {
+    right: 12px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .room-grid-layout {
+    gap: 14px !important;
+  }
+
+  .room-grid-layout > .video-panel {
+    gap: 14px !important;
+  }
+
+  .video-main,
+  .video-stage.grid-2 .video-main,
+  .video-stage.grid-3 .video-main {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .video-stage.focus-layout .video-main .video-card,
+  .video-stage.screen-share-mode .video-main .video-card {
+    min-height: 50vh !important;
+  }
+
+  .chat-window,
+  #chatWindow.chat-window {
+    min-height: 380px !important;
+  }
+}

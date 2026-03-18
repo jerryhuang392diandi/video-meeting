@@ -3297,3 +3297,83 @@ video:-webkit-full-screen {
 @media (min-width: 769px) {
   .scan-modal { display: none !important; }
 }
+
+/* room layout cleanup: canonical desktop/mobile sizing */
+.room-grid-layout {
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.room-grid-layout > .side-panel,
+.video-panel,
+#videoStage,
+#videoMain,
+#videoSidebar,
+.chat-window {
+  min-width: 0;
+}
+
+.video-panel {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 18px;
+  align-items: stretch;
+}
+
+.video-panel.chat-collapsed-layout {
+  grid-template-columns: minmax(0, 1fr) 0 !important;
+}
+
+.chat-window,
+#chatWindow.chat-window {
+  width: 100%;
+  min-height: 620px;
+  max-height: calc(100vh - 150px);
+  height: auto;
+  overflow: hidden;
+}
+
+@media (max-width: 1360px) {
+  .video-panel {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .room-grid-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .video-panel {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .chat-window,
+  #chatWindow.chat-window {
+    min-height: 460px;
+    max-height: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .room-grid-layout {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .video-panel {
+    grid-template-columns: 1fr !important;
+    gap: 14px;
+    min-height: auto;
+  }
+
+  .chat-window,
+  #chatWindow.chat-window {
+    min-height: 380px;
+    height: auto;
+    max-height: none;
+  }
+}

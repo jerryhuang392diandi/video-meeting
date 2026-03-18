@@ -2062,6 +2062,30 @@ def on_join_room(data):
         return
 
     cancel_room_cleanup(room_id)
+
+    # Clean up stale connections from the same authenticated user in this room.
+    # This prevents the UI from showing the same account twice after refresh,
+    # reconnect races, or a browser tab that did not leave cleanly.
+    stale_sids = [
+        osid for osid, info in list(room.get("participants", {}).items())
+        if osid != sid and info.get("user_id") == current_user.id
+    ]
+    for stale_sid in stale_sids:
+        room.get("participants", {}).pop(stale_sid, None)
+        sid_to_user.pop(stale_sid, None)
+        unbind_user_socket(current_user.id, stale_sid)
+        try:
+            socketio.server.leave_room(stale_sid, room_id, namespace='/')
+        except Exception:
+            pass
+        try:
+            socketio.server.disconnect(stale_sid, namespace='/')
+        except Exception:
+            pass
+        participant = MeetingParticipant.query.filter_by(sid=stale_sid).order_by(MeetingParticipant.id.desc()).first()
+        if participant and not participant.left_at:
+            participant.left_at = datetime.utcnow()
+
     existing = [{"sid": osid, "name": info["name"]} for osid, info in room["participants"].items()]
     room["participants"][sid] = {"name": user_name, "joined_at": time.time(), "user_id": current_user.id}
     sid_to_user[sid] = {"room_id": room_id, "name": user_name, "user_id": current_user.id}
