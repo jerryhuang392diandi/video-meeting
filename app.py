@@ -49,9 +49,35 @@ INSTANCE_DIR = os.path.join(BASE_DIR, "instance")
 DB_PATH = os.path.join(INSTANCE_DIR, "app.db")
 os.makedirs(INSTANCE_DIR, exist_ok=True)
 
+
+def load_or_create_secret_key() -> str:
+    env_key = (os.environ.get("SECRET_KEY") or "").strip()
+    if env_key:
+        return env_key
+    secret_path = os.path.join(INSTANCE_DIR, "secret_key.txt")
+    try:
+        if os.path.exists(secret_path):
+            value = Path(secret_path).read_text(encoding="utf-8").strip()
+            if value:
+                return value
+    except OSError:
+        pass
+    value = secrets.token_hex(32)
+    try:
+        Path(secret_path).write_text(value, encoding="utf-8")
+    except OSError:
+        pass
+    return value
+
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
+app.config["SECRET_KEY"] = load_or_create_secret_key()
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["REMEMBER_COOKIE_HTTPONLY"] = True
+app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=14)
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", f"sqlite:///{DB_PATH}")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
@@ -59,6 +85,14 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", max_h
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
+login_manager.login_message = None
+
+
+@login_manager.unauthorized_handler
+def handle_unauthorized():
+    if request.path.startswith("/api/"):
+        return jsonify({"success": False, "message": t("login_required")}), 401
+    return redirect(url_for("login", next=request.url))
 
 
 DEBUG_ROOM = os.environ.get("DEBUG_ROOM") == "1"
@@ -836,7 +870,8 @@ def register():
 
     user.session_version = (user.session_version or 0) + 1
     db.session.commit()
-    login_user(user)
+    login_user(user, remember=True)
+    session.permanent = True
     session["session_version"] = user.session_version
     disconnect_user_sockets(user.id, message=t("kicked"))
     return redirect(url_for("index"))
@@ -858,7 +893,8 @@ def login():
 
     user.session_version = (user.session_version or 0) + 1
     db.session.commit()
-    login_user(user)
+    login_user(user, remember=True)
+    session.permanent = True
     session["session_version"] = user.session_version
     disconnect_user_sockets(user.id, message=t("kicked"))
     return redirect(url_for("index"))

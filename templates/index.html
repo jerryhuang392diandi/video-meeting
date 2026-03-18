@@ -131,10 +131,43 @@
 const TEXT_COPY = {{ t('copy')|tojson }};
 const TEXT_COPIED = {{ t('copied')|tojson }};
 const TEXT_FAILED = {{ t('failed')|tojson }};
+const TEXT_LOGIN_REQUIRED = {{ t('login_required')|tojson }};
 
 const copyText = async (text) => {
   await navigator.clipboard.writeText(text);
   return true;
+};
+
+const requestJson = async (url, payload) => {
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {})
+  });
+
+  const contentType = res.headers.get('content-type') || '';
+  let data = null;
+
+  if (contentType.includes('application/json')) {
+    data = await res.json();
+  } else {
+    const text = await res.text();
+    if (res.status === 401 || res.redirected || /<html|<!DOCTYPE html/i.test(text)) {
+      alert(TEXT_LOGIN_REQUIRED);
+      window.location.href = '/login';
+      return null;
+    }
+    throw new Error(`Unexpected response type: ${contentType || 'unknown'}`);
+  }
+
+  if (res.status === 401) {
+    alert((data && data.message) || TEXT_LOGIN_REQUIRED);
+    window.location.href = '/login';
+    return null;
+  }
+
+  return { res, data };
 };
 
 const saveDisplayName = () => {
@@ -152,29 +185,10 @@ document.getElementById('createBtn').addEventListener('click', async () => {
   try {
     const host_name = document.getElementById('hostName').value.trim();
     if (host_name) localStorage.setItem('meeting_display_name', host_name);
-
-    const res = await fetch('/api/create_room', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ host_name })
-    });
-
-    const contentType = res.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      const text = await res.text();
-      if (res.redirected || /<!DOCTYPE html|<html/i.test(text)) {
-        alert({{ ('登录状态可能已失效，请重新登录。' if lang == 'zh' else 'Your login session may have expired. Please sign in again.')|tojson }});
-        window.location.href = '/login';
-        return;
-      }
-      throw new Error('Server did not return JSON.');
-    }
-
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      alert(data.message || TEXT_FAILED);
-      return;
-    }
+    const result = await requestJson('/api/create_room', { host_name });
+    if (!result) return;
+    const { data } = result;
+    if (!data.success) return alert(data.message || TEXT_FAILED);
 
     const box = document.getElementById('createResult');
     box.classList.remove('hidden');
@@ -195,7 +209,7 @@ document.getElementById('createBtn').addEventListener('click', async () => {
     };
   } catch (err) {
     console.error('create room failed:', err);
-    alert({{ ('创建会议失败，请检查登录状态或服务器日志。' if lang == 'zh' else 'Failed to create the meeting. Please check your sign-in status or server logs.')|tojson }});
+    alert(TEXT_FAILED);
   }
 });
 
@@ -206,24 +220,9 @@ document.getElementById('joinBtn').addEventListener('click', async () => {
       room_id: document.getElementById('joinRoomId').value.trim(),
       password: document.getElementById('joinPassword').value.trim(),
     };
-    const res = await fetch('/api/join_room', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    const contentType = res.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      const text = await res.text();
-      if (res.redirected || /<!DOCTYPE html|<html/i.test(text)) {
-        alert({{ ('登录状态可能已失效，请重新登录。' if lang == 'zh' else 'Your login session may have expired. Please sign in again.')|tojson }});
-        window.location.href = '/login';
-        return;
-      }
-      throw new Error('Server did not return JSON.');
-    }
-
-    const data = await res.json();
+    const result = await requestJson('/api/join_room', payload);
+    if (!result) return;
+    const { res, data } = result;
     if (!res.ok || !data.success) {
       alert(data.message || TEXT_FAILED);
       return;
@@ -233,7 +232,7 @@ document.getElementById('joinBtn').addEventListener('click', async () => {
     window.location.href = `/room/${roomId}?pwd=${encodeURIComponent(pwd)}`;
   } catch (err) {
     console.error('join room failed:', err);
-    alert({{ ('加入会议失败，请检查登录状态或服务器日志。' if lang == 'zh' else 'Failed to join the meeting. Please check your sign-in status or server logs.')|tojson }});
+    alert(TEXT_FAILED);
   }
 });
 
