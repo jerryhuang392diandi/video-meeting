@@ -21,7 +21,7 @@
   min-width: 0;
   min-height: 640px;
   display: grid !important;
-  grid-template-columns: minmax(0, 1fr) 360px !important;
+  grid-template-columns: minmax(0, 1fr) clamp(400px, 30vw, 460px) !important;
   grid-template-rows: auto auto;
   gap: 18px !important;
   align-items: start !important;
@@ -127,7 +127,7 @@
 }
 
 .danmaku-layer {
-  right: 378px !important;
+  right: clamp(418px, 30vw + 18px, 478px) !important;
 }
 
 .video-panel.chat-collapsed-layout .danmaku-layer {
@@ -139,7 +139,7 @@
   width: 100% !important;
   min-width: 0 !important;
   min-height: 620px !important;
-  height: calc(100vh - 140px) !important;
+  height: clamp(620px, calc(100vh - 140px), 820px) !important;
   max-height: 820px !important;
   display: flex !important;
   flex-direction: column !important;
@@ -160,6 +160,73 @@
   flex: 0 0 auto;
 }
 
+.chat-header,
+.chat-toolbar,
+.chat-actions,
+.chat-actions-left {
+  flex-wrap: wrap;
+}
+
+.chat-header .row-compact {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.chat-file-permission-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.chat-file-permission-row select {
+  flex: 0 0 160px;
+  min-width: 0;
+}
+
+.chat-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-input-row {
+  min-height: 0;
+}
+
+.chat-input-row textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 96px;
+  max-height: 160px;
+}
+
+.chat-attachment-preview {
+  max-height: 112px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.chat-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chat-actions > .primary-btn,
+.chat-actions > .slim-btn {
+  flex: 0 0 auto;
+}
+
 .chat-messages {
   flex: 1 1 auto !important;
   min-height: 0 !important;
@@ -173,11 +240,11 @@
   }
 
   .room-grid-layout > .video-panel {
-    grid-template-columns: minmax(0, 1fr) 320px !important;
+    grid-template-columns: minmax(0, 1fr) 360px !important;
   }
 
   .danmaku-layer {
-    right: 338px !important;
+    right: 378px !important;
   }
 }
 
@@ -259,5 +326,26 @@
   .chat-window,
   #chatWindow.chat-window {
     min-height: 380px !important;
+  }
+}
+
+@media (max-width: 1360px) {
+  .chat-file-permission-row select {
+    flex-basis: 140px;
+  }
+}
+
+@media (max-width: 900px) {
+  .chat-actions {
+    align-items: stretch;
+  }
+
+  .chat-actions-left {
+    width: 100%;
+  }
+
+  .chat-actions > .primary-btn,
+  .chat-actions > .slim-btn {
+    width: 100%;
   }
 }
