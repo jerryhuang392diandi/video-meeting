@@ -89,6 +89,28 @@ CHAT_IMAGE_MAX_DIMENSION = 1920
 ALLOWED_CHAT_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "mp4", "webm", "mov", "m4v", "avi", "3gp", "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "txt", "zip", "rar", "7z"}
 
 from translations import TRANSLATIONS
+from core_utils import (
+    TRAFFIC_RESET_DAYS,
+    bool_from_form,
+    build_turn_ice_servers,
+    cycle_anchor_for_user,
+    detect_traffic_interface,
+    format_mb,
+    generate_password,
+    generate_room_id,
+    get_base_url,
+    is_meeting_expired,
+    normalize_password,
+    preferred_display_name,
+    read_interface_total_bytes,
+    refresh_user_traffic_cycle,
+    room_user_marker_key,
+    traffic_summary_dict,
+    user_quota_exceeded,
+    user_remaining_quota_mb,
+    utc_iso,
+    visible_chat_history_for_user,
+)
 
 class User(UserMixin, db.Model):
     __tablename__ = "users"
@@ -174,17 +196,6 @@ def tf(lang: str, key: str) -> str:
 
 
 
-def preferred_display_name(user):
-    if not user:
-        return "Guest"
-    return (getattr(user, "display_name", None) or getattr(user, "username", None) or "Guest").strip()[:32] or "Guest"
-
-def utc_iso(dt):
-    if not dt:
-        return ""
-    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 @app.context_processor
 def inject_globals():
     lang = session.get("lang", "zh")
@@ -245,101 +256,7 @@ def ensure_admin():
     db.session.commit()
 
 
-def normalize_password(pwd: str) -> str:
-    return (pwd or "").strip().upper()
-
-
-def generate_room_id():
-    while True:
-        room_id = "".join(secrets.choice(string.digits) for _ in range(6))
-        if not Meeting.query.filter_by(room_id=room_id).first():
-            return room_id
-
-
-def generate_password(length=6):
-    alphabet = string.ascii_uppercase + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(length))
-
-
-def get_base_url():
-    scheme = (os.environ.get("PUBLIC_SCHEME") or request.headers.get("X-Forwarded-Proto") or "https").strip()
-    host = (os.environ.get("PUBLIC_HOST") or request.host or "").strip()
-    return f"{scheme}://{host}"
-
-
-TRAFFIC_RESET_DAYS = 30
 _TRAFFIC_MONITOR = {"iface": None, "last_total_bytes": None, "last_ts": None}
-
-
-def cycle_anchor_for_user(user):
-    anchor = getattr(user, "traffic_cycle_start_at", None)
-    if anchor:
-        return anchor
-    anchor = getattr(user, "created_at", None) or datetime.utcnow()
-    user.traffic_cycle_start_at = anchor
-    return anchor
-
-
-def refresh_user_traffic_cycle(user, now=None):
-    now = now or datetime.utcnow()
-    anchor = cycle_anchor_for_user(user)
-    changed = False
-    while anchor + timedelta(days=TRAFFIC_RESET_DAYS) <= now:
-        anchor = anchor + timedelta(days=TRAFFIC_RESET_DAYS)
-        user.used_traffic_mb = 0.0
-        changed = True
-    if user.traffic_cycle_start_at != anchor:
-        user.traffic_cycle_start_at = anchor
-        changed = True
-    if user.monthly_quota_mb is None:
-        user.monthly_quota_mb = 3072.0
-        changed = True
-    if user.used_traffic_mb is None:
-        user.used_traffic_mb = 0.0
-        changed = True
-    return changed
-
-
-def user_remaining_quota_mb(user):
-    refresh_user_traffic_cycle(user)
-    return max(0.0, float(user.monthly_quota_mb or 0.0) - float(user.used_traffic_mb or 0.0))
-
-
-def user_quota_exceeded(user):
-    return user_remaining_quota_mb(user) <= 0.0001
-
-
-def format_mb(mb_value):
-    value = float(mb_value or 0.0)
-    if value >= 1024:
-        return f"{value / 1024:.2f} GB"
-    return f"{value:.0f} MB"
-
-
-def bool_from_form(value, default=False):
-    if value is None:
-        return default
-    return str(value).strip().lower() in {"1", "true", "on", "yes"}
-
-
-def room_user_marker_key(user_id, sid=None):
-    return f"user:{user_id}" if user_id else f"sid:{sid or ''}"
-
-
-def visible_chat_history_for_user(room, user_id, sid, is_room_host=False):
-    history = list(room.get("chat_history", []))
-    marker_key = room_user_marker_key(user_id, sid)
-    clear_index = int((room.get("chat_clear_markers") or {}).get(marker_key, 0) or 0)
-    visible = []
-    for idx, item in enumerate(history):
-        if idx < clear_index and not is_room_host:
-            continue
-        if item.get("mode") == "all":
-            visible.append(item)
-        elif is_room_host or item.get("senderUserId") == user_id or item.get("from") == sid:
-            visible.append(item)
-    return visible
-
 
 def get_system_metrics():
     sync_network_traffic()
@@ -468,55 +385,6 @@ def sync_user_traffic(user_id=None):
             db.session.commit()
 
 
-def traffic_summary_dict(user):
-    refresh_user_traffic_cycle(user)
-    remaining = user_remaining_quota_mb(user)
-    anchor = cycle_anchor_for_user(user)
-    reset_at = anchor + timedelta(days=TRAFFIC_RESET_DAYS)
-    return {
-        "monthly_quota_mb": round(float(user.monthly_quota_mb or 0.0), 2),
-        "used_traffic_mb": round(float(user.used_traffic_mb or 0.0), 2),
-        "remaining_traffic_mb": round(float(remaining), 2),
-        "monthly_quota_text": format_mb(user.monthly_quota_mb),
-        "used_traffic_text": format_mb(user.used_traffic_mb),
-        "remaining_traffic_text": format_mb(remaining),
-        "reset_at_text": reset_at.strftime("%Y-%m-%d %H:%M UTC"),
-        "reset_cycle_days": TRAFFIC_RESET_DAYS,
-        "traffic_interface": _TRAFFIC_MONITOR.get("iface") or detect_traffic_interface() or "unknown",
-    }
-
-
-def build_turn_ice_servers():
-    urls_raw = (os.environ.get("TURN_URLS") or "").strip()
-    username = (os.environ.get("TURN_USERNAME") or "").strip()
-    credential = (os.environ.get("TURN_PASSWORD") or "").strip()
-    if urls_raw and username and credential:
-        urls = [item.strip() for item in urls_raw.split(",") if item.strip()]
-    else:
-        public_host = (os.environ.get("TURN_PUBLIC_HOST") or os.environ.get("PUBLIC_HOST") or request.host.split(":")[0]).strip()
-        urls = [f"turn:{public_host}:3478?transport=udp", f"turn:{public_host}:3478?transport=tcp"]
-        username = username or (os.environ.get("TURN_USERNAME") or "turnuser").strip() or "turnuser"
-        credential = credential or (os.environ.get("TURN_PASSWORD") or "turnpassword123").strip() or "turnpassword123"
-    return [{"urls": urls, "username": username, "credential": credential}]
-
-
-
-def is_meeting_expired(meeting):
-    if not meeting or not meeting.created_at:
-        return False
-    return datetime.utcnow() >= (meeting.created_at + timedelta(seconds=MEETING_DURATION_SECONDS))
-
-
-def cancel_room_expiry(room_id):
-    room = rooms.get(room_id)
-    if not room:
-        return
-    timer = room.get("expiry_timer")
-    if timer:
-        timer.cancel()
-    room["expiry_timer"] = None
-
-
 def end_meeting_by_room_id(room_id, message_key=None):
     with app.app_context():
         room = rooms.get(room_id)
@@ -563,7 +431,7 @@ def ensure_meeting_not_expired(meeting):
         return False
     if meeting.status == "ended":
         return False
-    if is_meeting_expired(meeting):
+    if is_meeting_expired(meeting, MEETING_DURATION_SECONDS):
         end_meeting_by_room_id(meeting.room_id, "expired_meeting")
         return False
     return True
@@ -849,7 +717,7 @@ def index():
         return redirect(url_for("login"))
     sync_user_traffic(current_user.id)
     db.session.refresh(current_user)
-    return render_template("index.html", traffic=traffic_summary_dict(current_user), preferred_display_name=preferred_display_name(current_user))
+    return render_template("index.html", traffic=traffic_summary_dict(current_user, _TRAFFIC_MONITOR), preferred_display_name=preferred_display_name(current_user))
 
 
 @app.route("/account", methods=["GET", "POST"])
@@ -1014,7 +882,7 @@ def api_create_room():
         return jsonify({"success": False, "message": t("traffic_limit_reached")}), 403
     data = request.get_json(silent=True) or {}
     host_name = (data.get("host_name") or current_user.username).strip()[:32] or current_user.username
-    room_id = generate_room_id()
+    room_id = generate_room_id(lambda rid: Meeting.query.filter_by(room_id=rid).first() is not None)
     password = generate_password()
 
     meeting = Meeting(
@@ -1047,7 +915,7 @@ def api_create_room():
     }
     schedule_room_expiry(room_id, meeting.created_at.timestamp())
 
-    join_url = f"{get_base_url()}/room/{room_id}?pwd={password}"
+    join_url = f"{get_base_url(request)}/room/{room_id}?pwd={password}"
     return jsonify({"success": True, "room_id": room_id, "password": password, "join_url": join_url})
 
 
@@ -1079,7 +947,7 @@ def room_page(room_id):
     if not ensure_meeting_not_expired(meeting):
         abort(404)
     room_password = request.args.get("pwd", meeting.room_password)
-    invite_url = f"{get_base_url()}{url_for('room_page', room_id=room_id)}?pwd={quote(room_password)}"
+    invite_url = f"{get_base_url(request)}{url_for('room_page', room_id=room_id)}?pwd={quote(room_password)}"
     is_host = current_user.is_authenticated and current_user.id == meeting.host_user_id
     sync_user_traffic(current_user.id)
     db.session.refresh(current_user)
@@ -1089,8 +957,8 @@ def room_page(room_id):
         room_password=room_password,
         invite_url=invite_url,
         is_host=is_host,
-        traffic=traffic_summary_dict(current_user),
-        turn_ice_servers=build_turn_ice_servers(),
+        traffic=traffic_summary_dict(current_user, _TRAFFIC_MONITOR),
+        turn_ice_servers=build_turn_ice_servers(request),
         preferred_display_name=preferred_display_name(current_user),
         default_danmaku_enabled=bool(getattr(current_user, "default_danmaku_enabled", True)),
         auto_enable_camera=bool(getattr(current_user, "auto_enable_camera", True)),
@@ -1105,7 +973,7 @@ def api_traffic_summary():
     db.session.refresh(current_user)
     if user_quota_exceeded(current_user):
         disconnect_user_sockets(current_user.id, message=t("traffic_limit_reached"))
-    return jsonify({"success": True, **traffic_summary_dict(current_user)})
+    return jsonify({"success": True, **traffic_summary_dict(current_user, _TRAFFIC_MONITOR)})
 
 
 @app.get("/history")
@@ -1248,7 +1116,7 @@ def admin_dashboard():
         active_meetings=active_meetings,
         history_meetings=history_meetings,
         online_rooms=online_rooms,
-        traffic_summaries={u.id: traffic_summary_dict(u) for u in users},
+        traffic_summaries={u.id: traffic_summary_dict(u, _TRAFFIC_MONITOR) for u in users},
         reset_requests=reset_requests,
         system_stats=get_system_metrics(),
     )

@@ -1,13 +1,12 @@
 venv/
 __pycache__/
-*.pyc
-instance/
-.env
 *.py[cod]
 *.swp
 *.swo
 *.bak
 *.tmp
+.env
 .DS_Store
 Thumbs.db
 instance/*.db
+instance/chat_uploads/
