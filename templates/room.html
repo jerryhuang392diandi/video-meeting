@@ -356,11 +356,13 @@ function updateShareUiState() {
 }
 
 function updateParticipantDrawerUi(sidebarCount = null) {
-  const count = Number.isFinite(sidebarCount) ? sidebarCount : videoSidebar?.children?.length || 0;
+  const count = Number.isFinite(sidebarCount) ? sidebarCount : (videoSidebar?.children?.length || 0);
   const shouldShowToggle = !!currentSharerSid && count > 0;
   const isOpen = shouldShowToggle && !hiddenSidebar;
   if (participantDrawerToggleBtn) {
     participantDrawerToggleBtn.classList.toggle('hidden', !shouldShowToggle);
+    participantDrawerToggleBtn.hidden = !shouldShowToggle;
+    participantDrawerToggleBtn.style.display = shouldShowToggle ? 'inline-flex' : 'none';
     participantDrawerToggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     participantDrawerToggleBtn.textContent = isOpen ? `${TEXT_HIDE_PARTICIPANTS} (${count})` : `${TEXT_PARTICIPANTS} (${count})`;
   }
@@ -368,8 +370,9 @@ function updateParticipantDrawerUi(sidebarCount = null) {
     videoStage.classList.toggle('screen-share-sidebar-open', isOpen);
   }
   if (participantDrawerBackdrop) {
-    participantDrawerBackdrop.classList.toggle('hidden', !isOpen);
-    participantDrawerBackdrop.classList.toggle('active', isOpen);
+    const showBackdrop = isOpen && !isMobileDevice();
+    participantDrawerBackdrop.classList.toggle('hidden', !showBackdrop);
+    participantDrawerBackdrop.classList.toggle('active', showBackdrop);
   }
 }
 
@@ -1030,8 +1033,9 @@ function addRemoteVideo(sid, stream) {
   updatePlaceholder(card, true);
   if (currentSharerSid === sid) {
     focusedSid = sid;
+    hiddenSidebar = true;
   }
-  renderLayout();
+  renderLayout(true);
 }
 
 function removeRemoteVideo(sid) {
@@ -2206,19 +2210,22 @@ window.addEventListener('resize', () => {
 videoPrevPageBtn?.addEventListener('click', () => {
   if (currentGridPage <= 0) return;
   currentGridPage -= 1;
-  renderLayout();
+  renderLayout(true);
+  schedulePlaybackRefresh();
 });
 videoNextPageBtn?.addEventListener('click', () => {
   const totalCards = getRenderableCards().length;
   const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
   if (currentGridPage >= totalPages - 1) return;
   currentGridPage += 1;
-  renderLayout();
+  renderLayout(true);
+  schedulePlaybackRefresh();
 });
 videoHomePageBtn?.addEventListener('click', () => {
   if (currentGridPage <= 0) return;
   currentGridPage = 0;
-  renderLayout();
+  renderLayout(true);
+  schedulePlaybackRefresh();
 });
 
 
@@ -2288,7 +2295,7 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     currentSharerSid = 'local';
     hiddenSidebar = true;
     focusedSid = 'local';
-    renderLayout();
+    renderLayout(true);
     setStatus(TEXT_SCREEN_SHARE_MODE);
     broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true });
 
@@ -2304,7 +2311,7 @@ document.getElementById('shareScreenBtn').onclick = async () => {
       currentSharerSid = null;
       hiddenSidebar = false;
       focusedSid = 'local';
-      renderLayout();
+      renderLayout(true);
       broadcastUiEvent({ type: 'screen_share_stopped' });
       setStatus(TEXT_SCREEN_SHARE_STOPPED);
     };
