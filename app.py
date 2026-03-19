@@ -2282,6 +2282,11 @@ def on_host_end_meeting(data=None):
 
 @socketio.on("leave_room")
 def on_leave_room(*_args):
+    explicit_leave = False
+    if _args:
+        maybe_payload = _args[0]
+        if isinstance(maybe_payload, dict):
+            explicit_leave = bool(maybe_payload.get("explicit"))
     sid = request.sid
     debug_log('SOCKET_LEAVE_BEGIN', sid=sid, sid_info=sid_to_user.get(sid), current_user_id=getattr(current_user, "id", None))
     info = sid_to_user.pop(sid, None)
@@ -2293,6 +2298,11 @@ def on_leave_room(*_args):
     room = rooms.get(room_id)
     if room and sid in room.get("participants", {}):
         sync_network_traffic()
+    if room and explicit_leave and info.get("user_id") == room.get("host_user_id") and len(room.get("participants", {})) > 1:
+        sid_to_user[sid] = info
+        bind_user_socket(info.get("user_id"), sid)
+        emit("host_action_error", {"message": t("host_must_end_meeting_first")})
+        return
     leave_room(room_id)
     if room and sid in room["participants"]:
         name = room["participants"][sid]["name"]
