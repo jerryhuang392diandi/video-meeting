@@ -88,22 +88,38 @@
 
 <section class="grid two admin-mid-grid">
   <div class="panel panel-glow">
-    <h2>{{ t('active_meetings') }}</h2>
-    {% for m in active_meetings %}
-    <div class="list-item stacked">
-      <div>
-        <div class="item-title">{{ m.room_id }} · {{ m.host_name }}</div>
-        <div class="muted">{{ t('created_at') }}: <span class="local-datetime" data-utc="{{ utc_iso(m.created_at) }}">{{ m.created_at }}</span></div>
-        <div class="muted">{{ t('status') }}: {{ t('meeting_active') }}</div>
-      </div>
-      <div class="row-compact wrap-actions">
-        <form method="post" action="{{ url_for('admin_end_meeting', meeting_id=m.id) }}"><button class="ghost-btn danger" type="submit">{{ t('end_meeting') }}</button></form>
-        <button class="ghost-btn danger" type="submit" formaction="{{ url_for('admin_delete_meeting', meeting_id=m.id) }}" formmethod="post">{{ t('delete_record') }}</button>
-      </div>
+    <div class="row-compact" style="justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <h2 style="margin: 0;">{{ t('active_meetings') }}</h2>
+      <div class="muted">{{ t('selected_count') }}: <span id="selectedActiveMeetingCount">0</span></div>
     </div>
-    {% else %}
-      <div class="notice">{{ t('no_online_rooms') }}</div>
-    {% endfor %}
+    <form method="post" action="{{ url_for('admin_bulk_end_meetings') }}" id="bulkEndForm">
+      <div class="row-compact wrap-actions" style="margin-bottom: 12px;">
+        <label class="chip" style="cursor:pointer;">
+          <input type="checkbox" id="selectAllActiveMeetings" style="margin-right: 6px;">{{ t('select_all') }}
+        </label>
+        <button class="ghost-btn danger" type="submit">{{ t('batch_end_meetings') }}</button>
+      </div>
+      {% for m in active_meetings %}
+      <div class="list-item stacked">
+        <div class="row-compact" style="justify-content: space-between; align-items: flex-start; width: 100%; gap: 12px;">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="checkbox" name="meeting_ids" value="{{ m.id }}" class="active-meeting-checkbox">
+            <span class="item-title">{{ m.room_id }} · {{ m.host_name }}</span>
+          </label>
+          <div class="row-compact wrap-actions">
+            <form method="post" action="{{ url_for('admin_end_meeting', meeting_id=m.id) }}"><button class="ghost-btn danger" type="submit">{{ t('end_meeting') }}</button></form>
+            <button class="ghost-btn danger" type="submit" formaction="{{ url_for('admin_delete_meeting', meeting_id=m.id) }}" formmethod="post">{{ t('delete_record') }}</button>
+          </div>
+        </div>
+        <div>
+          <div class="muted">{{ t('created_at') }}: <span class="local-datetime" data-utc="{{ utc_iso(m.created_at) }}">{{ m.created_at }}</span></div>
+          <div class="muted">{{ t('status') }}: {{ t('meeting_active') }}</div>
+        </div>
+      </div>
+      {% else %}
+        <div class="notice">{{ t('no_online_rooms') }}</div>
+      {% endfor %}
+    </form>
   </div>
 
   <div class="panel panel-glow">
@@ -189,41 +205,63 @@
   window.renderLocalDateTimes && window.renderLocalDateTimes();
 
   (function () {
-    const selectAll = document.getElementById('selectAllMeetings');
-    const checkboxes = Array.from(document.querySelectorAll('.meeting-checkbox'));
-    const countNode = document.getElementById('selectedMeetingCount');
-    const form = document.getElementById('bulkDeleteForm');
+    function bindBulkSelection(options) {
+      const selectAll = document.getElementById(options.selectAllId);
+      const checkboxes = Array.from(document.querySelectorAll(options.checkboxSelector));
+      const countNode = document.getElementById(options.countNodeId);
+      const form = document.getElementById(options.formId);
+      const emptyMessage = options.emptyMessage || '';
 
-    function updateCount() {
-      const checkedCount = checkboxes.filter(item => item.checked).length;
-      if (countNode) countNode.textContent = String(checkedCount);
-      if (selectAll) {
-        selectAll.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
-        selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
-      }
-    }
-
-    if (selectAll) {
-      selectAll.addEventListener('change', function () {
-        checkboxes.forEach(item => {
-          item.checked = selectAll.checked;
-        });
-        updateCount();
-      });
-    }
-
-    checkboxes.forEach(item => item.addEventListener('change', updateCount));
-
-    if (form) {
-      form.addEventListener('submit', function (event) {
+      function updateCount() {
         const checkedCount = checkboxes.filter(item => item.checked).length;
-        if (!checkedCount) {
-          event.preventDefault();
+        if (countNode) countNode.textContent = String(checkedCount);
+        if (selectAll) {
+          selectAll.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
+          selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
         }
-      });
+      }
+
+      if (selectAll) {
+        selectAll.addEventListener('change', function () {
+          checkboxes.forEach(item => {
+            item.checked = selectAll.checked;
+          });
+          updateCount();
+        });
+      }
+
+      checkboxes.forEach(item => item.addEventListener('change', updateCount));
+
+      if (form) {
+        form.addEventListener('submit', function (event) {
+          const checkedCount = checkboxes.filter(item => item.checked).length;
+          if (!checkedCount) {
+            event.preventDefault();
+            if (emptyMessage) {
+              window.alert(emptyMessage);
+            }
+          }
+        });
+      }
+
+      updateCount();
     }
 
-    updateCount();
+    bindBulkSelection({
+      selectAllId: 'selectAllActiveMeetings',
+      checkboxSelector: '.active-meeting-checkbox',
+      countNodeId: 'selectedActiveMeetingCount',
+      formId: 'bulkEndForm',
+      emptyMessage: {{ t('no_active_meeting_selected')|tojson }},
+    });
+
+    bindBulkSelection({
+      selectAllId: 'selectAllMeetings',
+      checkboxSelector: '.meeting-checkbox',
+      countNodeId: 'selectedMeetingCount',
+      formId: 'bulkDeleteForm',
+      emptyMessage: {{ t('no_meeting_selected')|tojson }},
+    });
   })();
 
 

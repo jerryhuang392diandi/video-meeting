@@ -1375,6 +1375,25 @@ def admin_end_meeting(meeting_id):
     return redirect(url_for("admin_dashboard"))
 
 
+@app.post("/admin/meetings/bulk-end")
+@login_required
+@admin_required
+def admin_bulk_end_meetings():
+    raw_ids = request.form.getlist("meeting_ids")
+    meeting_ids = []
+    for item in raw_ids:
+        try:
+            meeting_ids.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    if not meeting_ids:
+        return redirect(url_for("admin_dashboard"))
+
+    meetings = Meeting.query.filter(Meeting.id.in_(meeting_ids)).all()
+    for meeting in meetings:
+        if meeting.status == "active":
+            end_meeting_by_room_id(meeting.room_id, "meeting_closed")
+    return redirect(url_for("admin_dashboard"))
 
 
 def delete_meeting_record(meeting):
