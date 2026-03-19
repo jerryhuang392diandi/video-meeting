@@ -125,6 +125,7 @@ const processingCtx = processingCanvas.getContext('2d');
 const videoStage = document.getElementById('videoStage');
 const videoMain = document.getElementById('videoMain');
 const videoSidebar = document.getElementById('videoSidebar');
+const hiddenParticipantDock = document.getElementById('hiddenParticipantDock');
 const screenShareBanner = document.getElementById('screenShareBanner');
 const participantCountEl = document.getElementById('participantCount');
 const statusBox = document.getElementById('statusBox');
@@ -457,6 +458,26 @@ function syncScreenShareCardState() {
   });
 }
 
+
+function resumeParticipantVideos(options = {}) {
+  const { includeDocked = false } = options;
+  const selector = includeDocked ? '.video-card video' : '.video-card:not(.is-docked) video';
+  document.querySelectorAll(selector).forEach((videoEl) => {
+    safePlayVideo(videoEl).catch(() => {});
+  });
+}
+
+function scheduleParticipantVideoResume() {
+  resumeParticipantVideos();
+  requestAnimationFrame(() => resumeParticipantVideos());
+  setTimeout(() => resumeParticipantVideos(), 120);
+  setTimeout(() => resumeParticipantVideos(), 480);
+}
+
+function clearDockedCardState() {
+  document.querySelectorAll('.video-card.is-docked').forEach((card) => card.classList.remove('is-docked'));
+}
+
 function updateScreenShareBanner() {
   if (!screenShareBanner) return;
   if (!currentSharerSid) {
@@ -523,6 +544,7 @@ function getRenderableCards() {
 
 function renderLayout(force = false) {
   if (!videoMain || !videoSidebar || !videoStage) return;
+  clearDockedCardState();
   if (!force && hasActiveFullscreenSession()) {
     pendingLayoutAfterFullscreen = true;
     roomDebugLog('renderLayout deferred due to active fullscreen');
@@ -532,6 +554,7 @@ function renderLayout(force = false) {
   if (!cards.length) {
     videoMain.innerHTML = '<div class="video-empty-state">' + escapeHtml({{ ('未找到匹配的参会者' if lang == 'zh' else 'No matching participants found')|tojson }}) + '</div>';
     videoSidebar.innerHTML = '';
+    if (hiddenParticipantDock) hiddenParticipantDock.innerHTML = '';
     videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid', 'focus-layout', 'grid-layout');
     videoStage.classList.add('sidebar-hidden');
     updateVideoPager(0, 1);
@@ -540,6 +563,7 @@ function renderLayout(force = false) {
 
   videoMain.innerHTML = '';
   videoSidebar.innerHTML = '';
+  if (hiddenParticipantDock) hiddenParticipantDock.innerHTML = '';
 
   cards.forEach(card => card.classList.remove('is-focused', 'is-sidebar'));
   videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid');
@@ -582,6 +606,8 @@ function renderLayout(force = false) {
     visibleCards.forEach(card => videoMain.appendChild(card));
     updateVideoPager(cards.length, totalPages);
     updateScreenShareBanner();
+    updateShareUiState();
+    scheduleParticipantVideoResume();
     return;
   }
 
@@ -589,15 +615,21 @@ function renderLayout(force = false) {
   focusTarget.classList.add('is-focused');
   videoMain.appendChild(focusTarget);
 
+  const hiddenCards = currentSharerSid ? cards.filter(card => card !== focusTarget) : [];
   const sidebarCards = currentSharerSid ? [] : cards.filter(card => card !== focusTarget);
   sidebarCards.forEach(card => {
     card.classList.add('is-sidebar');
     videoSidebar.appendChild(card);
   });
+  hiddenCards.forEach(card => {
+    card.classList.add('is-docked');
+    if (hiddenParticipantDock) hiddenParticipantDock.appendChild(card);
+  });
 
   videoStage.classList.toggle('sidebar-hidden', !!currentSharerSid || hiddenSidebar || sidebarCards.length === 0);
   updateScreenShareBanner();
   updateShareUiState();
+  scheduleParticipantVideoResume();
 }
 
 function focusParticipant(sid, opts = {}) {
@@ -863,7 +895,8 @@ function addRemoteVideo(sid, stream) {
   const card = ensureCard(sid, getDisplayName(sid), false);
   const videoEl = card.querySelector('video');
   videoEl.srcObject = stream;
-  safePlayVideo(videoEl);
+  safePlayVideo(videoEl).catch(() => {});
+  setTimeout(() => safePlayVideo(videoEl).catch(() => {}), 120);
   updatePlaceholder(card, true);
   renderLayout();
 }
@@ -2125,19 +2158,24 @@ document.getElementById('shareScreenBtn').onclick = async () => {
 
     screenTrack.onended = async () => {
       isSharingScreen = false;
-      if (virtualBgImageDataUrl) {
-        await activateVirtualBackground();
-      } else if (rawCameraStream) {
-        fallbackToRawCamera();
-      } else {
-        await requestMedia(currentFacingMode, true, ['video', 'audio']);
-      }
       currentSharerSid = null;
       hiddenSidebar = false;
       focusedSid = 'local';
-      renderLayout();
-      broadcastUiEvent({ type: 'screen_share_stopped' });
-      setStatus(TEXT_SCREEN_SHARE_STOPPED);
+      renderLayout(true);
+      scheduleParticipantVideoResume();
+      try {
+        if (virtualBgImageDataUrl) {
+          await activateVirtualBackground();
+        } else if (rawCameraStream) {
+          fallbackToRawCamera();
+        } else {
+          await requestMedia(currentFacingMode, true, ['video', 'audio']);
+        }
+      } finally {
+        broadcastUiEvent({ type: 'screen_share_stopped' });
+        scheduleParticipantVideoResume();
+        setStatus(TEXT_SCREEN_SHARE_STOPPED);
+      }
     };
   } catch (err) {
     setStatus(err.message, 'error');

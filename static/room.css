@@ -525,6 +525,38 @@ select {
     display: none;
 }
 
+.hidden-participant-dock {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0.01;
+    pointer-events: none;
+}
+
+.hidden-participant-dock .video-card,
+.video-card.is-docked {
+    width: 1px !important;
+    height: 1px !important;
+    min-height: 1px !important;
+    max-width: 1px !important;
+    max-height: 1px !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    opacity: 0.01;
+    pointer-events: none;
+}
+
+.hidden-participant-dock .video-card .video-toolbar,
+.hidden-participant-dock .video-card .video-label-stack,
+.hidden-participant-dock .video-card .video-play-overlay,
+.hidden-participant-dock .video-card .video-placeholder {
+    display: none !important;
+}
+
 /* =========================
    平板
    ========================= */
