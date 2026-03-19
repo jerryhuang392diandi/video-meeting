@@ -54,14 +54,31 @@
     <h2>{{ t('users') }}</h2>
     <span class="section-tag">{{ t('traffic_management') }}</span>
   </div>
-  <div class="muted" style="margin-bottom: 12px;">{{ t('traffic_turn_relay') }}</div>
+  <div class="row-compact wrap-actions" style="justify-content: space-between; align-items: center; margin-bottom: 12px;">
+    <div class="muted">{{ t('traffic_turn_relay') }}</div>
+    <div class="muted">{{ t('selected_count') }}: <span id="selectedUserCount">0</span></div>
+  </div>
+  <form method="post" action="{{ url_for('admin_bulk_reset_user_traffic') }}" id="bulkResetTrafficForm">
+    <div class="row-compact wrap-actions" style="margin-bottom: 12px;">
+      <label class="chip" style="cursor:pointer;">
+        <input type="checkbox" id="selectAllUsers" style="margin-right: 6px;">{{ t('select_all') }}
+      </label>
+      <button class="ghost-btn" type="submit">{{ t('batch_reset_traffic') }}</button>
+    </div>
+  </form>
   {% for u in users %}
   <div class="list-item stacked admin-user-card">
-    <div>
-      <div class="item-title">{{ u.username }}</div>
-      <div class="muted">ID {{ u.id }} · {{ t('admin_role') }}: {{ t('yes') if u.is_admin else t('no') }} · {{ t('status') }}: {{ t('enabled') if u.is_active_user else t('disabled') }}</div>
-      <div class="muted">{{ t('register_date') }}: <span class="local-datetime" data-utc="{{ utc_iso(u.created_at) }}">{{ u.created_at }}</span></div>
-      <div class="muted">{{ t('monthly_quota') }}: {{ traffic_summaries[u.id].monthly_quota_text }} · {{ t('used_traffic') }}: {{ traffic_summaries[u.id].used_traffic_text }} · {{ t('remaining_traffic') }}: {{ traffic_summaries[u.id].remaining_traffic_text }}</div>
+    <div class="row-compact" style="justify-content: space-between; align-items: flex-start; width: 100%; gap: 12px;">
+      <div>
+        <div class="item-title">{{ u.username }}</div>
+        <div class="muted">ID {{ u.id }} · {{ t('admin_role') }}: {{ t('yes') if u.is_admin else t('no') }} · {{ t('status') }}: {{ t('enabled') if u.is_active_user else t('disabled') }}</div>
+        <div class="muted">{{ t('register_date') }}: <span class="local-datetime" data-utc="{{ utc_iso(u.created_at) }}">{{ u.created_at }}</span></div>
+        <div class="muted">{{ t('monthly_quota') }}: {{ traffic_summaries[u.id].monthly_quota_text }} · {{ t('used_traffic') }}: {{ traffic_summaries[u.id].used_traffic_text }} · {{ t('remaining_traffic') }}: {{ traffic_summaries[u.id].remaining_traffic_text }}</div>
+        <div class="muted">{{ t('traffic_reset_at') }}: {{ traffic_summaries[u.id].reset_at_text }} · {{ t('traffic_reset_keep_date') }}</div>
+      </div>
+      <label class="chip admin-bulk-check" style="cursor:pointer;">
+        <input type="checkbox" name="user_ids" value="{{ u.id }}" class="user-checkbox" form="bulkResetTrafficForm" style="margin-right: 6px;">{{ t('select') }}
+      </label>
     </div>
     <div class="admin-actions-grid">
       {% if not u.is_admin %}
@@ -71,10 +88,15 @@
         <form method="post" action="{{ url_for('admin_delete_user', user_id=u.id) }}" class="admin-delete-user-form" data-username="{{ u.username }}"><button class="ghost-btn danger" type="submit">{{ t('delete_user') }}</button></form>
       </div>
       {% endif %}
-      <form method="post" action="{{ url_for('admin_set_user_quota', user_id=u.id) }}" class="row-compact">
-        <input type="number" name="monthly_quota_gb" min="0" step="0.5" value="{{ '%.2f'|format((u.monthly_quota_mb or 0) / 1024) }}" style="max-width: 110px;" />
-        <button class="ghost-btn" type="submit">{{ t('set_quota') }}</button>
-      </form>
+      <div class="row-compact wrap-actions">
+        <form method="post" action="{{ url_for('admin_set_user_quota', user_id=u.id) }}" class="row-compact">
+          <input type="number" name="monthly_quota_gb" min="0" step="0.5" value="{{ '%.2f'|format((u.monthly_quota_mb or 0) / 1024) }}" style="max-width: 110px;" />
+          <button class="ghost-btn" type="submit">{{ t('set_quota') }}</button>
+        </form>
+        <form method="post" action="{{ url_for('admin_reset_user_traffic', user_id=u.id) }}">
+          <button class="ghost-btn" type="submit">{{ t('reset_traffic') }}</button>
+        </form>
+      </div>
       {% if not u.is_admin %}
       <form method="post" action="{{ url_for('admin_reset_user_password', user_id=u.id) }}" class="row-compact admin-reset-form">
         <input type="text" name="new_password" minlength="4" maxlength="32" placeholder="{{ t('new_password_admin') }}" />
@@ -246,6 +268,14 @@
 
       updateCount();
     }
+
+    bindBulkSelection({
+      selectAllId: 'selectAllUsers',
+      checkboxSelector: '.user-checkbox',
+      countNodeId: 'selectedUserCount',
+      formId: 'bulkResetTrafficForm',
+      emptyMessage: {{ t('no_user_selected')|tojson }},
+    });
 
     bindBulkSelection({
       selectAllId: 'selectAllActiveMeetings',

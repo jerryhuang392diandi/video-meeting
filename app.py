@@ -1272,6 +1272,39 @@ def admin_set_user_quota(user_id):
     return redirect(url_for("admin_dashboard"))
 
 
+@app.post("/admin/user/<int:user_id>/reset-traffic")
+@login_required
+@admin_required
+def admin_reset_user_traffic(user_id):
+    user = User.query.get_or_404(user_id)
+    sync_user_traffic(user.id)
+    user.used_traffic_mb = 0.0
+    db.session.commit()
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.post("/admin/users/bulk-reset-traffic")
+@login_required
+@admin_required
+def admin_bulk_reset_user_traffic():
+    raw_ids = request.form.getlist("user_ids")
+    user_ids = []
+    for item in raw_ids:
+        try:
+            user_ids.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    if not user_ids:
+        return redirect(url_for("admin_dashboard"))
+
+    sync_network_traffic()
+    users = User.query.filter(User.id.in_(user_ids)).all()
+    for user in users:
+        refresh_user_traffic_cycle(user)
+        user.used_traffic_mb = 0.0
+    db.session.commit()
+    return redirect(url_for("admin_dashboard"))
+
 
 @app.post("/admin/user/<int:user_id>/kick")
 @login_required
