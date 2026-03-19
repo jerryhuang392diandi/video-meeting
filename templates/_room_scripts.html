@@ -19,6 +19,8 @@ const TEXT_CAMERA_ON = {{ t('camera_on')|tojson }};
 const TEXT_CAMERA_OFF = {{ t('camera_off')|tojson }};
 const TEXT_SCREEN_SHARE_MODE = {{ ('共享屏幕模式已开启' if lang == 'zh' else 'Screen share mode enabled')|tojson }};
 const TEXT_SCREEN_SHARE_STOPPED = {{ ('共享屏幕模式已结束' if lang == 'zh' else 'Screen share mode ended')|tojson }};
+const TEXT_SCREEN_SHARE_BANNER_SELF = {{ ('正在共享屏幕，其他参会者已临时隐藏' if lang == 'zh' else 'You are sharing your screen. Other participants are temporarily hidden')|tojson }};
+const TEXT_SCREEN_SHARE_BANNER_OTHER = {{ ('{name} 正在共享屏幕，其他参会者已临时隐藏' if lang == 'zh' else '{name} is sharing the screen. Other participants are temporarily hidden')|tojson }};
 const TEXT_NO_VIDEO = {{ ('未开启摄像头' if lang == 'zh' else 'Camera off')|tojson }};
 const TEXT_RECORD_STOP = {{ ('停止录屏' if lang == 'zh' else 'Stop recording')|tojson }};
 const TEXT_RECORD_SAVED = {{ ('录屏文件已保存' if lang == 'zh' else 'Recording saved')|tojson }};
@@ -123,6 +125,7 @@ const processingCtx = processingCanvas.getContext('2d');
 const videoStage = document.getElementById('videoStage');
 const videoMain = document.getElementById('videoMain');
 const videoSidebar = document.getElementById('videoSidebar');
+const screenShareBanner = document.getElementById('screenShareBanner');
 const participantCountEl = document.getElementById('participantCount');
 const statusBox = document.getElementById('statusBox');
 const recordingBtn = document.getElementById('recordingBtn');
@@ -454,6 +457,20 @@ function syncScreenShareCardState() {
   });
 }
 
+function updateScreenShareBanner() {
+  if (!screenShareBanner) return;
+  if (!currentSharerSid) {
+    screenShareBanner.textContent = '';
+    screenShareBanner.classList.add('hidden');
+    return;
+  }
+  const sharerName = getDisplayName(currentSharerSid);
+  screenShareBanner.textContent = currentSharerSid === 'local'
+    ? TEXT_SCREEN_SHARE_BANNER_SELF
+    : TEXT_SCREEN_SHARE_BANNER_OTHER.replace('{name}', sharerName || 'Someone');
+  screenShareBanner.classList.remove('hidden');
+}
+
 function getGridColumns(cardCount) {
   if (cardCount <= 1) return 1;
   if (cardCount === 2) return 2;
@@ -564,6 +581,7 @@ function renderLayout(force = false) {
     if (shouldUsePagedGrid) videoStage.classList.add('paged-grid');
     visibleCards.forEach(card => videoMain.appendChild(card));
     updateVideoPager(cards.length, totalPages);
+    updateScreenShareBanner();
     return;
   }
 
@@ -571,13 +589,14 @@ function renderLayout(force = false) {
   focusTarget.classList.add('is-focused');
   videoMain.appendChild(focusTarget);
 
-  const sidebarCards = cards.filter(card => card !== focusTarget);
+  const sidebarCards = currentSharerSid ? [] : cards.filter(card => card !== focusTarget);
   sidebarCards.forEach(card => {
     card.classList.add('is-sidebar');
     videoSidebar.appendChild(card);
   });
 
-  videoStage.classList.toggle('sidebar-hidden', hiddenSidebar || sidebarCards.length === 0);
+  videoStage.classList.toggle('sidebar-hidden', !!currentSharerSid || hiddenSidebar || sidebarCards.length === 0);
+  updateScreenShareBanner();
   updateShareUiState();
 }
 

@@ -505,11 +505,10 @@ select {
 .screen-share-banner,
 .share-status,
 .share-indicator {
-    position: fixed;
-    left: 50%;
-    bottom: 18px;
-    transform: translateX(-50%);
-    z-index: 1000;
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    margin-bottom: 12px;
     background: rgba(15, 18, 28, 0.88);
     color: #fff;
     border: 1px solid rgba(255,255,255,0.08);
@@ -518,7 +517,12 @@ select {
     display: flex;
     align-items: center;
     gap: 10px;
-    max-width: min(90vw, 560px);
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.screen-share-banner.hidden {
+    display: none;
 }
 
 /* =========================
