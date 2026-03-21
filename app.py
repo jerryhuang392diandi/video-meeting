@@ -2251,7 +2251,10 @@ def on_room_ui_event(data):
         active_sharer_sid = room.get("active_sharer_sid")
         active_sharer_user_id = room.get("active_sharer_user_id")
         requester_user_id = info.get("user_id")
-        if active_sharer_sid and active_sharer_sid != sid and active_sharer_user_id != requester_user_id:
+        same_authenticated_user = bool(
+            active_sharer_user_id and requester_user_id and active_sharer_user_id == requester_user_id
+        )
+        if active_sharer_sid and active_sharer_sid != sid and not same_authenticated_user:
             emit("room_ui_event", {
                 "type": "screen_share_denied",
                 "from": active_sharer_sid,
