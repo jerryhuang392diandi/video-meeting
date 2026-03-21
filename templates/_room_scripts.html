@@ -1,5 +1,7 @@
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+<script src="{{ url_for('static', filename='room_utils.js') }}"></script>
+<script src="{{ url_for('static', filename='room_chat.js') }}"></script>
 <script>
 const ROOM_ID = {{ room_id|tojson }};
 const ROOM_PASSWORD = {{ room_password|tojson }};
@@ -51,6 +53,19 @@ const TEXT_TRANSLATE_OPEN = {{ ('已打开翻译结果' if lang == 'zh' else 'Op
 const TEXT_CHAT_CLEARED_SELF = {{ ('仅清空了你的聊天面板，主持人仍可见历史消息' if lang == 'zh' else 'Only your chat panel was cleared. The host can still see the chat history.')|tojson }};
 const TEXT_CHAT_CLEARED_ALL = {{ ('主持人已清空所有人的聊天记录' if lang == 'zh' else 'The host cleared the chat history for everyone.')|tojson }};
 const TEXT_COPY_SUCCESS = {{ ('文本已复制' if lang == 'zh' else 'Text copied')|tojson }};
+const TEXT_COPY_FAILED_MANUAL = {{ ('复制失败，请长按或手动复制' if lang == 'zh' else 'Copy failed, please copy manually')|tojson }};
+const TEXT_MENTION_COLLAPSE = {{ ('收起' if lang == 'zh' else 'Collapse')|tojson }};
+const TEXT_PERMISSION_DOWNLOAD_ALLOWED = {{ ('可下载' if lang == 'zh' else 'Download allowed')|tojson }};
+const TEXT_PERMISSION_VIEW_ONLY = {{ ('仅查看' if lang == 'zh' else 'View only')|tojson }};
+const TEXT_ATTACHMENT_OPEN = {{ ('查看/打开' if lang == 'zh' else 'Open' )|tojson }};
+const TEXT_ATTACHMENT_VIEW = {{ ('查看' if lang == 'zh' else 'View' )|tojson }};
+const TEXT_DOWNLOAD_LABEL = {{ ('下载' if lang == 'zh' else 'Download')|tojson }};
+const TEXT_CHAT_MODE_HOST = {{ ('仅主持人' if lang == 'zh' else 'Host only')|tojson }};
+const TEXT_CHAT_MODE_PUBLIC = {{ ('公开' if lang == 'zh' else 'Public')|tojson }};
+const TEXT_COPY_BUTTON = {{ ('复制' if lang == 'zh' else 'Copy')|tojson }};
+const TEXT_TRANSLATE_BUTTON = {{ ('翻译' if lang == 'zh' else 'Translate')|tojson }};
+const TEXT_RETRACT_BUTTON = {{ ('撤回' if lang == 'zh' else 'Retract')|tojson }};
+const CURRENT_USER_ID = {{ current_user.id|tojson }};
 const TEXT_UPLOAD_FAILED = {{ ('附件上传失败' if lang == 'zh' else 'Attachment upload failed')|tojson }};
 const TEXT_ATTACHMENT_LIMIT_IMAGE = {{ ('图片请控制在 25MB 以内' if lang == 'zh' else 'Please keep images under 25MB')|tojson }};
 const TEXT_ATTACHMENT_LIMIT_VIDEO = {{ ('视频请控制在 120MB 以内' if lang == 'zh' else 'Please keep videos under 120MB')|tojson }};
@@ -58,6 +73,7 @@ const TEXT_ATTACHMENT_LIMIT_FILE = {{ ('文档或压缩包请控制在 25MB 以�
 const TEXT_ROOM_STORAGE_LIMIT = {{ ('当前会议附件空间已接近上限，请先清理聊天或稍后再试' if lang == 'zh' else 'Meeting attachment storage is nearly full. Please clear chat or try later')|tojson }};
 
 const socket = io();
+window.socket = socket;
 const rtcConfig = { iceServers: {{ turn_ice_servers|tojson }}, iceTransportPolicy: 'relay' };
 
 let localStream = null;
@@ -69,10 +85,7 @@ let focusedSid = 'local';
 let hiddenSidebar = false;
 let currentSharerSid = null;
 
-function normalizeParticipantSid(sid) {
-  if (!sid) return sid;
-  return sid === socket.id ? 'local' : sid;
-}
+const { normalizeParticipantSid, setStatus, stopStreamTracks, escapeHtml, copyText, fileToDataUrl, compressImageFile } = window.RoomPageUtils;
 let currentGridPage = 0;
 let videoSearchKeyword = '';
 
@@ -129,6 +142,7 @@ const hiddenParticipantDock = document.getElementById('hiddenParticipantDock');
 const screenShareBanner = document.getElementById('screenShareBanner');
 const participantCountEl = document.getElementById('participantCount');
 const statusBox = document.getElementById('statusBox');
+window.statusBox = statusBox;
 const recordingBtn = document.getElementById('recordingBtn');
 const virtualBgInput = document.getElementById('virtualBgInput');
 const hostEndMeetingBtn = document.getElementById('hostEndMeetingBtn');
@@ -144,6 +158,9 @@ const mentionPicker = document.getElementById('mentionPicker');
 const MENTION_SEARCH_PLACEHOLDER = {{ ('搜索用户名' if lang == 'zh' else 'Search users')|tojson }};
 const MENTION_EMPTY_TEXT = {{ ('没有匹配的用户' if lang == 'zh' else 'No matching users')|tojson }};
 const MENTION_ALL_TEXT = {{ ('所有成员' if lang == 'zh' else 'All participants')|tojson }};
+window.MENTION_SEARCH_PLACEHOLDER = MENTION_SEARCH_PLACEHOLDER;
+window.MENTION_EMPTY_TEXT = MENTION_EMPTY_TEXT;
+window.MENTION_ALL_TEXT = MENTION_ALL_TEXT;
 const emojiPicker = document.getElementById('emojiPicker');
 const emojiPopover = document.getElementById('emojiPopover');
 const chatContextMenu = document.getElementById('chatContextMenu');
@@ -162,12 +179,21 @@ const virtualBgBtn = document.getElementById('virtualBgBtn');
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const TEXT_IOS_PLAY_SCREEN = {{ ('苹果设备可能需要点一下画面才能恢复共享屏幕显示' if lang == 'zh' else 'On older Apple devices, tap the video once if screen sharing does not appear')|tojson }};
 const TEXT_HOST_MUST_END_MEETING = {{ ('主持人不能在会议进行中直接离开，请先解散会议，或等待其他参会者离开后再退出。' if lang == 'zh' else 'The host cannot leave while other participants are still in the meeting. End the meeting first, or wait until others leave.')|tojson }};
-
-function setStatus(msg, cls='') {
-  if (!statusBox) return;
-  statusBox.className = 'notice ' + cls;
-  statusBox.textContent = msg;
-}
+window.TEXT_COPY_SUCCESS = TEXT_COPY_SUCCESS;
+window.TEXT_COPY_FAILED_MANUAL = TEXT_COPY_FAILED_MANUAL;
+window.TEXT_MENTION_COLLAPSE = TEXT_MENTION_COLLAPSE;
+window.TEXT_PERMISSION_DOWNLOAD_ALLOWED = TEXT_PERMISSION_DOWNLOAD_ALLOWED;
+window.TEXT_PERMISSION_VIEW_ONLY = TEXT_PERMISSION_VIEW_ONLY;
+window.TEXT_ATTACHMENT_OPEN = TEXT_ATTACHMENT_OPEN;
+window.TEXT_ATTACHMENT_VIEW = TEXT_ATTACHMENT_VIEW;
+window.TEXT_DOWNLOAD_LABEL = TEXT_DOWNLOAD_LABEL;
+window.TEXT_CHAT_MODE_HOST = TEXT_CHAT_MODE_HOST;
+window.TEXT_CHAT_MODE_PUBLIC = TEXT_CHAT_MODE_PUBLIC;
+window.TEXT_COPY_BUTTON = TEXT_COPY_BUTTON;
+window.TEXT_TRANSLATE_BUTTON = TEXT_TRANSLATE_BUTTON;
+window.TEXT_RETRACT_BUTTON = TEXT_RETRACT_BUTTON;
+window.TEXT_CHAT_WITHDRAWN = TEXT_CHAT_WITHDRAWN;
+window.CURRENT_USER_ID = CURRENT_USER_ID;
 
 function getDisplayName(sid) {
   return sid === 'local' ? `${USER_NAME} · {{ t('local_you') }}` : (participantMeta[sid]?.name || sid);
@@ -643,13 +669,6 @@ function updateParticipantCount() {
   participantCountEl.textContent = 1 + Object.keys(participantMeta).length;
 }
 
-function stopStreamTracks(stream) {
-  if (!stream) return;
-  stream.getTracks().forEach(track => {
-    try { track.stop(); } catch (_) {}
-  });
-}
-
 function cleanupProcessedVideoStream({ stopCanvas = false } = {}) {
   if (processedVideoStream && processedVideoStream !== rawCameraStream) {
     const extraVideoTracks = processedVideoStream.getVideoTracks();
@@ -884,6 +903,7 @@ function ensurePeer(targetSid) {
 
 function addRemoteParticipant(sid, name) {
   participantMeta[sid] = { name: name || sid };
+  window.participantMeta = participantMeta;
   const card = ensureCard(sid, participantMeta[sid].name, false);
   updatePlaceholder(card, false);
   currentGridPage = 0;
@@ -904,6 +924,7 @@ function addRemoteVideo(sid, stream) {
 function removeRemoteVideo(sid) {
   document.getElementById('card-' + sid)?.remove();
   delete participantMeta[sid];
+  window.participantMeta = participantMeta;
   if (focusedSid === sid) focusedSid = 'local';
   if (currentSharerSid === sid) {
     currentSharerSid = null;
@@ -1165,255 +1186,20 @@ let activeChatMode = 'all';
 let pendingAttachment = null;
 let danmakuEnabled = false;
 const CHAT_EMOJIS = ['😀','😄','😁','😂','😉','😊','😍','🥳','😎','🤔','👍','👏','🙌','🎉','❤️','🔥','🚀','🤝','🙏','📌'];
+window.CHAT_EMOJIS = CHAT_EMOJIS;
+window.chatInput = chatInput;
+window.mentionPicker = mentionPicker;
+window.emojiPicker = emojiPicker;
+window.emojiPopover = emojiPopover;
+window.chatContextMenu = chatContextMenu;
+window.chatMessages = chatMessages;
+window.participantMeta = participantMeta;
+window.USER_NAME = USER_NAME;
+window.IS_HOST = IS_HOST;
+window.PREF_ENABLE_DANMAKU = PREF_ENABLE_DANMAKU;
+window.danmakuEnabled = danmakuEnabled;
 
-function escapeHtml(text) {
-  return String(text || '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-}
-
-function getMentionablePeople() {
-  const byName = new Map();
-  [{ sid: 'local', name: USER_NAME }]
-    .concat(Object.entries(participantMeta).map(([sid, info]) => ({ sid, name: info.name || sid })))
-    .forEach(person => {
-      const name = String(person?.name || '').trim();
-      if (!name) return;
-      const key = name.toLowerCase();
-      if (!byName.has(key)) byName.set(key, { sid: person.sid, name });
-    });
-  return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN-u-co-pinyin'));
-}
-
-function normalizeMentionKeyword(value) {
-  return String(value || '').trim().toLocaleLowerCase('zh-Hans-CN');
-}
-
-function buildMentionPickerShell(rawFilterText = '') {
-  mentionPicker.innerHTML = `
-    <div class="mention-dropdown">
-      <div class="mention-dropdown-head">
-        <span class="mention-dropdown-title">${escapeHtml(MENTION_ALL_TEXT)}</span>
-        <button type="button" class="card-btn mention-collapse-btn">${escapeHtml({{ ('收起' if lang == 'zh' else 'Collapse')|tojson }})}</button>
-      </div>
-      <div class="mention-search-wrap">
-        <input id="mentionSearchInput" class="mention-search-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="${escapeHtml(MENTION_SEARCH_PLACEHOLDER)}" value="${escapeHtml(rawFilterText)}" />
-      </div>
-      <div class="mention-options-list"></div>
-    </div>`;
-
-  mentionPicker.querySelector('.mention-collapse-btn')?.addEventListener('click', () => {
-    mentionPicker.classList.add('hidden');
-  });
-
-  const searchInput = mentionPicker.querySelector('#mentionSearchInput');
-  const optionList = mentionPicker.querySelector('.mention-options-list');
-  let composing = false;
-
-  const paintList = (filterValue = '') => {
-    if (!optionList) return;
-    const keyword = normalizeMentionKeyword(filterValue);
-    const people = getMentionablePeople();
-    const filtered = keyword ? people.filter(person => normalizeMentionKeyword(person.name).includes(keyword)) : people;
-    optionList.innerHTML = filtered.length
-      ? filtered.map(person => `<button type="button" class="mention-option mention-option-row" data-name="${escapeHtml(person.name)}"><span class="mention-option-at">@</span><span class="mention-option-name">${escapeHtml(person.name)}</span></button>`).join('')
-      : `<div class="mention-empty">${escapeHtml(MENTION_EMPTY_TEXT)}</div>`;
-
-    optionList.querySelectorAll('.mention-option').forEach(btn => {
-      btn.addEventListener('click', () => {
-        chatInput.value = `${chatInput.value}${chatInput.value && !chatInput.value.endsWith(' ') ? ' ' : ''}@${btn.dataset.name} `;
-        mentionPicker.classList.add('hidden');
-        chatInput.focus();
-      });
-    });
-  };
-
-  searchInput?.addEventListener('compositionstart', () => {
-    composing = true;
-  });
-  searchInput?.addEventListener('compositionend', (e) => {
-    composing = false;
-    paintList(e.target.value);
-  });
-  searchInput?.addEventListener('input', (e) => {
-    if (composing || e.isComposing) return;
-    paintList(e.target.value);
-  });
-
-  if (searchInput) {
-    const caret = rawFilterText.length;
-    requestAnimationFrame(() => {
-      try { searchInput.focus({ preventScroll: true }); } catch (_) { searchInput.focus(); }
-      try { searchInput.setSelectionRange(caret, caret); } catch (_) {}
-    });
-  }
-
-  paintList(rawFilterText);
-}
-
-function renderMentionPicker(filterText = '') {
-  if (!mentionPicker) return;
-  const currentInput = mentionPicker.querySelector('#mentionSearchInput');
-  const hasShell = !!mentionPicker.querySelector('.mention-dropdown');
-  const rawFilterText = String(filterText || '');
-  if (!hasShell) {
-    buildMentionPickerShell(rawFilterText);
-    return;
-  }
-  if (currentInput) {
-    currentInput.value = rawFilterText;
-    currentInput.dispatchEvent(new Event('input', { bubbles: true }));
-    return;
-  }
-  buildMentionPickerShell(rawFilterText);
-}
-
-function renderEmojiPicker() {
-  if (!emojiPicker) return;
-  emojiPicker.innerHTML = CHAT_EMOJIS.map(emoji => `<button type="button" class="emoji-option" data-emoji="${emoji}">${emoji}</button>`).join('');
-  emojiPicker.querySelectorAll('.emoji-option').forEach(btn => {
-    btn.addEventListener('click', () => {
-      chatInput.value = `${chatInput.value}${btn.dataset.emoji}`;
-      chatInput.focus();
-    });
-  });
-}
-
-function hideFloatingPanels() {
-  mentionPicker?.classList.add('hidden');
-  emojiPopover?.classList.add('hidden');
-  chatContextMenu?.classList.add('hidden');
-}
-
-function getAttachmentExt(name) {
-  const str = String(name || '');
-  const idx = str.lastIndexOf('.');
-  return idx >= 0 ? str.slice(idx + 1).toUpperCase() : 'FILE';
-}
-
-function getAttachmentBadge(attachment) {
-  const ext = getAttachmentExt(attachment?.name);
-  if ((attachment?.kind || '') === 'pdf') return 'PDF';
-  if ((attachment?.kind || '') === 'image') return 'IMG';
-  if ((attachment?.kind || '') === 'video') return 'VIDEO';
-  if ((attachment?.kind || '') === 'audio') return 'AUDIO';
-  return ext.slice(0, 6) || 'FILE';
-}
-
-function buildAttachmentHtml(attachment) {
-  if (!attachment) return '';
-  const name = escapeHtml(attachment.name || 'attachment');
-  const permissionLabel = attachment.permission === 'download'
-    ? {{ ('可下载' if lang == 'zh' else 'Download allowed')|tojson }}
-    : {{ ('仅查看' if lang == 'zh' else 'View only')|tojson }};
-  const openLabel = attachment.permission === 'download'
-    ? {{ ('查看/打开' if lang == 'zh' else 'Open' )|tojson }}
-    : {{ ('查看' if lang == 'zh' else 'View' )|tojson }};
-  const rawUrl = attachment.rawUrl || '';
-  if (rawUrl && attachment.kind === 'image') {
-    return `<div class="chat-attachment-block"><img class="chat-media" src="${rawUrl}" alt="${name}" /><div class="chat-file-meta"><span>${name}</span><span>${permissionLabel}</span></div><div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">${openLabel}</a>${attachment.downloadUrl ? `<a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">{{ '下载' if lang == 'zh' else 'Download' }}</a>` : ''}</div></div>`;
-  }
-  if (rawUrl && attachment.kind === 'video') {
-    return `<div class="chat-attachment-block"><video class="chat-media" src="${rawUrl}" controls playsinline preload="metadata"></video><div class="chat-file-meta"><span>${name}</span><span>${permissionLabel}</span></div><div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">${openLabel}</a>${attachment.downloadUrl ? `<a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">{{ '下载' if lang == 'zh' else 'Download' }}</a>` : ''}</div></div>`;
-  }
-  if (attachment.viewUrl) {
-    return `<div class="chat-attachment-block chat-file-card standardized"><div class="chat-file-badge">${getAttachmentBadge(attachment)}</div><div class="chat-file-meta"><strong>${name}</strong><span>${permissionLabel}</span></div><div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">${openLabel}</a>${attachment.downloadUrl ? `<a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">{{ '下载' if lang == 'zh' else 'Download' }}</a>` : ''}</div></div>`;
-  }
-  return '';
-}
-
-function getMessageTextForTranslate(item) {
-  return item?.dataset?.messageText || '';
-}
-
-function renderChatMessageState(item, data) {
-  const withdrawn = !!data.withdrawn;
-  const text = data.message || '';
-  const canRetract = !withdrawn && (String(data.senderUserId || '') === String({{ current_user.id|tojson }}) || IS_HOST === true || IS_HOST === 'true');
-  item.dataset.withdrawn = withdrawn ? '1' : '0';
-  item.dataset.messageText = text;
-  item.dataset.messageId = data.id || '';
-  item.dataset.senderUserId = data.senderUserId || '';
-  item.dataset.senderSid = data.from || '';
-  item.innerHTML = `
-    <div class="chat-message-head">
-      <strong>${escapeHtml(data.senderName || 'Guest')}</strong>
-      <span>${data.mode === 'host' ? '{{ '仅主持人' if lang == 'zh' else 'Host only' }}' : '{{ '公开' if lang == 'zh' else 'Public' }}'}</span>
-      <span>${escapeHtml(data.createdAt || '')}</span>
-    </div>
-    <div class="chat-message-body${withdrawn ? ' withdrawn' : ''}">${withdrawn ? TEXT_CHAT_WITHDRAWN : `${((data.mentions || []).map(m => `<span class="mention-badge">@${escapeHtml(String(m).replace(/^@/, ''))}</span>`).join(''))}${escapeHtml(text).replace(/\n/g, '<br>')}`}</div>
-    ${withdrawn ? '' : buildAttachmentHtml(data.attachment)}
-    <div class="chat-message-actions">
-      ${text ? `<button type="button" class="msg-action-btn" data-action="copy">{{ '复制' if lang == 'zh' else 'Copy' }}</button>` : ''}
-      ${text ? `<button type="button" class="msg-action-btn" data-action="translate">{{ '翻译' if lang == 'zh' else 'Translate' }}</button>` : ''}
-      ${canRetract ? `<button type="button" class="msg-action-btn danger" data-action="retract">{{ '撤回' if lang == 'zh' else 'Retract' }}</button>` : ''}
-    </div>
-  `;
-}
-
-function appendChatMessage(data) {
-  if (!chatMessages || !data) return;
-  const shouldStickToBottom = isChatNearBottom() || String(data.senderUserId || '') === String({{ current_user.id|tojson }});
-  let item = data.id ? chatMessages.querySelector(`.chat-message[data-message-id="${data.id}"]`) : null;
-  if (!item) {
-    item = document.createElement('div');
-    item.className = 'chat-message ' + (data.mode === 'host' ? 'host-only' : '');
-    chatMessages.appendChild(item);
-  } else {
-    item.className = 'chat-message ' + (data.mode === 'host' ? 'host-only' : '');
-  }
-  renderChatMessageState(item, data);
-  if (!data.preserveScroll && shouldStickToBottom) {
-    requestAnimationFrame(() => {
-      chatMessages.scrollTop = chatMessages.scrollHeight;
-    });
-  }
-  if (PREF_ENABLE_DANMAKU && danmakuEnabled && data.mode === 'all' && data.message && !data.withdrawn) showDanmaku(`${data.senderName}: ${data.message}`);
-}
-
-async function copyText(text) {
-  if (!text) return false;
-
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      setStatus(TEXT_COPY_SUCCESS);
-      return true;
-    }
-  } catch (_) {}
-
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.setAttribute('readonly', 'readonly');
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    ta.style.pointerEvents = 'none';
-    ta.style.left = '-9999px';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    ta.setSelectionRange(0, ta.value.length);
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    if (ok) {
-      setStatus(TEXT_COPY_SUCCESS);
-      return true;
-    }
-  } catch (_) {}
-
-  try {
-    const input = document.getElementById('inviteInput');
-    if (input) {
-      input.focus();
-      input.removeAttribute('readonly');
-      input.select();
-      input.setSelectionRange(0, input.value.length);
-      input.setAttribute('readonly', 'readonly');
-    }
-  } catch (_) {}
-
-  setStatus({{ ('复制失败，请长按或手动复制' if lang == 'zh' else 'Copy failed, please copy manually')|tojson }}, 'error');
-  return false;
-}
+const { renderMentionPicker, renderEmojiPicker, hideFloatingPanels, buildAttachmentHtml, getMessageTextForTranslate, renderChatMessageState, appendChatMessage } = window.RoomPageChat;
 
 async function translateToEnglish(item, text) {
   if (!text || !item) return;
@@ -1496,50 +1282,14 @@ function showDanmaku(text) {
   danmakuLayer.appendChild(node);
   setTimeout(() => node.remove(), 15000);
 }
-
-
-async function fileToDataUrl(file) {
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-async function compressImageFile(file) {
-  const imageUrl = URL.createObjectURL(file);
-  try {
-    const img = await new Promise((resolve, reject) => {
-      const node = new Image();
-      node.onload = () => resolve(node);
-      node.onerror = reject;
-      node.src = imageUrl;
-    });
-    const maxSide = 1600;
-    const scale = Math.min(maxSide / img.width, maxSide / img.height, 1);
-    const width = Math.max(1, Math.round(img.width * scale));
-    const height = Math.max(1, Math.round(img.height * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d', { alpha: false });
-    ctx.drawImage(img, 0, 0, width, height);
-    let mime = 'image/jpeg';
-    if (file.type === 'image/png' && file.size < 1024 * 1024) mime = 'image/png';
-    const quality = mime === 'image/png' ? undefined : 0.82;
-    const dataUrl = canvas.toDataURL(mime, quality);
-    return { type: mime, name: file.name, dataUrl };
-  } finally {
-    URL.revokeObjectURL(imageUrl);
-  }
-}
+window.showDanmaku = showDanmaku;
 
 function isChatNearBottom() {
   if (!chatMessages) return true;
   const remaining = chatMessages.scrollHeight - chatMessages.clientHeight - chatMessages.scrollTop;
   return remaining < 40;
 }
+window.isChatNearBottom = isChatNearBottom;
 
 function keepChatViewportStable(wasNearBottom) {
   if (!chatMessages) return;
@@ -1851,6 +1601,7 @@ function cleanupMeetingSession() {
   });
   peerConnections = {};
   participantMeta = {};
+  window.participantMeta = participantMeta;
 }
 
 function leaveMeetingAndExit(message = TEXT_YOU_LEFT_MEETING, redirectUrl = '/') {
@@ -1875,6 +1626,7 @@ socket.on('join_ok', async (data) => {
   (data.chat_history || []).forEach(item => appendChatMessage(item));
   focusParticipant('local');
   danmakuEnabled = !!data.danmaku_enabled;
+  window.danmakuEnabled = danmakuEnabled;
   currentSharerSid = normalizeParticipantSid(data?.active_sharer_sid || null);
   if (currentSharerSid) {
     focusedSid = currentSharerSid;
@@ -1927,7 +1679,7 @@ socket.on('participant_snapshot', (data) => {
 
 socket.on('participant_updated', (data) => {
   if (!data || !data.sid) return;
-  if (data.sid === socket.id) { USER_NAME = data.name; }
+  if (data.sid === socket.id) { USER_NAME = data.name; window.USER_NAME = USER_NAME; }
   if (participantMeta[data.sid]) participantMeta[data.sid].name = data.name;
   const card = document.getElementById('card-' + data.sid);
   const labelEl = card?.querySelector('.video-label');
@@ -2025,6 +1777,7 @@ socket.on('room_ui_event', (data) => {
     setStatus(data.message || {{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }}, 'warning');
   } else if (data.type === 'danmaku_toggled') {
     danmakuEnabled = !!data.enabled;
+    window.danmakuEnabled = danmakuEnabled;
     setStatus(danmakuEnabled ? TEXT_DANMAKU_ON : TEXT_DANMAKU_OFF);
   }
 });
@@ -2243,6 +1996,7 @@ document.getElementById('saveProfileBtn').onclick = () => {
   const name = (document.getElementById('displayNameInput').value || '').trim();
   if (!name) return;
   USER_NAME = name;
+  window.USER_NAME = USER_NAME;
   localStorage.setItem('meeting_display_name', name);
   socket.emit('update_profile', { name });
   ensureCard('local', getDisplayName('local'), true);
