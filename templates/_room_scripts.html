@@ -849,11 +849,14 @@ async function syncPeerMedia(targetSid = null) {
     tracks.forEach((track) => {
       const sender = senders.find((item) => item.track && item.track.kind === track.kind);
       if (sender) {
-        sender.replaceTrack(track).catch((err) => console.error(err));
+        sender.replaceTrack(track)
+          .then(() => tuneSenderForTrack(sender, track, { isScreenShare: isSharingScreen && track.kind === 'video' }))
+          .catch((err) => console.error(err));
       } else {
         try {
-          pc.addTrack(track, localStream);
+          const addedSender = pc.addTrack(track, localStream);
           addedTrack = true;
+          tuneSenderForTrack(addedSender, track, { isScreenShare: isSharingScreen && track.kind === 'video' }).catch(() => {});
         } catch (err) {
           console.error(err);
         }
@@ -882,7 +885,10 @@ function ensurePeer(targetSid) {
   peerConnections[targetSid] = pc;
 
   if (localStream) {
-    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    localStream.getTracks().forEach(track => {
+      const sender = pc.addTrack(track, localStream);
+      tuneSenderForTrack(sender, track, { isScreenShare: isSharingScreen && track.kind === 'video' }).catch(() => {});
+    });
   }
 
   pc.onicecandidate = (event) => {
@@ -1585,6 +1591,42 @@ function broadcastUiEvent(payload) {
   socket.emit('room_ui_event', payload);
 }
 
+function getCurrentScreenTrack() {
+  return localVideo?.srcObject?.getVideoTracks?.()[0] || null;
+}
+
+async function tuneSenderForTrack(sender, track, { isScreenShare = false } = {}) {
+  if (!sender || !track || typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') return;
+  try {
+    track.contentHint = isScreenShare ? 'detail' : 'motion';
+  } catch (_) {}
+  try {
+    const params = sender.getParameters() || {};
+    const encodings = Array.isArray(params.encodings) && params.encodings.length ? params.encodings : [{}];
+    params.encodings = encodings.map((encoding) => ({
+      ...encoding,
+      maxBitrate: isScreenShare ? 1800000 : (encoding.maxBitrate || 1200000),
+      maxFramerate: isScreenShare ? 12 : (encoding.maxFramerate || 24),
+    }));
+    params.degradationPreference = isScreenShare ? 'maintain-resolution' : 'balanced';
+    await sender.setParameters(params);
+  } catch (err) {
+    console.debug('setParameters skipped', err?.message || err);
+  }
+}
+
+async function syncScreenShareState(forceBroadcast = false) {
+  const screenTrack = isSharingScreen ? getCurrentScreenTrack() : null;
+  if (!screenTrack || screenTrack.readyState === 'ended') return false;
+  currentSharerSid = 'local';
+  focusedSid = 'local';
+  hiddenSidebar = true;
+  renderLayout();
+  await syncPeerMedia().catch((err) => console.error(err));
+  if (forceBroadcast) broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true, restored: true });
+  return true;
+}
+
 function cleanupMeetingSession() {
   if (hasLeftMeeting) return;
   hasLeftMeeting = true;
@@ -1634,6 +1676,9 @@ socket.on('join_ok', async (data) => {
     renderLayout();
   } else {
     updateShareUiState();
+  }
+  if (isSharingScreen) {
+    await syncScreenShareState(true);
   }
   if (data && data.host_present === false && IS_HOST) {
     setStatus(TEXT_HOST_RETURNED_ROOM);
@@ -1891,13 +1936,28 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     return;
   }
   try {
-    const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    let screenStream;
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 12, max: 15 }, width: { max: 1920 }, height: { max: 1080 } },
+        audio: true
+      });
+    } catch (audioErr) {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 12, max: 15 }, width: { max: 1920 }, height: { max: 1080 } },
+        audio: false
+      });
+    }
     const screenTrack = screenStream.getVideoTracks()[0];
+    if (!screenTrack) throw new Error('screen_track_missing');
+    try { screenTrack.contentHint = 'detail'; } catch (_) {}
     const screenCard = ensureCard('local', getDisplayName('local'), true);
-    Object.values(peerConnections).forEach(pc => {
+    await Promise.allSettled(Object.values(peerConnections).map(async (pc) => {
       const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-      if (sender) sender.replaceTrack(screenTrack);
-    });
+      if (!sender) return;
+      await sender.replaceTrack(screenTrack);
+      await tuneSenderForTrack(sender, screenTrack, { isScreenShare: true });
+    }));
     localVideo.srcObject = screenStream;
     safePlayVideo(localVideo);
     updatePlaceholder(screenCard, true);
@@ -1906,6 +1966,7 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     hiddenSidebar = true;
     focusedSid = 'local';
     renderLayout();
+    await syncPeerMedia().catch((err) => console.error(err));
     setStatus(TEXT_SCREEN_SHARE_MODE);
     broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true });
 
