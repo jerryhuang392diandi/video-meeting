@@ -838,7 +838,10 @@ async function syncPeerMedia(targetSid = null) {
   const entries = targetSid
     ? (peerConnections[targetSid] ? [[targetSid, peerConnections[targetSid]]] : [])
     : Object.entries(peerConnections);
-  const tracks = Array.isArray(localStream?.getTracks?.()) ? localStream.getTracks() : [];
+  const tracks = [];
+  const activeVideoTrack = (isSharingScreen ? getCurrentScreenTrack() : null) || localStream?.getVideoTracks?.()[0] || null;
+  if (activeVideoTrack) tracks.push(activeVideoTrack);
+  localStream?.getAudioTracks?.().forEach((track) => tracks.push(track));
   const renegotiateTasks = [];
 
   entries.forEach(([sid, pc]) => {
@@ -881,9 +884,9 @@ function ensurePeer(targetSid) {
   const pc = new RTCPeerConnection(rtcConfig);
   peerConnections[targetSid] = pc;
 
-  if (localStream) {
-    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-  }
+  const outboundVideoTrack = (isSharingScreen ? getCurrentScreenTrack() : null) || localStream?.getVideoTracks?.()[0] || null;
+  if (outboundVideoTrack) pc.addTrack(outboundVideoTrack, localVideo?.srcObject || localStream);
+  localStream?.getAudioTracks?.().forEach(track => pc.addTrack(track, localStream));
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
