@@ -117,6 +117,9 @@ let hasLeftMeeting = false;
 const MAX_VBG_WIDTH = 960;
 const MAX_VBG_HEIGHT = 540;
 const VBG_CAPTURE_FPS = 15;
+const CAMERA_TARGET_CONSTRAINTS = { width: { ideal: 640, max: 1280 }, height: { ideal: 360, max: 720 }, frameRate: { ideal: 15, max: 24 } };
+const SCREEN_SHARE_CONSTRAINTS = { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 }, frameRate: { ideal: 15, max: 20 } };
+const SCREEN_SHARE_MAX_BITRATE = 2_500_000;
 
 const localVideo = document.createElement('video');
 localVideo.id = 'localVideo';
@@ -770,6 +773,35 @@ async function transcodeRecordingBlob(blob, filename = 'meeting-recording.webm')
   return await response.blob();
 }
 
+async function applySenderOptimization(sender, { isScreenShare = false } = {}) {
+  if (!sender?.track || typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') return;
+  try {
+    const params = sender.getParameters() || {};
+    const encodings = Array.isArray(params.encodings) && params.encodings.length ? params.encodings : [{}];
+    params.degradationPreference = isScreenShare ? 'maintain-resolution' : 'balanced';
+    params.encodings = encodings.map((encoding) => ({
+      ...encoding,
+      maxBitrate: isScreenShare ? SCREEN_SHARE_MAX_BITRATE : (encoding.maxBitrate || 900_000),
+      maxFramerate: isScreenShare ? 15 : 24,
+      priority: isScreenShare ? 'high' : (encoding.priority || 'medium'),
+      networkPriority: isScreenShare ? 'high' : (encoding.networkPriority || 'medium'),
+    }));
+    await sender.setParameters(params);
+  } catch (err) {
+    roomDebugLog('sender optimization skipped', { error: err?.message || String(err), isScreenShare });
+  }
+}
+
+async function optimizePeerSenders(targetSid = null, { isScreenShare = false } = {}) {
+  const entries = targetSid
+    ? (peerConnections[targetSid] ? [[targetSid, peerConnections[targetSid]]] : [])
+    : Object.entries(peerConnections);
+  await Promise.allSettled(entries.map(async ([, pc]) => {
+    const videoSender = pc?.getSenders?.().find((sender) => sender.track?.kind === 'video');
+    await applySenderOptimization(videoSender, { isScreenShare });
+  }));
+}
+
 async function requestMedia(forceFacingMode = null, manualRequest = false, preferredKinds = null) {
   const wantsVideo = Array.isArray(preferredKinds) ? preferredKinds.includes('video') : (manualRequest ? true : !!PREF_AUTO_ENABLE_CAMERA);
   const wantsAudio = Array.isArray(preferredKinds) ? preferredKinds.includes('audio') : (manualRequest ? true : !!PREF_AUTO_ENABLE_MICROPHONE);
@@ -779,8 +811,11 @@ async function requestMedia(forceFacingMode = null, manualRequest = false, prefe
   }
   try {
     const constraints = {
-      audio: wantsAudio,
-      video: wantsVideo ? (forceFacingMode && !IS_IOS ? { facingMode: { ideal: forceFacingMode } } : true) : false,
+      audio: wantsAudio ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true } : false,
+      video: wantsVideo ? {
+        ...CAMERA_TARGET_CONSTRAINTS,
+        ...(forceFacingMode && !IS_IOS ? { facingMode: { ideal: forceFacingMode } } : {}),
+      } : false,
     };
     const nextRawStream = await navigator.mediaDevices.getUserMedia(constraints);
     const nextVideoTrack = nextRawStream.getVideoTracks()[0] || null;
@@ -809,6 +844,7 @@ async function requestMedia(forceFacingMode = null, manualRequest = false, prefe
     }
 
     useLocalOutputStream(rawCameraStream);
+    await optimizePeerSenders(null, { isScreenShare: false });
 
     if (virtualBgImageDataUrl && !isSharingScreen && !currentSharerSid) {
       try {
@@ -888,7 +924,7 @@ async function syncPeerMedia(targetSid = null) {
     tracks.forEach((track) => {
       const sender = senders.find((item) => item.track && item.track.kind === track.kind);
       if (sender) {
-        sender.replaceTrack(track).catch((err) => console.error(err));
+        sender.replaceTrack(track).then(() => applySenderOptimization(sender, { isScreenShare: !!isSharingScreen })).catch((err) => console.error(err));
       } else {
         try {
           pc.addTrack(track, localStream);
@@ -928,7 +964,10 @@ function ensurePeer(targetSid) {
   const state = ensurePeerState(targetSid);
 
   const outboundVideoTrack = (isSharingScreen ? getCurrentScreenTrack() : null) || localStream?.getVideoTracks?.()[0] || null;
-  if (outboundVideoTrack) pc.addTrack(outboundVideoTrack, localVideo?.srcObject || localStream);
+  if (outboundVideoTrack) {
+    const sender = pc.addTrack(outboundVideoTrack, localVideo?.srcObject || localStream);
+    applySenderOptimization(sender, { isScreenShare: !!isSharingScreen }).catch(() => {});
+  }
   localStream?.getAudioTracks?.().forEach(track => pc.addTrack(track, localStream));
 
   pc.onicecandidate = (event) => {
@@ -1696,11 +1735,13 @@ function leaveMeetingAndExit(message = TEXT_YOU_LEFT_MEETING, redirectUrl = '/')
   window.location.href = redirectUrl;
 }
 
-socket.on('connect', async () => {
+socket.on('connect', () => {
   ensureCard('local', getDisplayName('local'), true);
   renderLayout();
-  if ((PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream) await requestMedia(currentFacingMode, false);
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
+  if ((PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream) {
+    requestMedia(currentFacingMode, false).catch((err) => console.error(err));
+  }
 });
 
 socket.on('join_ok', async (data) => {
@@ -1999,12 +2040,12 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     let screenStream;
     try {
       screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 10, max: 12 } },
+        video: SCREEN_SHARE_CONSTRAINTS,
         audio: true
       });
     } catch (audioErr) {
       screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 10, max: 12 } },
+        video: SCREEN_SHARE_CONSTRAINTS,
         audio: false
       });
     }
@@ -2016,6 +2057,7 @@ document.getElementById('shareScreenBtn').onclick = async () => {
       const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
       if (!sender) return;
       await sender.replaceTrack(screenTrack);
+      await applySenderOptimization(sender, { isScreenShare: true });
     }));
     localVideo.srcObject = screenStream;
     safePlayVideo(localVideo);
@@ -2025,7 +2067,7 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     hiddenSidebar = true;
     focusedSid = 'local';
     renderLayout();
-    await syncPeerMedia().catch((err) => console.error(err));
+    await optimizePeerSenders(null, { isScreenShare: true });
     setStatus(TEXT_SCREEN_SHARE_MODE);
     broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true });
 
