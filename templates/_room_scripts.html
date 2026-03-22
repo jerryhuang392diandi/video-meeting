@@ -80,6 +80,7 @@ let localStream = null;
 let rawCameraStream = null;
 let currentFacingMode = 'user';
 let peerConnections = {};
+let peerState = {};
 let participantMeta = {};
 let focusedSid = 'local';
 let hiddenSidebar = false;
@@ -834,6 +835,40 @@ async function ensureRequestedTrack(kind) {
   return kind === 'video' ? stream?.getVideoTracks?.()[0] : stream?.getAudioTracks?.()[0];
 }
 
+function ensurePeerState(targetSid) {
+  if (!peerState[targetSid]) {
+    peerState[targetSid] = { makingOffer: false, ignoreOffer: false, pendingCandidates: [] };
+  }
+  return peerState[targetSid];
+}
+
+async function flushPendingCandidates(targetSid, pc) {
+  const state = ensurePeerState(targetSid);
+  if (!pc?.remoteDescription) return;
+  const pending = state.pendingCandidates.splice(0, state.pendingCandidates.length);
+  for (const candidate of pending) {
+    try {
+      await pc.addIceCandidate(candidate);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+}
+
+function closePeer(targetSid, { preserveParticipant = false } = {}) {
+  const pc = peerConnections[targetSid];
+  if (pc) {
+    try { pc.onicecandidate = null; } catch (_) {}
+    try { pc.ontrack = null; } catch (_) {}
+    try { pc.onconnectionstatechange = null; } catch (_) {}
+    try { pc.oniceconnectionstatechange = null; } catch (_) {}
+    try { pc.close(); } catch (_) {}
+  }
+  delete peerConnections[targetSid];
+  delete peerState[targetSid];
+  if (!preserveParticipant) removeRemoteVideo(targetSid);
+}
+
 async function syncPeerMedia(targetSid = null) {
   const entries = targetSid
     ? (peerConnections[targetSid] ? [[targetSid, peerConnections[targetSid]]] : [])
@@ -846,6 +881,7 @@ async function syncPeerMedia(targetSid = null) {
 
   entries.forEach(([sid, pc]) => {
     if (!pc) return;
+    ensurePeerState(sid);
     const senders = pc.getSenders();
     let addedTrack = false;
 
@@ -864,13 +900,19 @@ async function syncPeerMedia(targetSid = null) {
     });
 
     if (addedTrack && pc.signalingState === 'stable') {
+      const state = ensurePeerState(sid);
       renegotiateTasks.push((async () => {
+        if (state.makingOffer || pc.signalingState !== 'stable') return;
         try {
+          state.makingOffer = true;
           const offer = await pc.createOffer();
+          if (pc.signalingState !== 'stable') return;
           await pc.setLocalDescription(offer);
           socket.emit('signal', { target: sid, from: socket.id, description: pc.localDescription, senderName: USER_NAME });
         } catch (err) {
           console.error(err);
+        } finally {
+          state.makingOffer = false;
         }
       })());
     }
@@ -883,6 +925,7 @@ function ensurePeer(targetSid) {
   if (peerConnections[targetSid]) return peerConnections[targetSid];
   const pc = new RTCPeerConnection(rtcConfig);
   peerConnections[targetSid] = pc;
+  const state = ensurePeerState(targetSid);
 
   const outboundVideoTrack = (isSharingScreen ? getCurrentScreenTrack() : null) || localStream?.getVideoTracks?.()[0] || null;
   if (outboundVideoTrack) pc.addTrack(outboundVideoTrack, localVideo?.srcObject || localStream);
@@ -895,10 +938,20 @@ function ensurePeer(targetSid) {
   };
 
   pc.ontrack = (event) => addRemoteVideo(targetSid, event.streams[0]);
+  pc.oniceconnectionstatechange = async () => {
+    if (pc.iceConnectionState === 'failed') {
+      try {
+        await pc.restartIce();
+        await callPeer(targetSid);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
   pc.onconnectionstatechange = () => {
     if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
-      removeRemoteVideo(targetSid);
-      delete peerConnections[targetSid];
+      state.pendingCandidates = [];
+      closePeer(targetSid);
     }
   };
   return pc;
@@ -926,6 +979,7 @@ function addRemoteVideo(sid, stream) {
 
 function removeRemoteVideo(sid) {
   document.getElementById('card-' + sid)?.remove();
+  delete peerState[sid];
   delete participantMeta[sid];
   window.participantMeta = participantMeta;
   if (focusedSid === sid) focusedSid = 'local';
@@ -944,9 +998,19 @@ function removeRemoteVideo(sid) {
 
 async function callPeer(targetSid) {
   const pc = ensurePeer(targetSid);
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  socket.emit('signal', { target: targetSid, from: socket.id, description: pc.localDescription, senderName: USER_NAME });
+  const state = ensurePeerState(targetSid);
+  if (state.makingOffer || pc.signalingState !== 'stable') return;
+  try {
+    state.makingOffer = true;
+    const offer = await pc.createOffer();
+    if (pc.signalingState !== 'stable') return;
+    await pc.setLocalDescription(offer);
+    socket.emit('signal', { target: targetSid, from: socket.id, description: pc.localDescription, senderName: USER_NAME });
+  } catch (err) {
+    console.error(err);
+  } finally {
+    state.makingOffer = false;
+  }
 }
 
 function downloadBlob(blob, filename) {
@@ -1619,6 +1683,7 @@ function cleanupMeetingSession() {
     try { pc.close(); } catch (_) {}
   });
   peerConnections = {};
+  peerState = {};
   participantMeta = {};
   window.participantMeta = participantMeta;
 }
@@ -1763,16 +1828,34 @@ socket.on('host_action_error', (data) => {
 socket.on('signal', async (data) => {
   const from = data.from;
   const pc = ensurePeer(from);
+  const state = ensurePeerState(from);
+  const polite = socket.id > from;
   try {
     if (data.description) {
-      await pc.setRemoteDescription(data.description);
+      const readyForOffer = !state.makingOffer && (pc.signalingState === 'stable' || pc.signalingState === 'have-remote-offer');
+      const offerCollision = data.description.type === 'offer' && !readyForOffer;
+      state.ignoreOffer = !polite && offerCollision;
+      if (state.ignoreOffer) return;
+      if (offerCollision) {
+        await Promise.all([
+          pc.setLocalDescription({ type: 'rollback' }),
+          pc.setRemoteDescription(data.description),
+        ]);
+      } else {
+        await pc.setRemoteDescription(data.description);
+      }
+      await flushPendingCandidates(from, pc);
       if (data.description.type === 'offer') {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         socket.emit('signal', { target: from, from: socket.id, description: pc.localDescription, senderName: USER_NAME });
       }
     } else if (data.candidate) {
-      await pc.addIceCandidate(data.candidate);
+      if (pc.remoteDescription) {
+        await pc.addIceCandidate(data.candidate);
+      } else {
+        state.pendingCandidates.push(data.candidate);
+      }
     }
   } catch (err) {
     console.error(err);
