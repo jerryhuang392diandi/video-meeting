@@ -121,6 +121,9 @@ const VBG_CAPTURE_FPS = 15;
 const CAMERA_TARGET_CONSTRAINTS = { width: { ideal: 640, max: 1280 }, height: { ideal: 360, max: 720 }, frameRate: { ideal: 15, max: 24 } };
 const SCREEN_SHARE_CONSTRAINTS = { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 }, frameRate: { ideal: 15, max: 20 } };
 const SCREEN_SHARE_MAX_BITRATE = 2_500_000;
+const SCREEN_SHARE_HIGH_BITRATE = 3_500_000;
+const CAMERA_MAX_BITRATE = 1_200_000;
+const CAMERA_LOW_BITRATE = 700_000;
 const AUDIO_MIX_GAIN = 1.0;
 
 const localVideo = document.createElement('video');
@@ -810,13 +813,8 @@ async function refreshScreenShareAudioSenders() {
   const mixedAudioTrack = await buildScreenShareAudioTrack(screenShareStream);
   let addedAudioTrack = false;
   await Promise.allSettled(Object.values(peerConnections).map(async (pc) => {
-    const audioSender = pc.getSenders().find((sender) => sender.track && sender.track.kind === 'audio');
-    if (audioSender) {
-      await audioSender.replaceTrack(mixedAudioTrack || rawCameraStream?.getAudioTracks?.()[0] || null);
-    } else if (mixedAudioTrack) {
-      pc.addTrack(mixedAudioTrack, new MediaStream([mixedAudioTrack]));
-      addedAudioTrack = true;
-    }
+    const { added } = await replaceSenderTrack(pc, 'audio', mixedAudioTrack || rawCameraStream?.getAudioTracks?.()[0] || null, mixedAudioTrack ? new MediaStream([mixedAudioTrack]) : null);
+    if (added) addedAudioTrack = true;
   }));
   if (addedAudioTrack) {
     await syncPeerMedia().catch((err) => console.error(err));
@@ -887,18 +885,58 @@ async function transcodeRecordingBlob(blob, filename = 'meeting-recording.webm')
   return await response.blob();
 }
 
+function getVideoSender(pc) {
+  return pc?.getSenders?.().find((sender) => sender.track?.kind === 'video') || null;
+}
+
+function getAudioSender(pc) {
+  return pc?.getSenders?.().find((sender) => sender.track?.kind === 'audio') || null;
+}
+
+function getActivePeerCount() {
+  return Math.max(1, Object.keys(peerConnections).length || Object.keys(participantMeta).length || 1);
+}
+
+function getVideoSenderProfile({ isScreenShare = false, peerCount = getActivePeerCount() } = {}) {
+  if (isScreenShare) {
+    if (peerCount <= 2) {
+      return { maxBitrate: SCREEN_SHARE_HIGH_BITRATE, maxFramerate: 18, degradationPreference: 'maintain-resolution', priority: 'high', networkPriority: 'high' };
+    }
+    if (peerCount <= 4) {
+      return { maxBitrate: SCREEN_SHARE_MAX_BITRATE, maxFramerate: 15, degradationPreference: 'maintain-resolution', priority: 'high', networkPriority: 'high' };
+    }
+    return { maxBitrate: 1_800_000, maxFramerate: 12, degradationPreference: 'balanced', priority: 'medium', networkPriority: 'medium' };
+  }
+  if (peerCount <= 2) {
+    return { maxBitrate: CAMERA_MAX_BITRATE, maxFramerate: 24, degradationPreference: 'balanced', priority: 'medium', networkPriority: 'medium' };
+  }
+  if (peerCount <= 4) {
+    return { maxBitrate: 900_000, maxFramerate: 20, degradationPreference: 'balanced', priority: 'medium', networkPriority: 'medium' };
+  }
+  return { maxBitrate: CAMERA_LOW_BITRATE, maxFramerate: 15, degradationPreference: 'maintain-framerate', priority: 'low', networkPriority: 'medium' };
+}
+
+function applyTrackContentHint(track, { isScreenShare = false } = {}) {
+  if (!track) return;
+  try {
+    track.contentHint = isScreenShare ? 'detail' : 'motion';
+  } catch (_) {}
+}
+
 async function applySenderOptimization(sender, { isScreenShare = false } = {}) {
   if (!sender?.track || typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') return;
   try {
     const params = sender.getParameters() || {};
     const encodings = Array.isArray(params.encodings) && params.encodings.length ? params.encodings : [{}];
-    params.degradationPreference = isScreenShare ? 'maintain-resolution' : 'balanced';
+    const profile = getVideoSenderProfile({ isScreenShare });
+    applyTrackContentHint(sender.track, { isScreenShare });
+    params.degradationPreference = profile.degradationPreference;
     params.encodings = encodings.map((encoding) => ({
       ...encoding,
-      maxBitrate: isScreenShare ? SCREEN_SHARE_MAX_BITRATE : (encoding.maxBitrate || 900_000),
-      maxFramerate: isScreenShare ? 15 : 24,
-      priority: isScreenShare ? 'high' : (encoding.priority || 'medium'),
-      networkPriority: isScreenShare ? 'high' : (encoding.networkPriority || 'medium'),
+      maxBitrate: profile.maxBitrate,
+      maxFramerate: profile.maxFramerate,
+      priority: profile.priority,
+      networkPriority: profile.networkPriority,
     }));
     await sender.setParameters(params);
   } catch (err) {
@@ -906,12 +944,26 @@ async function applySenderOptimization(sender, { isScreenShare = false } = {}) {
   }
 }
 
+async function replaceSenderTrack(pc, kind, track, stream = null, { isScreenShare = false } = {}) {
+  const sender = kind === 'video' ? getVideoSender(pc) : getAudioSender(pc);
+  if (sender) {
+    await sender.replaceTrack(track || null);
+    if (kind === 'video' && track) await applySenderOptimization(sender, { isScreenShare });
+    return { sender, added: false };
+  }
+  if (!track) return { sender: null, added: false };
+  const nextStream = stream || new MediaStream([track]);
+  const nextSender = pc.addTrack(track, nextStream);
+  if (kind === 'video') await applySenderOptimization(nextSender, { isScreenShare });
+  return { sender: nextSender, added: true };
+}
+
 async function optimizePeerSenders(targetSid = null, { isScreenShare = false } = {}) {
   const entries = targetSid
     ? (peerConnections[targetSid] ? [[targetSid, peerConnections[targetSid]]] : [])
     : Object.entries(peerConnections);
   await Promise.allSettled(entries.map(async ([, pc]) => {
-    const videoSender = pc?.getSenders?.().find((sender) => sender.track?.kind === 'video');
+    const videoSender = getVideoSender(pc);
     await applySenderOptimization(videoSender, { isScreenShare });
   }));
 }
@@ -1033,40 +1085,28 @@ async function syncPeerMedia(targetSid = null) {
   entries.forEach(([sid, pc]) => {
     if (!pc) return;
     ensurePeerState(sid);
-    const senders = pc.getSenders();
-    let addedTrack = false;
-
-    tracks.forEach((track) => {
-      const sender = senders.find((item) => item.track && item.track.kind === track.kind);
-      if (sender) {
-        sender.replaceTrack(track).then(() => applySenderOptimization(sender, { isScreenShare: !!isSharingScreen })).catch((err) => console.error(err));
-      } else {
-        try {
-          pc.addTrack(track, localStream);
-          addedTrack = true;
-        } catch (err) {
-          console.error(err);
-        }
-      }
-    });
-
-    if (addedTrack && pc.signalingState === 'stable') {
+    renegotiateTasks.push((async () => {
+      let addedTrack = false;
+      const results = await Promise.allSettled(tracks.map((track) => replaceSenderTrack(pc, track.kind, track, localStream, { isScreenShare: !!isSharingScreen })));
+      results.forEach((result) => {
+        if (result.status === 'fulfilled' && result.value?.added) addedTrack = true;
+        if (result.status === 'rejected') console.error(result.reason);
+      });
+      if (!addedTrack || pc.signalingState !== 'stable') return;
       const state = ensurePeerState(sid);
-      renegotiateTasks.push((async () => {
-        if (state.makingOffer || pc.signalingState !== 'stable') return;
-        try {
-          state.makingOffer = true;
-          const offer = await pc.createOffer();
-          if (pc.signalingState !== 'stable') return;
-          await pc.setLocalDescription(offer);
-          socket.emit('signal', { target: sid, from: socket.id, description: pc.localDescription, senderName: USER_NAME });
-        } catch (err) {
-          console.error(err);
-        } finally {
-          state.makingOffer = false;
-        }
-      })());
-    }
+      if (state.makingOffer || pc.signalingState !== 'stable') return;
+      try {
+        state.makingOffer = true;
+        const offer = await pc.createOffer();
+        if (pc.signalingState !== 'stable') return;
+        await pc.setLocalDescription(offer);
+        socket.emit('signal', { target: sid, from: socket.id, description: pc.localDescription, senderName: USER_NAME });
+      } catch (err) {
+        console.error(err);
+      } finally {
+        state.makingOffer = false;
+      }
+    })());
   });
 
   if (renegotiateTasks.length) await Promise.allSettled(renegotiateTasks);
@@ -1080,10 +1120,9 @@ function ensurePeer(targetSid) {
 
   const outboundVideoTrack = (isSharingScreen ? getCurrentScreenTrack() : null) || localStream?.getVideoTracks?.()[0] || null;
   if (outboundVideoTrack) {
-    const sender = pc.addTrack(outboundVideoTrack, localVideo?.srcObject || localStream);
-    applySenderOptimization(sender, { isScreenShare: !!isSharingScreen }).catch(() => {});
+    replaceSenderTrack(pc, 'video', outboundVideoTrack, localVideo?.srcObject || localStream, { isScreenShare: !!isSharingScreen }).catch(() => {});
   }
-  getOutboundAudioTracks().forEach((track) => pc.addTrack(track, localStream || new MediaStream([track])));
+  getOutboundAudioTracks().forEach((track) => replaceSenderTrack(pc, 'audio', track, localStream || new MediaStream([track])).catch(() => {}));
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
@@ -2292,18 +2331,9 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
     const screenCard = ensureCard('local', getDisplayName('local'), true);
     let addedAudioTrack = false;
     await Promise.allSettled(Object.values(peerConnections).map(async (pc) => {
-      const videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-      if (videoSender) {
-        await videoSender.replaceTrack(screenTrack);
-        await applySenderOptimization(videoSender, { isScreenShare: true });
-      }
-      const audioSender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-      if (audioSender) {
-        await audioSender.replaceTrack(mixedAudioTrack || rawCameraStream?.getAudioTracks?.()[0] || null);
-      } else if (mixedAudioTrack) {
-        pc.addTrack(mixedAudioTrack, new MediaStream([mixedAudioTrack]));
-        addedAudioTrack = true;
-      }
+      const videoResult = await replaceSenderTrack(pc, 'video', screenTrack, screenStream, { isScreenShare: true });
+      const audioResult = await replaceSenderTrack(pc, 'audio', mixedAudioTrack || rawCameraStream?.getAudioTracks?.()[0] || null, mixedAudioTrack ? new MediaStream([mixedAudioTrack]) : null);
+      if (videoResult.added || audioResult.added) addedAudioTrack = true;
     }));
     if (addedAudioTrack) {
       await syncPeerMedia().catch((err) => console.error(err));
