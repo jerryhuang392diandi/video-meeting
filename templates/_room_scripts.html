@@ -180,6 +180,8 @@ const videoSearchInput = document.getElementById('videoSearchInput');
 const videoPagerInfo = document.getElementById('videoPagerInfo');
 const shareScreenBtn = document.getElementById('shareScreenBtn');
 const virtualBgBtn = document.getElementById('virtualBgBtn');
+const rtcDiagnosticsOutput = document.getElementById('rtcDiagnosticsOutput');
+const refreshRtcStatsBtn = document.getElementById('refreshRtcStatsBtn');
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const TEXT_IOS_PLAY_SCREEN = {{ ('苹果设备可能需要点一下画面才能恢复共享屏幕显示' if lang == 'zh' else 'On older Apple devices, tap the video once if screen sharing does not appear')|tojson }};
 const TEXT_HOST_MUST_END_MEETING = {{ ('主持人不能在会议进行中直接离开，请先解散会议，或等待其他参会者离开后再退出。' if lang == 'zh' else 'The host cannot leave while other participants are still in the meeting. End the meeting first, or wait until others leave.')|tojson }};
@@ -288,6 +290,11 @@ function updateShareUiState() {
 const roomDebugEnabled = new URLSearchParams(window.location.search).get('debugRoom') === '1';
 let simulatedFullscreenCardSid = null;
 let pendingLayoutAfterFullscreen = false;
+let renderLayoutFrame = 0;
+let renderLayoutForcePending = false;
+let mediaTaskQueue = Promise.resolve();
+let rtcStatsTimer = null;
+let rtcStatsCache = {};
 
 function roomDebugLog(...args) {
   if (!roomDebugEnabled) return;
@@ -317,7 +324,34 @@ function flushPendingLayoutIfNeeded() {
   if (!pendingLayoutAfterFullscreen) return;
   pendingLayoutAfterFullscreen = false;
   roomDebugLog('flush deferred layout after fullscreen exit');
-  renderLayout(true);
+  queueRenderLayout(true);
+}
+
+function queueRenderLayout(force = false) {
+  renderLayoutForcePending = renderLayoutForcePending || !!force;
+  if (renderLayoutFrame) return;
+  renderLayoutFrame = requestAnimationFrame(() => {
+    const shouldForce = renderLayoutForcePending;
+    renderLayoutFrame = 0;
+    renderLayoutForcePending = false;
+    renderLayout(shouldForce);
+  });
+}
+
+function runMediaTask(label, task) {
+  const execute = async () => {
+    roomDebugLog('media task start', { label });
+    try {
+      return await task();
+    } finally {
+      roomDebugLog('media task end', { label });
+    }
+  };
+  const chained = mediaTaskQueue.then(execute, execute);
+  mediaTaskQueue = chained.catch((err) => {
+    console.error(err);
+  });
+  return chained;
 }
 
 function applySimulatedFullscreen(card, sid) {
@@ -666,7 +700,7 @@ function focusParticipant(sid, opts = {}) {
   focusedSid = sid;
   if (typeof opts.hideSidebar === 'boolean') hiddenSidebar = opts.hideSidebar;
   if (Object.prototype.hasOwnProperty.call(opts, 'screenShare')) currentSharerSid = opts.screenShare ? sid : null;
-  renderLayout();
+  queueRenderLayout();
 }
 
 function updateParticipantCount() {
@@ -716,7 +750,7 @@ function useLocalOutputStream(stream) {
   const localCard = ensureCard('local', getDisplayName('local'), true);
   updatePlaceholder(localCard, !!stream?.getVideoTracks?.()[0]?.enabled);
   syncPeerMedia().catch(err => console.error(err));
-  renderLayout();
+  queueRenderLayout();
 }
 
 function getScaledSize(width, height) {
@@ -902,6 +936,7 @@ function closePeer(targetSid, { preserveParticipant = false } = {}) {
   }
   delete peerConnections[targetSid];
   delete peerState[targetSid];
+  Object.keys(rtcStatsCache).forEach((key) => { if (key.startsWith(`${targetSid}:`)) delete rtcStatsCache[key]; });
   if (!preserveParticipant) removeRemoteVideo(targetSid);
 }
 
@@ -1002,7 +1037,7 @@ function addRemoteParticipant(sid, name) {
   const card = ensureCard(sid, participantMeta[sid].name, false);
   updatePlaceholder(card, false);
   currentGridPage = 0;
-  renderLayout();
+  queueRenderLayout();
   updateParticipantCount();
 }
 
@@ -1013,7 +1048,7 @@ function addRemoteVideo(sid, stream) {
   safePlayVideo(videoEl).catch(() => {});
   setTimeout(() => safePlayVideo(videoEl).catch(() => {}), 120);
   updatePlaceholder(card, true);
-  renderLayout();
+  queueRenderLayout();
 }
 
 function removeRemoteVideo(sid) {
@@ -1031,7 +1066,7 @@ function removeRemoteVideo(sid) {
   const totalCards = document.querySelectorAll('.video-card').length;
   const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
   currentGridPage = Math.min(currentGridPage, totalPages - 1);
-  renderLayout();
+  queueRenderLayout();
   updateParticipantCount();
 }
 
@@ -1701,10 +1736,96 @@ async function syncScreenShareState(forceBroadcast = false) {
   currentSharerSid = 'local';
   focusedSid = 'local';
   hiddenSidebar = true;
-  renderLayout();
+  queueRenderLayout();
   await syncPeerMedia().catch((err) => console.error(err));
   if (forceBroadcast) broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true, restored: true });
   return true;
+}
+
+function formatKbps(value) {
+  if (!Number.isFinite(value)) return '-';
+  return `${value.toFixed(value >= 100 ? 0 : 1)} kbps`;
+}
+
+function formatMs(value) {
+  if (!Number.isFinite(value)) return '-';
+  return `${Math.round(value)} ms`;
+}
+
+async function collectPeerDiagnostics() {
+  const summaries = [];
+  const entries = Object.entries(peerConnections);
+  for (const [sid, pc] of entries) {
+    if (!pc?.getStats) continue;
+    let outboundVideoKbps = 0;
+    let inboundVideoKbps = 0;
+    let fps = 0;
+    let rttMs = null;
+    let framesDecoded = 0;
+    let packetsLost = 0;
+    try {
+      const stats = await pc.getStats();
+      stats.forEach((report) => {
+        const cacheKey = `${sid}:${report.id}`;
+        const cached = rtcStatsCache[cacheKey] || {};
+        if (report.type === 'outbound-rtp' && report.kind === 'video' && !report.isRemote) {
+          const lastBytes = cached.lastBytesSent || 0;
+          const lastTs = cached.lastTimestamp || 0;
+          if (lastTs && report.timestamp > lastTs && report.bytesSent >= lastBytes) {
+            outboundVideoKbps = Math.max(outboundVideoKbps, ((report.bytesSent - lastBytes) * 8) / (report.timestamp - lastTs));
+          }
+          rtcStatsCache[cacheKey] = { ...cached, lastBytesSent: report.bytesSent, lastTimestamp: report.timestamp };
+          fps = Math.max(fps, Number(report.framesPerSecond || 0));
+        }
+        if (report.type === 'inbound-rtp' && report.kind === 'video' && !report.isRemote) {
+          const lastBytes = cached.lastBytesReceived || 0;
+          const lastTs = cached.lastTimestamp || 0;
+          if (lastTs && report.timestamp > lastTs && report.bytesReceived >= lastBytes) {
+            inboundVideoKbps = Math.max(inboundVideoKbps, ((report.bytesReceived - lastBytes) * 8) / (report.timestamp - lastTs));
+          }
+          rtcStatsCache[cacheKey] = { ...cached, lastBytesReceived: report.bytesReceived, lastTimestamp: report.timestamp };
+          fps = Math.max(fps, Number(report.framesPerSecond || 0));
+          framesDecoded = Math.max(framesDecoded, Number(report.framesDecoded || 0));
+          packetsLost += Number(report.packetsLost || 0);
+        }
+        if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.nominated) {
+          if (Number.isFinite(report.currentRoundTripTime)) {
+            rttMs = Math.round(report.currentRoundTripTime * 1000);
+          }
+        }
+      });
+    } catch (err) {
+      summaries.push(`${getDisplayName(sid)}\n  error: ${err?.message || String(err)}`);
+      continue;
+    }
+    summaries.push(`${getDisplayName(sid)}\n  state: ${pc.connectionState || '-'} / ${pc.iceConnectionState || '-'}\n  out: ${formatKbps(outboundVideoKbps)}\n  in : ${formatKbps(inboundVideoKbps)}\n  rtt: ${formatMs(rttMs)}\n  fps: ${fps || '-'}\n  decoded: ${framesDecoded || '-'}\n  lost: ${packetsLost || 0}`);
+  }
+  return summaries;
+}
+
+async function refreshRtcDiagnostics() {
+  if (!rtcDiagnosticsOutput) return;
+  const peerCount = Object.keys(peerConnections).length;
+  const header = [
+    `peers: ${peerCount}`,
+    `sharing: ${isSharingScreen ? 'yes' : 'no'}`,
+    `virtual_bg: ${virtualBgEnabled ? 'on' : 'off'}`,
+  ].join(' | ');
+  if (!peerCount) {
+    rtcDiagnosticsOutput.textContent = `${header}\n\nNo active peer connections.`;
+    return;
+  }
+  rtcDiagnosticsOutput.textContent = `${header}\n\nCollecting...`;
+  const summaries = await collectPeerDiagnostics();
+  rtcDiagnosticsOutput.textContent = `${header}\n\n${summaries.join('\n\n')}`;
+}
+
+function startRtcDiagnosticsLoop() {
+  if (rtcStatsTimer) clearInterval(rtcStatsTimer);
+  refreshRtcDiagnostics().catch(() => {});
+  rtcStatsTimer = setInterval(() => {
+    refreshRtcDiagnostics().catch(() => {});
+  }, 4000);
 }
 
 function cleanupMeetingSession() {
@@ -1723,6 +1844,8 @@ function cleanupMeetingSession() {
   });
   peerConnections = {};
   peerState = {};
+  rtcStatsCache = {};
+  if (rtcStatsTimer) { clearInterval(rtcStatsTimer); rtcStatsTimer = null; }
   participantMeta = {};
   window.participantMeta = participantMeta;
 }
@@ -1737,7 +1860,7 @@ function leaveMeetingAndExit(message = TEXT_YOU_LEFT_MEETING, redirectUrl = '/')
 
 socket.on('connect', () => {
   ensureCard('local', getDisplayName('local'), true);
-  renderLayout();
+  queueRenderLayout();
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
   if ((PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream) {
     requestMedia(currentFacingMode, false).catch((err) => console.error(err));
@@ -1756,13 +1879,14 @@ socket.on('join_ok', async (data) => {
   if (currentSharerSid) {
     focusedSid = currentSharerSid;
     hiddenSidebar = true;
-    renderLayout();
+    queueRenderLayout();
   } else {
     updateShareUiState();
   }
   if (isSharingScreen) {
     await syncScreenShareState(true);
   }
+  refreshRtcDiagnostics().catch(() => {});
   if (data && data.host_present === false && IS_HOST) {
     setStatus(TEXT_HOST_RETURNED_ROOM);
   } else if (data && data.host_present === false) {
@@ -1774,6 +1898,7 @@ socket.on('participant_joined', async (data) => {
   addRemoteParticipant(data.sid, data.name);
   participantCountEl.textContent = data.participant_count;
   await callPeer(data.sid);
+  refreshRtcDiagnostics().catch(() => {});
 });
 
 socket.on('participant_left', (data) => {
@@ -1781,6 +1906,7 @@ socket.on('participant_left', (data) => {
   if (currentGridPage > 0) currentGridPage = Math.max(0, currentGridPage - 1);
   removeRemoteVideo(data.sid);
   renderMentionPicker();
+  refreshRtcDiagnostics().catch(() => {});
 });
 
 socket.on('participant_snapshot', (data) => {
@@ -1803,6 +1929,7 @@ socket.on('participant_snapshot', (data) => {
   });
   participantCountEl.textContent = String(Math.max(1, count));
   renderMentionPicker();
+  refreshRtcDiagnostics().catch(() => {});
 });
 
 socket.on('participant_updated', (data) => {
@@ -1915,7 +2042,7 @@ socket.on('room_ui_event', (data) => {
     currentSharerSid = null;
     hiddenSidebar = false;
     focusedSid = 'local';
-    renderLayout();
+    queueRenderLayout();
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
   } else if (data.type === 'screen_share_denied') {
     currentSharerSid = normalizeParticipantSid(data.activeSharerSid || currentSharerSid);
@@ -1979,28 +2106,28 @@ window.addEventListener('resize', () => {
     roomDebugLog('resize while fullscreen active; layout deferred');
     return;
   }
-  renderLayout();
+  queueRenderLayout();
 });
 
 videoPrevPageBtn?.addEventListener('click', () => {
   if (currentGridPage <= 0) return;
   currentGridPage -= 1;
-  renderLayout();
+  queueRenderLayout();
 });
 videoNextPageBtn?.addEventListener('click', () => {
   const totalCards = getRenderableCards().length;
   const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
   if (currentGridPage >= totalPages - 1) return;
   currentGridPage += 1;
-  renderLayout();
+  queueRenderLayout();
 });
 videoHomePageBtn?.addEventListener('click', () => {
   if (currentGridPage <= 0) return;
   currentGridPage = 0;
-  renderLayout();
+  queueRenderLayout();
 });
 
-document.getElementById('toggleMicBtn').onclick = async () => {
+document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic', async () => {
   let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
   if (!rawTrack) {
     rawTrack = await ensureRequestedTrack('audio');
@@ -2010,8 +2137,8 @@ document.getElementById('toggleMicBtn').onclick = async () => {
   const localTrack = localStream?.getAudioTracks?.()[0];
   if (localTrack && localTrack !== rawTrack) localTrack.enabled = rawTrack.enabled;
   setStatus(rawTrack.enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
-};
-document.getElementById('toggleCameraBtn').onclick = async () => {
+});
+document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-camera', async () => {
   let rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
   const localCard = ensureCard('local', getDisplayName('local'), true);
   if (!rawTrack) {
@@ -2026,8 +2153,8 @@ document.getElementById('toggleCameraBtn').onclick = async () => {
     await syncPeerMedia().catch(err => console.error(err));
   }
   setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
-};
-document.getElementById('shareScreenBtn').onclick = async () => {
+});
+document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-screen', async () => {
   if (!navigator.mediaDevices?.getDisplayMedia) {
     setStatus({{ ('当前设备/浏览器不支持共享屏幕' if lang == 'zh' else 'This device/browser does not support screen sharing')|tojson }}, 'warning');
     return;
@@ -2066,17 +2193,17 @@ document.getElementById('shareScreenBtn').onclick = async () => {
     currentSharerSid = 'local';
     hiddenSidebar = true;
     focusedSid = 'local';
-    renderLayout();
+    queueRenderLayout();
     await optimizePeerSenders(null, { isScreenShare: true });
     setStatus(TEXT_SCREEN_SHARE_MODE);
     broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true });
 
-    screenTrack.onended = async () => {
+    screenTrack.onended = () => runMediaTask('share-screen-ended', async () => {
       isSharingScreen = false;
       currentSharerSid = null;
       hiddenSidebar = false;
       focusedSid = 'local';
-      renderLayout(true);
+      queueRenderLayout(true);
       scheduleParticipantVideoResume();
       try {
         if (virtualBgImageDataUrl) {
@@ -2091,12 +2218,12 @@ document.getElementById('shareScreenBtn').onclick = async () => {
         scheduleParticipantVideoResume();
         setStatus(TEXT_SCREEN_SHARE_STOPPED);
       }
-    };
+    });
   } catch (err) {
     setStatus(err.message, 'error');
   }
-};
-document.getElementById('virtualBgBtn').onclick = async () => {
+});
+document.getElementById('virtualBgBtn').onclick = () => runMediaTask('virtual-background-toggle', async () => {
   if (isSharingScreen || currentSharerSid) {
     setStatus({{ ('共享屏幕期间不可使用虚拟背景' if lang == 'zh' else 'Virtual background is unavailable during screen sharing')|tojson }}, 'warning');
     return;
@@ -2111,8 +2238,8 @@ document.getElementById('virtualBgBtn').onclick = async () => {
   }
   setStatus(TEXT_VIRTUAL_BG_PICK, 'warning');
   virtualBgInput.click();
-};
-virtualBgInput.onchange = async (event) => {
+});
+virtualBgInput.onchange = (event) => runMediaTask('virtual-background-image', async () => {
   const file = event.target.files?.[0];
   if (!file) return;
   try {
@@ -2133,7 +2260,7 @@ virtualBgInput.onchange = async (event) => {
   } finally {
     event.target.value = '';
   }
-};
+});
 recordingBtn.onclick = () => toggleScreenRecording();
 document.getElementById('leaveMeetingBtn').onclick = () => {
   const otherParticipantCount = Object.keys(participantMeta).length;
@@ -2218,8 +2345,10 @@ window.addEventListener('beforeunload', () => {
 });
 
 initChatUi();
+refreshRtcStatsBtn?.addEventListener('click', () => { refreshRtcDiagnostics().catch(() => {}); });
 ensureCard('local', getDisplayName('local'), true);
-renderLayout();
+queueRenderLayout();
+startRtcDiagnosticsLoop();
 
 async function refreshTrafficPanel() {
   try {
