@@ -2329,15 +2329,6 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
     try { screenTrack.contentHint = 'detail'; } catch (_) {}
     const mixedAudioTrack = await buildScreenShareAudioTrack(screenStream);
     const screenCard = ensureCard('local', getDisplayName('local'), true);
-    let addedAudioTrack = false;
-    await Promise.allSettled(Object.values(peerConnections).map(async (pc) => {
-      const videoResult = await replaceSenderTrack(pc, 'video', screenTrack, screenStream, { isScreenShare: true });
-      const audioResult = await replaceSenderTrack(pc, 'audio', mixedAudioTrack || rawCameraStream?.getAudioTracks?.()[0] || null, mixedAudioTrack ? new MediaStream([mixedAudioTrack]) : null);
-      if (videoResult.added || audioResult.added) addedAudioTrack = true;
-    }));
-    if (addedAudioTrack) {
-      await syncPeerMedia().catch((err) => console.error(err));
-    }
     localVideo.srcObject = screenStream;
     safePlayVideo(localVideo);
     updatePlaceholder(screenCard, true);
@@ -2345,6 +2336,13 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
     currentSharerSid = 'local';
     hiddenSidebar = true;
     focusedSid = 'local';
+
+    await Promise.allSettled(Object.values(peerConnections).map(async (pc) => {
+      await replaceSenderTrack(pc, 'video', screenTrack, screenStream, { isScreenShare: true });
+      await replaceSenderTrack(pc, 'audio', mixedAudioTrack || rawCameraStream?.getAudioTracks?.()[0] || null, mixedAudioTrack ? new MediaStream([mixedAudioTrack]) : null);
+    }));
+
+    await syncPeerMedia().catch((err) => console.error(err));
     queueRenderLayout();
     await optimizePeerSenders(null, { isScreenShare: true });
     setStatus(TEXT_SCREEN_SHARE_MODE);
