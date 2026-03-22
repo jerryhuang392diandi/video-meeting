@@ -81,6 +81,7 @@ let rawCameraStream = null;
 let currentFacingMode = 'user';
 let peerConnections = {};
 let peerState = {};
+let remoteMediaStreams = {};
 let participantMeta = {};
 let focusedSid = 'local';
 let hiddenSidebar = false;
@@ -1090,7 +1091,27 @@ function ensurePeer(targetSid) {
     }
   };
 
-  pc.ontrack = (event) => addRemoteVideo(targetSid, event.streams[0]);
+  pc.ontrack = (event) => {
+    const incomingStream = event.streams?.[0] || new MediaStream(event.track ? [event.track] : []);
+    const mergedStream = remoteMediaStreams[targetSid] || new MediaStream();
+    remoteMediaStreams[targetSid] = mergedStream;
+    const incomingTracks = incomingStream.getTracks();
+    incomingTracks.forEach((track) => {
+      mergedStream.getTracks()
+        .filter((existing) => existing.kind === track.kind && existing.id !== track.id)
+        .forEach((existing) => {
+          try { mergedStream.removeTrack(existing); } catch (_) {}
+        });
+      if (!mergedStream.getTracks().some((existing) => existing.id === track.id)) {
+        mergedStream.addTrack(track);
+      }
+      track.onended = () => {
+        try { mergedStream.removeTrack(track); } catch (_) {}
+        addRemoteVideo(targetSid, mergedStream);
+      };
+    });
+    addRemoteVideo(targetSid, mergedStream);
+  };
   pc.oniceconnectionstatechange = async () => {
     if (pc.iceConnectionState === 'failed') {
       try {
@@ -1133,6 +1154,7 @@ function addRemoteVideo(sid, stream) {
 function removeRemoteVideo(sid) {
   document.getElementById('card-' + sid)?.remove();
   delete peerState[sid];
+  delete remoteMediaStreams[sid];
   delete participantMeta[sid];
   window.participantMeta = participantMeta;
   if (focusedSid === sid) focusedSid = 'local';
@@ -1926,6 +1948,7 @@ function cleanupMeetingSession() {
   });
   peerConnections = {};
   peerState = {};
+  remoteMediaStreams = {};
   rtcStatsCache = {};
   if (rtcStatsTimer) { clearInterval(rtcStatsTimer); rtcStatsTimer = null; }
   participantMeta = {};
