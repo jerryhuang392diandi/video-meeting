@@ -22,6 +22,7 @@
       <button class="ghost-btn" id="virtualBgBtn">{{ t('virtual_bg') }}</button>
       <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
       <button class="ghost-btn" id="toggleMicBtn">{{ t('mic') }}</button>
+      <button class="ghost-btn" id="toggleSpeakerBtn">{{ ('扬声器' if lang == 'zh' else 'Speaker') }}</button>
       <button class="ghost-btn" id="toggleCameraBtn">{{ t('camera') }}</button>
       <button class="ghost-btn danger" id="leaveMeetingBtn">{{ t('leave') }}</button>
       {% if is_host %}<button class="ghost-btn danger" id="hostEndMeetingBtn">{{ t('host_end_meeting') }}</button>{% endif %}
@@ -58,6 +59,17 @@
         <div><span>{{ t('remaining_traffic') }}</span><strong id="trafficQuotaRemaining">{{ traffic.remaining_traffic_text }}</strong></div>
         <div><span>{{ t('reset_cycle') }}</span><strong id="trafficQuotaReset">{{ traffic.reset_at_text }}</strong></div>
       </div>
+    </div>
+
+    <div class="mini-panel diagnostics-panel" id="rtcDiagnosticsPanel">
+      <div class="row-compact diagnostics-head">
+        <div>
+          <div class="muted">{{ ('RTC 诊断' if lang == 'zh' else 'RTC diagnostics') }}</div>
+          <div class="small-note">{{ ('用于观察延迟、码率、帧率和连接状态' if lang == 'zh' else 'Observe latency, bitrate, FPS, and connection state') }}</div>
+        </div>
+        <button class="ghost-btn diagnostics-refresh-btn" id="refreshRtcStatsBtn" type="button">{{ ('刷新' if lang == 'zh' else 'Refresh') }}</button>
+      </div>
+      <pre id="rtcDiagnosticsOutput" class="diagnostics-output">{{ ('正在收集 RTC 指标...' if lang == 'zh' else 'Collecting RTC metrics...') }}</pre>
     </div>
   </aside>
 
