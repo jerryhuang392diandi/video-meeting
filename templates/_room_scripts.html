@@ -20,6 +20,8 @@ const TEXT_MEETING_CLOSED = {{ t('meeting_closed')|tojson }};
 const TEXT_COPIED = {{ t('copied')|tojson }};
 const TEXT_MIC_ON = {{ t('mic_on')|tojson }};
 const TEXT_MIC_OFF = {{ t('mic_off')|tojson }};
+const TEXT_SPEAKER_ON = {{ ('扬声器已开启' if lang == 'zh' else 'Speaker enabled')|tojson }};
+const TEXT_SPEAKER_OFF = {{ ('扬声器已静音' if lang == 'zh' else 'Speaker muted')|tojson }};
 const TEXT_CAMERA_ON = {{ t('camera_on')|tojson }};
 const TEXT_CAMERA_OFF = {{ t('camera_off')|tojson }};
 const TEXT_SCREEN_SHARE_MODE = {{ ('共享屏幕模式已开启' if lang == 'zh' else 'Screen share mode enabled')|tojson }};
@@ -202,6 +204,7 @@ const videoHomePageBtn = document.getElementById('videoHomePageBtn');
 const videoSearchInput = document.getElementById('videoSearchInput');
 const videoPagerInfo = document.getElementById('videoPagerInfo');
 const shareScreenBtn = document.getElementById('shareScreenBtn');
+const toggleSpeakerBtn = document.getElementById('toggleSpeakerBtn');
 const virtualBgBtn = document.getElementById('virtualBgBtn');
 const rtcDiagnosticsOutput = document.getElementById('rtcDiagnosticsOutput');
 const refreshRtcStatsBtn = document.getElementById('refreshRtcStatsBtn');
@@ -314,6 +317,7 @@ const roomDebugEnabled = new URLSearchParams(window.location.search).get('debugR
 let simulatedFullscreenCardSid = null;
 let pendingLayoutAfterFullscreen = false;
 let screenShareStream = null;
+let speakerEnabled = true;
 let screenShareAudioContext = null;
 let screenShareAudioDestination = null;
 let screenShareMixedAudioTrack = null;
@@ -481,6 +485,8 @@ function ensureCard(sid, displayName = null, isLocal = false) {
   if (sid !== 'local') {
     videoEl.autoplay = true;
     videoEl.playsInline = true;
+    videoEl.muted = !speakerEnabled;
+    videoEl.defaultMuted = !speakerEnabled;
   }
   videoEl.setAttribute('autoplay', 'autoplay');
   videoEl.setAttribute('playsinline', 'playsinline');
@@ -519,6 +525,22 @@ function ensureCard(sid, displayName = null, isLocal = false) {
 function updatePlaceholder(card, hasVideo) {
   if (!card) return;
   card.classList.toggle('has-video', !!hasVideo);
+}
+
+function applySpeakerState() {
+  document.querySelectorAll('.video-card video').forEach((videoEl) => {
+    if (videoEl === localVideo) {
+      videoEl.muted = true;
+      videoEl.defaultMuted = true;
+      return;
+    }
+    videoEl.muted = !speakerEnabled;
+    videoEl.defaultMuted = !speakerEnabled;
+    if (speakerEnabled) safePlayVideo(videoEl, { allowMutedFallback: false }).catch(() => {});
+  });
+  if (toggleSpeakerBtn) toggleSpeakerBtn.textContent = speakerEnabled
+    ? {{ ('扬声器开启' if lang == 'zh' else 'Speaker on')|tojson }}
+    : {{ ('扬声器静音' if lang == 'zh' else 'Speaker muted')|tojson }};
 }
 
 function syncScreenShareCardState() {
@@ -1102,6 +1124,7 @@ function addRemoteVideo(sid, stream) {
   safePlayVideo(videoEl).catch(() => {});
   setTimeout(() => safePlayVideo(videoEl).catch(() => {}), 120);
   updatePlaceholder(card, true);
+  applySpeakerState();
   queueRenderLayout();
 }
 
@@ -1785,9 +1808,38 @@ function getCurrentScreenTrack() {
   return localVideo?.srcObject?.getVideoTracks?.()[0] || null;
 }
 
+async function stopLocalScreenShareSession({ broadcast = true, restoreMedia = true, statusMessage = TEXT_SCREEN_SHARE_STOPPED } = {}) {
+  const hadScreenShare = !!isSharingScreen || !!screenShareStream || currentSharerSid === 'local';
+  isSharingScreen = false;
+  currentSharerSid = null;
+  hiddenSidebar = false;
+  focusedSid = 'local';
+  queueRenderLayout(true);
+  scheduleParticipantVideoResume();
+  cleanupScreenShareAudioMix({ stopContext: true });
+  try { stopStreamTracks(screenShareStream); } catch (_) {}
+  screenShareStream = null;
+  if (restoreMedia) {
+    if (virtualBgImageDataUrl) {
+      await activateVirtualBackground();
+    } else if (rawCameraStream) {
+      fallbackToRawCamera();
+    } else {
+      await requestMedia(currentFacingMode, true, ['video', 'audio']);
+    }
+  }
+  await syncPeerMedia().catch((err) => console.error(err));
+  if (hadScreenShare && broadcast) broadcastUiEvent({ type: 'screen_share_stopped' });
+  if (hadScreenShare && statusMessage) setStatus(statusMessage);
+  return hadScreenShare;
+}
+
 async function syncScreenShareState(forceBroadcast = false) {
   const screenTrack = isSharingScreen ? getCurrentScreenTrack() : null;
-  if (!screenTrack || screenTrack.readyState === 'ended') return false;
+  if (!screenTrack || screenTrack.readyState === 'ended') {
+    await stopLocalScreenShareSession({ broadcast: forceBroadcast, restoreMedia: true, statusMessage: null });
+    return false;
+  }
   currentSharerSid = 'local';
   focusedSid = 'local';
   hiddenSidebar = true;
@@ -2117,6 +2169,11 @@ videoHomePageBtn?.addEventListener('click', () => {
   queueRenderLayout();
 });
 
+toggleSpeakerBtn && (toggleSpeakerBtn.onclick = () => runMediaTask('toggle-speaker', async () => {
+  speakerEnabled = !speakerEnabled;
+  applySpeakerState();
+  setStatus(speakerEnabled ? TEXT_SPEAKER_ON : TEXT_SPEAKER_OFF);
+}));
 document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic', async () => {
   let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || null;
   if (!rawTrack) {
@@ -2195,28 +2252,7 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
     broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true });
 
     screenTrack.onended = () => runMediaTask('share-screen-ended', async () => {
-      isSharingScreen = false;
-      currentSharerSid = null;
-      hiddenSidebar = false;
-      focusedSid = 'local';
-      queueRenderLayout(true);
-      scheduleParticipantVideoResume();
-      try {
-        cleanupScreenShareAudioMix({ stopContext: true });
-        try { stopStreamTracks(screenShareStream); } catch (_) {}
-        screenShareStream = null;
-        if (virtualBgImageDataUrl) {
-          await activateVirtualBackground();
-        } else if (rawCameraStream) {
-          fallbackToRawCamera();
-        } else {
-          await requestMedia(currentFacingMode, true, ['video', 'audio']);
-        }
-      } finally {
-        broadcastUiEvent({ type: 'screen_share_stopped' });
-        scheduleParticipantVideoResume();
-        setStatus(TEXT_SCREEN_SHARE_STOPPED);
-      }
+      await stopLocalScreenShareSession({ broadcast: true, restoreMedia: true, statusMessage: TEXT_SCREEN_SHARE_STOPPED });
     });
   } catch (err) {
     setStatus(err.message, 'error');
@@ -2344,6 +2380,7 @@ window.addEventListener('beforeunload', () => {
 });
 
 initChatUi();
+applySpeakerState();
 refreshRtcStatsBtn?.addEventListener('click', () => { refreshRtcDiagnostics().catch(() => {}); });
 ensureCard('local', getDisplayName('local'), true);
 queueRenderLayout();

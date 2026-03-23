@@ -1,10 +1,24 @@
 (function (global) {
+  function getSenderByKind(pc, kind) {
+    const senders = pc?.getSenders?.() || [];
+    const direct = senders.find((sender) => sender.track?.kind === kind);
+    if (direct) return direct;
+    const transceivers = pc?.getTransceivers?.() || [];
+    const fromTransceiver = transceivers.find((transceiver) => {
+      if (transceiver?.stopped) return false;
+      if (transceiver?.mid == null && !transceiver?.sender) return false;
+      const transceiverKind = transceiver.sender?.track?.kind || transceiver.receiver?.track?.kind || null;
+      return transceiverKind === kind;
+    });
+    return fromTransceiver?.sender || null;
+  }
+
   function getVideoSender(pc) {
-    return pc?.getSenders?.().find((sender) => sender.track?.kind === 'video') || null;
+    return getSenderByKind(pc, 'video');
   }
 
   function getAudioSender(pc) {
-    return pc?.getSenders?.().find((sender) => sender.track?.kind === 'audio') || null;
+    return getSenderByKind(pc, 'audio');
   }
 
   function getVideoSenderProfile({ isScreenShare = false, peerCount = 1, profiles = {} } = {}) {
