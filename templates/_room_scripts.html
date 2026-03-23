@@ -236,6 +236,7 @@ function isMobileDevice() {
 }
 
 let nativeFullscreenVideoEl = null;
+let speakerEnabled = !isMobileDevice();
 
 function updateVideoPlaybackPrompt(videoEl, blocked = false) {
   const card = videoEl?.closest?.('.video-card');
@@ -551,17 +552,12 @@ function applySpeakerState({ userGesture = false } = {}) {
       videoEl.defaultMuted = true;
       return;
     }
-const shouldMute = !speakerEnabled || (isMobileDevice() && !userGesture);
-videoEl.muted = shouldMute;
-videoEl.defaultMuted = shouldMute;
-
-if (speakerEnabled) {
-  if (userGesture) {
-    safePlayVideo(videoEl, { allowMutedFallback: false }).catch(() => {});
-  } else {
-    queueVideoPlayback(videoEl, [0]);
-  }
-}
+    const shouldMute = !speakerEnabled || (isMobileDevice() && !userGesture);
+    videoEl.muted = shouldMute;
+    videoEl.defaultMuted = shouldMute;
+    if (speakerEnabled && userGesture) {
+      safePlayVideo(videoEl, { allowMutedFallback: false }).catch(() => {});
+    }
   });
   if (toggleSpeakerBtn) toggleSpeakerBtn.textContent = speakerEnabled
     ? {{ ('扬声器开启' if lang == 'zh' else 'Speaker on')|tojson }}
@@ -1006,8 +1002,12 @@ async function requestMedia(forceFacingMode = null, manualRequest = false, prefe
       rawCameraStream.getAudioTracks().forEach(track => { track.enabled = !!PREF_AUTO_ENABLE_MICROPHONE; });
     }
 
-    useLocalOutputStream(rawCameraStream);
-    await optimizePeerSenders(null, { isScreenShare: false });
+    if (isSharingScreen) {
+      localStream = rawCameraStream;
+      await syncPeerMedia().catch(err => console.error(err));
+    } else {
+      useLocalOutputStream(rawCameraStream);
+    }
 
     if (virtualBgImageDataUrl && !isSharingScreen && !currentSharerSid) {
       try {
@@ -1034,76 +1034,39 @@ async function ensureRequestedTrack(kind) {
   return kind === 'video' ? stream?.getVideoTracks?.()[0] : stream?.getAudioTracks?.()[0];
 }
 
-function ensurePeerState(targetSid) {
-  if (!peerState[targetSid]) {
-    peerState[targetSid] = { makingOffer: false, ignoreOffer: false, pendingCandidates: [], disconnectTimer: null };
-  }
-  return peerState[targetSid];
+function getActiveOutboundAudioTracks() {
+  const screenAudioTracks = isSharingScreen ? (localVideo?.srcObject?.getAudioTracks?.() || []) : [];
+  if (screenAudioTracks.length) return screenAudioTracks;
+  return localStream?.getAudioTracks?.() || [];
 }
 
-async function flushPendingCandidates(targetSid, pc) {
-  const state = ensurePeerState(targetSid);
-  if (!pc?.remoteDescription) return;
-  const pending = state.pendingCandidates.splice(0, state.pendingCandidates.length);
-  for (const candidate of pending) {
-    try {
-      await pc.addIceCandidate(candidate);
-    } catch (err) {
-      console.error(err);
-    }
-  }
-}
-
-function closePeer(targetSid, { preserveParticipant = false } = {}) {
-  const pc = peerConnections[targetSid];
-  if (pc) {
-    try { pc.onicecandidate = null; } catch (_) {}
-    try { pc.ontrack = null; } catch (_) {}
-    try { pc.onconnectionstatechange = null; } catch (_) {}
-    try { pc.oniceconnectionstatechange = null; } catch (_) {}
-    try { pc.close(); } catch (_) {}
-  }
-  const state = peerState[targetSid];
-  if (state?.disconnectTimer) clearTimeout(state.disconnectTimer);
-  delete peerConnections[targetSid];
-  delete peerState[targetSid];
-  rtcDiagnostics.pruneSid(targetSid);
-  if (!preserveParticipant) removeRemoteVideo(targetSid);
-}
-
-async function performSyncPeerMedia(targetSid = null) {
+async function syncPeerMedia(targetSid = null) {
   const entries = targetSid
     ? (peerConnections[targetSid] ? [[targetSid, peerConnections[targetSid]]] : [])
     : Object.entries(peerConnections);
   const tracks = [];
+  const activeSourceStream = (isSharingScreen ? localVideo?.srcObject : null) || localStream;
   const activeVideoTrack = (isSharingScreen ? getCurrentScreenTrack() : null) || localStream?.getVideoTracks?.()[0] || null;
   if (activeVideoTrack) tracks.push(activeVideoTrack);
-  getOutboundAudioTracks().forEach((track) => tracks.push(track));
+  getActiveOutboundAudioTracks().forEach((track) => tracks.push(track));
   const renegotiateTasks = [];
 
   entries.forEach(([sid, pc]) => {
     if (!pc) return;
-    ensurePeerState(sid);
-    renegotiateTasks.push((async () => {
-      let addedTrack = false;
-      const results = await Promise.allSettled(tracks.map((track) => replaceSenderTrack(pc, track.kind, track, localStream, getSenderOptions(!!isSharingScreen))));
-      results.forEach((result) => {
-        if (result.status === 'fulfilled' && result.value?.added) addedTrack = true;
-        if (result.status === 'rejected') console.error(result.reason);
-      });
-      if (!addedTrack || pc.signalingState !== 'stable') return;
-      const state = ensurePeerState(sid);
-      if (state.makingOffer || pc.signalingState !== 'stable') return;
-      try {
-        state.makingOffer = true;
-        const offer = await pc.createOffer();
-        if (pc.signalingState !== 'stable') return;
-        await pc.setLocalDescription(offer);
-        socket.emit('signal', { target: sid, from: socket.id, description: pc.localDescription, senderName: USER_NAME });
-      } catch (err) {
-        console.error(err);
-      } finally {
-        state.makingOffer = false;
+    const senders = pc.getSenders();
+    let addedTrack = false;
+
+    tracks.forEach((track) => {
+      const sender = senders.find((item) => item.track && item.track.kind === track.kind);
+      if (sender) {
+        sender.replaceTrack(track).catch((err) => console.error(err));
+      } else {
+        try {
+          pc.addTrack(track, activeSourceStream || localStream);
+          addedTrack = true;
+        } catch (err) {
+          console.error(err);
+        }
       }
     })());
   });
@@ -1145,10 +1108,8 @@ function ensurePeer(targetSid) {
   };
 
   const outboundVideoTrack = (isSharingScreen ? getCurrentScreenTrack() : null) || localStream?.getVideoTracks?.()[0] || null;
-  if (outboundVideoTrack) {
-    replaceSenderTrack(pc, 'video', outboundVideoTrack, localVideo?.srcObject || localStream, getSenderOptions(!!isSharingScreen)).catch(() => {});
-  }
-  getOutboundAudioTracks().forEach((track) => replaceSenderTrack(pc, 'audio', track, localStream || new MediaStream([track]), getSenderOptions(false)).catch(() => {}));
+  if (outboundVideoTrack) pc.addTrack(outboundVideoTrack, localVideo?.srcObject || localStream);
+  getActiveOutboundAudioTracks().forEach(track => pc.addTrack(track, localVideo?.srcObject || localStream));
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
@@ -1210,7 +1171,7 @@ function addRemoteVideo(sid, stream) {
   queueVideoPlayback(videoEl, [0, 120, 260]);
   updatePlaceholder(card, true);
   applySpeakerState();
-  queueRenderLayout();
+  renderLayout();
 }
 
 function removeRemoteVideo(sid) {
@@ -2021,7 +1982,6 @@ socket.on('join_ok', async (data) => {
     await syncScreenShareState(true);
   }
   await Promise.allSettled(existingParticipants.filter((p) => p?.sid).map((p) => callPeer(p.sid)));
-  refreshRtcDiagnostics().catch(() => {});
   if (data && data.host_present === false && IS_HOST) {
     setStatus(TEXT_HOST_RETURNED_ROOM);
   } else if (data && data.host_present === false) {
@@ -2262,13 +2222,13 @@ videoHomePageBtn?.addEventListener('click', () => {
   queueRenderLayout();
 });
 
-toggleSpeakerBtn && (toggleSpeakerBtn.onclick = () => runMediaTask('toggle-speaker', async () => {
+toggleSpeakerBtn && (toggleSpeakerBtn.onclick = async () => {
   speakerEnabled = !speakerEnabled;
   applySpeakerState({ userGesture: speakerEnabled });
   setStatus(speakerEnabled ? TEXT_SPEAKER_ON : TEXT_SPEAKER_OFF);
-}));
-document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic', async () => {
-  let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || null;
+});
+document.getElementById('toggleMicBtn').onclick = async () => {
+  let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
   if (!rawTrack) {
     rawTrack = await ensureRequestedTrack('audio');
     if (!rawTrack) return;
@@ -2478,7 +2438,6 @@ window.addEventListener('beforeunload', () => {
 
 initChatUi();
 applySpeakerState({ userGesture: false });
-refreshRtcStatsBtn?.addEventListener('click', () => { refreshRtcDiagnostics().catch(() => {}); });
 ensureCard('local', getDisplayName('local'), true);
 queueRenderLayout();
 startRtcDiagnosticsLoop();
