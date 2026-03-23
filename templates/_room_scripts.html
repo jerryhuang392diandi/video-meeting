@@ -331,7 +331,7 @@ const roomDebugEnabled = new URLSearchParams(window.location.search).get('debugR
 let simulatedFullscreenCardSid = null;
 let pendingLayoutAfterFullscreen = false;
 let screenShareStream = null;
-let speakerEnabled = true;
+let speakerEnabled = !isMobileDevice();
 let screenShareAudioContext = null;
 let screenShareAudioDestination = null;
 let screenShareMixedAudioTrack = null;
@@ -544,16 +544,24 @@ function updatePlaceholder(card, hasVideo) {
   card.classList.toggle('has-video', !!hasVideo);
 }
 
-function applySpeakerState() {
+function applySpeakerState({ userGesture = false } = {}) {
   document.querySelectorAll('.video-card video').forEach((videoEl) => {
     if (videoEl === localVideo) {
       videoEl.muted = true;
       videoEl.defaultMuted = true;
       return;
     }
-    videoEl.muted = !speakerEnabled;
-    videoEl.defaultMuted = !speakerEnabled;
-    if (speakerEnabled) queueVideoPlayback(videoEl, [0]);
+const shouldMute = !speakerEnabled || (isMobileDevice() && !userGesture);
+videoEl.muted = shouldMute;
+videoEl.defaultMuted = shouldMute;
+
+if (speakerEnabled) {
+  if (userGesture) {
+    safePlayVideo(videoEl, { allowMutedFallback: false }).catch(() => {});
+  } else {
+    queueVideoPlayback(videoEl, [0]);
+  }
+}
   });
   if (toggleSpeakerBtn) toggleSpeakerBtn.textContent = speakerEnabled
     ? {{ ('扬声器开启' if lang == 'zh' else 'Speaker on')|tojson }}
@@ -2234,7 +2242,7 @@ videoHomePageBtn?.addEventListener('click', () => {
 
 toggleSpeakerBtn && (toggleSpeakerBtn.onclick = () => runMediaTask('toggle-speaker', async () => {
   speakerEnabled = !speakerEnabled;
-  applySpeakerState();
+  applySpeakerState({ userGesture: speakerEnabled });
   setStatus(speakerEnabled ? TEXT_SPEAKER_ON : TEXT_SPEAKER_OFF);
 }));
 document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic', async () => {
@@ -2262,7 +2270,7 @@ document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-
   const outputVideoTrack = localStream?.getVideoTracks?.()[0];
   if (outputVideoTrack && outputVideoTrack !== rawTrack) outputVideoTrack.enabled = rawTrack.enabled;
   updatePlaceholder(localCard, rawTrack.enabled);
-  if (rawTrack.enabled) {
+  if (rawTrack.enabled && !isSharingScreen) {
     await scheduleSyncPeerMedia().catch(err => console.error(err));
   }
   setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
@@ -2443,7 +2451,7 @@ window.addEventListener('beforeunload', () => {
 });
 
 initChatUi();
-applySpeakerState();
+applySpeakerState({ userGesture: false });
 refreshRtcStatsBtn?.addEventListener('click', () => { refreshRtcDiagnostics().catch(() => {}); });
 ensureCard('local', getDisplayName('local'), true);
 queueRenderLayout();
