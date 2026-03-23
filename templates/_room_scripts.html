@@ -17,6 +17,8 @@ const TEXT_MEETING_CLOSED = {{ t('meeting_closed')|tojson }};
 const TEXT_COPIED = {{ t('copied')|tojson }};
 const TEXT_MIC_ON = {{ t('mic_on')|tojson }};
 const TEXT_MIC_OFF = {{ t('mic_off')|tojson }};
+const TEXT_SPEAKER_ON = {{ ('扬声器已开启' if lang == 'zh' else 'Speaker enabled')|tojson }};
+const TEXT_SPEAKER_OFF = {{ ('扬声器已静音' if lang == 'zh' else 'Speaker muted')|tojson }};
 const TEXT_CAMERA_ON = {{ t('camera_on')|tojson }};
 const TEXT_CAMERA_OFF = {{ t('camera_off')|tojson }};
 const TEXT_SCREEN_SHARE_MODE = {{ ('共享屏幕模式已开启' if lang == 'zh' else 'Screen share mode enabled')|tojson }};
@@ -175,6 +177,7 @@ const videoHomePageBtn = document.getElementById('videoHomePageBtn');
 const videoSearchInput = document.getElementById('videoSearchInput');
 const videoPagerInfo = document.getElementById('videoPagerInfo');
 const shareScreenBtn = document.getElementById('shareScreenBtn');
+const toggleSpeakerBtn = document.getElementById('toggleSpeakerBtn');
 const virtualBgBtn = document.getElementById('virtualBgBtn');
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const TEXT_IOS_PLAY_SCREEN = {{ ('苹果设备可能需要点一下画面才能恢复共享屏幕显示' if lang == 'zh' else 'On older Apple devices, tap the video once if screen sharing does not appear')|tojson }};
@@ -204,6 +207,7 @@ function isMobileDevice() {
 }
 
 let nativeFullscreenVideoEl = null;
+let speakerEnabled = !isMobileDevice();
 
 function updateVideoPlaybackPrompt(videoEl, blocked = false) {
   const card = videoEl?.closest?.('.video-card');
@@ -436,6 +440,8 @@ function ensureCard(sid, displayName = null, isLocal = false) {
   if (sid !== 'local') {
     videoEl.autoplay = true;
     videoEl.playsInline = true;
+    videoEl.muted = !speakerEnabled;
+    videoEl.defaultMuted = !speakerEnabled;
   }
   videoEl.setAttribute('autoplay', 'autoplay');
   videoEl.setAttribute('playsinline', 'playsinline');
@@ -474,6 +480,25 @@ function ensureCard(sid, displayName = null, isLocal = false) {
 function updatePlaceholder(card, hasVideo) {
   if (!card) return;
   card.classList.toggle('has-video', !!hasVideo);
+}
+
+function applySpeakerState({ userGesture = false } = {}) {
+  document.querySelectorAll('.video-card video').forEach((videoEl) => {
+    if (videoEl === localVideo) {
+      videoEl.muted = true;
+      videoEl.defaultMuted = true;
+      return;
+    }
+    const shouldMute = !speakerEnabled || (isMobileDevice() && !userGesture);
+    videoEl.muted = shouldMute;
+    videoEl.defaultMuted = shouldMute;
+    if (speakerEnabled && userGesture) {
+      safePlayVideo(videoEl, { allowMutedFallback: false }).catch(() => {});
+    }
+  });
+  if (toggleSpeakerBtn) toggleSpeakerBtn.textContent = speakerEnabled
+    ? {{ ('扬声器开启' if lang == 'zh' else 'Speaker on')|tojson }}
+    : {{ ('扬声器静音' if lang == 'zh' else 'Speaker muted')|tojson }};
 }
 
 function syncScreenShareCardState() {
@@ -807,7 +832,12 @@ async function requestMedia(forceFacingMode = null, manualRequest = false, prefe
       rawCameraStream.getAudioTracks().forEach(track => { track.enabled = !!PREF_AUTO_ENABLE_MICROPHONE; });
     }
 
-    useLocalOutputStream(rawCameraStream);
+    if (isSharingScreen) {
+      localStream = rawCameraStream;
+      await syncPeerMedia().catch(err => console.error(err));
+    } else {
+      useLocalOutputStream(rawCameraStream);
+    }
 
     if (virtualBgImageDataUrl && !isSharingScreen && !currentSharerSid) {
       try {
@@ -834,14 +864,21 @@ async function ensureRequestedTrack(kind) {
   return kind === 'video' ? stream?.getVideoTracks?.()[0] : stream?.getAudioTracks?.()[0];
 }
 
+function getActiveOutboundAudioTracks() {
+  const screenAudioTracks = isSharingScreen ? (localVideo?.srcObject?.getAudioTracks?.() || []) : [];
+  if (screenAudioTracks.length) return screenAudioTracks;
+  return localStream?.getAudioTracks?.() || [];
+}
+
 async function syncPeerMedia(targetSid = null) {
   const entries = targetSid
     ? (peerConnections[targetSid] ? [[targetSid, peerConnections[targetSid]]] : [])
     : Object.entries(peerConnections);
   const tracks = [];
+  const activeSourceStream = (isSharingScreen ? localVideo?.srcObject : null) || localStream;
   const activeVideoTrack = (isSharingScreen ? getCurrentScreenTrack() : null) || localStream?.getVideoTracks?.()[0] || null;
   if (activeVideoTrack) tracks.push(activeVideoTrack);
-  localStream?.getAudioTracks?.().forEach((track) => tracks.push(track));
+  getActiveOutboundAudioTracks().forEach((track) => tracks.push(track));
   const renegotiateTasks = [];
 
   entries.forEach(([sid, pc]) => {
@@ -855,7 +892,7 @@ async function syncPeerMedia(targetSid = null) {
         sender.replaceTrack(track).catch((err) => console.error(err));
       } else {
         try {
-          pc.addTrack(track, localStream);
+          pc.addTrack(track, activeSourceStream || localStream);
           addedTrack = true;
         } catch (err) {
           console.error(err);
@@ -886,7 +923,7 @@ function ensurePeer(targetSid) {
 
   const outboundVideoTrack = (isSharingScreen ? getCurrentScreenTrack() : null) || localStream?.getVideoTracks?.()[0] || null;
   if (outboundVideoTrack) pc.addTrack(outboundVideoTrack, localVideo?.srcObject || localStream);
-  localStream?.getAudioTracks?.().forEach(track => pc.addTrack(track, localStream));
+  getActiveOutboundAudioTracks().forEach(track => pc.addTrack(track, localVideo?.srcObject || localStream));
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
@@ -921,6 +958,7 @@ function addRemoteVideo(sid, stream) {
   safePlayVideo(videoEl).catch(() => {});
   setTimeout(() => safePlayVideo(videoEl).catch(() => {}), 120);
   updatePlaceholder(card, true);
+  applySpeakerState();
   renderLayout();
 }
 
@@ -1641,7 +1679,8 @@ socket.on('connect', async () => {
 socket.on('join_ok', async (data) => {
   participantCountEl.textContent = data.participant_count;
   chatMessages.innerHTML = '';
-  for (const p of data.participants) addRemoteParticipant(p.sid, p.name);
+  const existingParticipants = Array.isArray(data?.participants) ? data.participants : [];
+  for (const p of existingParticipants) addRemoteParticipant(p.sid, p.name);
   (data.chat_history || []).forEach(item => appendChatMessage(item));
   focusParticipant('local');
   danmakuEnabled = !!data.danmaku_enabled;
@@ -1657,6 +1696,7 @@ socket.on('join_ok', async (data) => {
   if (isSharingScreen) {
     await syncScreenShareState(true);
   }
+  await Promise.allSettled(existingParticipants.filter((p) => p?.sid).map((p) => callPeer(p.sid)));
   if (data && data.host_present === false && IS_HOST) {
     setStatus(TEXT_HOST_RETURNED_ROOM);
   } else if (data && data.host_present === false) {
@@ -1876,6 +1916,11 @@ videoHomePageBtn?.addEventListener('click', () => {
   renderLayout();
 });
 
+toggleSpeakerBtn && (toggleSpeakerBtn.onclick = async () => {
+  speakerEnabled = !speakerEnabled;
+  applySpeakerState({ userGesture: speakerEnabled });
+  setStatus(speakerEnabled ? TEXT_SPEAKER_ON : TEXT_SPEAKER_OFF);
+});
 document.getElementById('toggleMicBtn').onclick = async () => {
   let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || localStream?.getAudioTracks?.()[0];
   if (!rawTrack) {
@@ -2093,6 +2138,7 @@ window.addEventListener('beforeunload', () => {
 });
 
 initChatUi();
+applySpeakerState({ userGesture: false });
 ensureCard('local', getDisplayName('local'), true);
 renderLayout();
 
