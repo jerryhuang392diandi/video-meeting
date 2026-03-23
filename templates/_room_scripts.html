@@ -278,11 +278,25 @@ async function safePlayVideo(videoEl, { allowMutedFallback = true } = {}) {
   }
 }
 
+function queueVideoPlayback(videoEl, delays = [0]) {
+  if (!videoEl) return;
+  const timers = videoPlaybackRetryTimers.get(videoEl) || [];
+  timers.forEach((timer) => clearTimeout(timer));
+  const nextTimers = [];
+  delays.forEach((delay) => {
+    const timer = setTimeout(() => {
+      safePlayVideo(videoEl).catch(() => {});
+    }, delay);
+    nextTimers.push(timer);
+  });
+  videoPlaybackRetryTimers.set(videoEl, nextTimers);
+}
+
 function bindVideoElementLifecycle(videoEl) {
   if (!videoEl || videoEl.dataset.lifecycleBound === '1') return;
   videoEl.dataset.lifecycleBound = '1';
-  videoEl.addEventListener('loadedmetadata', () => { safePlayVideo(videoEl).catch(() => {}); });
-  videoEl.addEventListener('canplay', () => { safePlayVideo(videoEl).catch(() => {}); });
+  videoEl.addEventListener('loadedmetadata', () => { queueVideoPlayback(videoEl, [0, 120]); });
+  videoEl.addEventListener('canplay', () => { queueVideoPlayback(videoEl, [0, 120]); });
   videoEl.addEventListener('webkitbeginfullscreen', () => {
     nativeFullscreenVideoEl = videoEl;
     roomDebugLog('webkitbeginfullscreen', { id: videoEl.closest('.video-card')?.dataset?.sid || null });
@@ -323,6 +337,7 @@ let screenShareAudioDestination = null;
 let screenShareMixedAudioTrack = null;
 let syncPeerMediaPromise = null;
 let syncPeerMediaQueuedTargetSid = undefined;
+const videoPlaybackRetryTimers = new WeakMap();
 
 function roomDebugLog(...args) {
   if (!roomDebugEnabled) return;
@@ -538,7 +553,7 @@ function applySpeakerState() {
     }
     videoEl.muted = !speakerEnabled;
     videoEl.defaultMuted = !speakerEnabled;
-    if (speakerEnabled) safePlayVideo(videoEl, { allowMutedFallback: false }).catch(() => {});
+    if (speakerEnabled) queueVideoPlayback(videoEl, [0]);
   });
   if (toggleSpeakerBtn) toggleSpeakerBtn.textContent = speakerEnabled
     ? {{ ('扬声器开启' if lang == 'zh' else 'Speaker on')|tojson }}
@@ -558,15 +573,14 @@ function resumeParticipantVideos(options = {}) {
   const { includeDocked = false } = options;
   const selector = includeDocked ? '.video-card video' : '.video-card:not(.is-docked) video';
   document.querySelectorAll(selector).forEach((videoEl) => {
-    safePlayVideo(videoEl).catch(() => {});
+    queueVideoPlayback(videoEl, [0]);
   });
 }
 
 function scheduleParticipantVideoResume() {
   resumeParticipantVideos();
   requestAnimationFrame(() => resumeParticipantVideos());
-  setTimeout(() => resumeParticipantVideos(), 120);
-  setTimeout(() => resumeParticipantVideos(), 480);
+  setTimeout(() => resumeParticipantVideos(), 220);
 }
 
 function clearDockedCardState() {
@@ -846,7 +860,7 @@ async function refreshScreenShareAudioSenders() {
 function useLocalOutputStream(stream) {
   localStream = stream;
   if (localVideo.srcObject !== stream) localVideo.srcObject = stream;
-  safePlayVideo(localVideo);
+  queueVideoPlayback(localVideo, [0, 120]);
   const localCard = ensureCard('local', getDisplayName('local'), true);
   updatePlaceholder(localCard, !!stream?.getVideoTracks?.()[0]?.enabled);
   scheduleSyncPeerMedia().catch(err => console.error(err));
@@ -959,7 +973,7 @@ async function requestMedia(forceFacingMode = null, manualRequest = false, prefe
 
     disableVirtualBackgroundState({ stopCanvas: true });
     rawPreviewVideo.srcObject = rawCameraStream;
-    await safePlayVideo(rawPreviewVideo);
+    queueVideoPlayback(rawPreviewVideo, [0, 120]);
 
     if (!manualRequest) {
       rawCameraStream.getVideoTracks().forEach(track => { track.enabled = !!PREF_AUTO_ENABLE_CAMERA; });
@@ -1167,8 +1181,7 @@ function addRemoteVideo(sid, stream) {
   const card = ensureCard(sid, getDisplayName(sid), false);
   const videoEl = card.querySelector('video');
   if (videoEl.srcObject !== stream) videoEl.srcObject = stream;
-  safePlayVideo(videoEl).catch(() => {});
-  setTimeout(() => safePlayVideo(videoEl).catch(() => {}), 120);
+  queueVideoPlayback(videoEl, [0, 120, 260]);
   updatePlaceholder(card, true);
   applySpeakerState();
   queueRenderLayout();
@@ -1951,7 +1964,9 @@ socket.on('connect', () => {
   queueRenderLayout();
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
   if ((PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream) {
-    requestMedia(currentFacingMode, false).catch((err) => console.error(err));
+    runMediaTask('initial-request-media', async () => {
+      await requestMedia(currentFacingMode, false);
+    }).catch((err) => console.error(err));
   }
 });
 
@@ -2281,7 +2296,7 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
     const mixedAudioTrack = await buildScreenShareAudioTrack(screenStream);
     const screenCard = ensureCard('local', getDisplayName('local'), true);
     localVideo.srcObject = screenStream;
-    safePlayVideo(localVideo);
+    queueVideoPlayback(localVideo, [0, 120]);
     updatePlaceholder(screenCard, true);
     isSharingScreen = true;
     currentSharerSid = 'local';
