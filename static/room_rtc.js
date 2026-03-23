@@ -1,0 +1,110 @@
+(function (global) {
+  function getSenderByKind(pc, kind) {
+    const senders = pc?.getSenders?.() || [];
+    const direct = senders.find((sender) => sender.track?.kind === kind);
+    if (direct) return direct;
+    const transceivers = pc?.getTransceivers?.() || [];
+    const fromTransceiver = transceivers.find((transceiver) => {
+      if (transceiver?.stopped) return false;
+      if (transceiver?.mid == null && !transceiver?.sender) return false;
+      const transceiverKind = transceiver.sender?.track?.kind || transceiver.receiver?.track?.kind || null;
+      return transceiverKind === kind;
+    });
+    return fromTransceiver?.sender || null;
+  }
+
+  function getVideoSender(pc) {
+    return getSenderByKind(pc, 'video');
+  }
+
+  function getAudioSender(pc) {
+    return getSenderByKind(pc, 'audio');
+  }
+
+  function getVideoSenderProfile({ isScreenShare = false, peerCount = 1, profiles = {} } = {}) {
+    const shareProfiles = profiles.screenShare || {};
+    const cameraProfiles = profiles.camera || {};
+    if (isScreenShare) {
+      if (peerCount <= 2) return shareProfiles.small || shareProfiles.medium || shareProfiles.large || {};
+      if (peerCount <= 4) return shareProfiles.medium || shareProfiles.small || shareProfiles.large || {};
+      return shareProfiles.large || shareProfiles.medium || shareProfiles.small || {};
+    }
+    if (peerCount <= 2) return cameraProfiles.small || cameraProfiles.medium || cameraProfiles.large || {};
+    if (peerCount <= 4) return cameraProfiles.medium || cameraProfiles.small || cameraProfiles.large || {};
+    return cameraProfiles.large || cameraProfiles.medium || cameraProfiles.small || {};
+  }
+
+  function applyTrackContentHint(track, { isScreenShare = false } = {}) {
+    if (!track) return;
+    try {
+      track.contentHint = isScreenShare ? 'detail' : 'motion';
+    } catch (_) {}
+  }
+
+  async function applySenderOptimization(sender, { isScreenShare = false, peerCount = 1, profiles = {} } = {}) {
+    if (!sender?.track || typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') return;
+    try {
+      const params = sender.getParameters() || {};
+      const encodings = Array.isArray(params.encodings) && params.encodings.length ? params.encodings : [{}];
+      const profile = getVideoSenderProfile({ isScreenShare, peerCount, profiles });
+      applyTrackContentHint(sender.track, { isScreenShare });
+      params.degradationPreference = profile.degradationPreference || (isScreenShare ? 'maintain-resolution' : 'balanced');
+      params.encodings = encodings.map((encoding) => ({
+        ...encoding,
+        maxBitrate: profile.maxBitrate || encoding.maxBitrate,
+        maxFramerate: profile.maxFramerate || encoding.maxFramerate,
+        priority: profile.priority || encoding.priority,
+        networkPriority: profile.networkPriority || encoding.networkPriority,
+      }));
+      await sender.setParameters(params);
+    } catch (err) {
+      throw err;
+    }
+  }
+
+  async function replaceSenderTrack(pc, kind, track, stream = null, options = {}) {
+    const sender = kind === 'video' ? getVideoSender(pc) : getAudioSender(pc);
+    if (sender) {
+      await sender.replaceTrack(track || null);
+      if (kind === 'video' && track) await applySenderOptimization(sender, options);
+      return { sender, added: false };
+    }
+    if (!track) return { sender: null, added: false };
+    const nextStream = stream || new MediaStream([track]);
+    const nextSender = pc.addTrack(track, nextStream);
+    if (kind === 'video') await applySenderOptimization(nextSender, options);
+    return { sender: nextSender, added: true };
+  }
+
+  function mergeIncomingTrackIntoStream(remoteMediaStreams, sid, event, onReady) {
+    const incomingStream = event.streams?.[0] || new MediaStream(event.track ? [event.track] : []);
+    const mergedStream = remoteMediaStreams[sid] || new MediaStream();
+    remoteMediaStreams[sid] = mergedStream;
+    incomingStream.getTracks().forEach((track) => {
+      mergedStream.getTracks()
+        .filter((existing) => existing.kind === track.kind && existing.id !== track.id)
+        .forEach((existing) => {
+          try { mergedStream.removeTrack(existing); } catch (_) {}
+        });
+      if (!mergedStream.getTracks().some((existing) => existing.id === track.id)) {
+        mergedStream.addTrack(track);
+      }
+      track.onended = () => {
+        try { mergedStream.removeTrack(track); } catch (_) {}
+        onReady?.(mergedStream);
+      };
+    });
+    onReady?.(mergedStream);
+    return mergedStream;
+  }
+
+  global.RoomPageRtc = {
+    getVideoSender,
+    getAudioSender,
+    getVideoSenderProfile,
+    applyTrackContentHint,
+    applySenderOptimization,
+    replaceSenderTrack,
+    mergeIncomingTrackIntoStream,
+  };
+})(window);
