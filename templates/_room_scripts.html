@@ -1034,11 +1034,6 @@ async function ensureRequestedTrack(kind) {
   return kind === 'video' ? stream?.getVideoTracks?.()[0] : stream?.getAudioTracks?.()[0];
 }
 
-function getActiveOutboundAudioTracks() {
-  const screenAudioTracks = isSharingScreen ? (localVideo?.srcObject?.getAudioTracks?.() || []) : [];
-  if (screenAudioTracks.length) return screenAudioTracks;
-  return localStream?.getAudioTracks?.() || [];
-}
 
 async function syncPeerMedia(targetSid = null) {
   const entries = targetSid
