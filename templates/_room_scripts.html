@@ -338,34 +338,22 @@ let screenShareMixedAudioTrack = null;
 let syncPeerMediaPromise = null;
 let syncPeerMediaQueuedTargetSid = undefined;
 const videoPlaybackRetryTimers = new WeakMap();
-let mediaPlaybackActivated = !isMobileDevice();
-let initialMediaRequestPromise = null;
+let mediaPlaybackActivated = false;
 
-function activateSpeakerPlaybackOnce() {
-  if (mediaPlaybackActivated) return;
+function activateMediaPlayback() {
+  if (mediaPlaybackActivated || !speakerEnabled) return;
   mediaPlaybackActivated = true;
-  if (speakerEnabled) {
-    applySpeakerState({ userGesture: true });
+  applySpeakerState({ userGesture: true });
+}
+
+window.addEventListener('touchstart', activateMediaPlayback, true);
+window.addEventListener('click', activateMediaPlayback, true);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && speakerEnabled) {
+    queueVideoPlayback(localVideo, [0]);
+    applySpeakerState({ userGesture: mediaPlaybackActivated });
   }
-}
-window.addEventListener('touchstart', activateSpeakerPlaybackOnce, true);
-window.addEventListener('click', activateSpeakerPlaybackOnce, true);
-
-
-function ensureInitialMediaRequest() {
-  const shouldRequest = (PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream;
-  if (!shouldRequest) return Promise.resolve(localStream || rawCameraStream || null);
-  if (initialMediaRequestPromise) return initialMediaRequestPromise;
-  initialMediaRequestPromise = runMediaTask('initial-request-media', async () => {
-    return await requestMedia(currentFacingMode, false);
-  }).catch((err) => {
-    console.error(err);
-    return null;
-  }).finally(() => {
-    initialMediaRequestPromise = null;
-  });
-  return initialMediaRequestPromise;
-}
+});
 
 
 function roomDebugLog(...args) {
@@ -531,9 +519,8 @@ function ensureCard(sid, displayName = null, isLocal = false) {
   if (sid !== 'local') {
     videoEl.autoplay = true;
     videoEl.playsInline = true;
-    const shouldStartMuted = !speakerEnabled || (isMobileDevice() && !mediaPlaybackActivated);
-    videoEl.muted = shouldStartMuted;
-    videoEl.defaultMuted = shouldStartMuted;
+    videoEl.muted = !speakerEnabled;
+    videoEl.defaultMuted = !speakerEnabled;
   }
   videoEl.setAttribute('autoplay', 'autoplay');
   videoEl.setAttribute('playsinline', 'playsinline');
@@ -575,18 +562,18 @@ function updatePlaceholder(card, hasVideo) {
 }
 
 function applySpeakerState({ userGesture = false } = {}) {
-  const canUnmuteNow = speakerEnabled && (!isMobileDevice() || userGesture || mediaPlaybackActivated);
   document.querySelectorAll('.video-card video').forEach((videoEl) => {
     if (videoEl === localVideo) {
       videoEl.muted = true;
       videoEl.defaultMuted = true;
       return;
     }
-    videoEl.muted = !canUnmuteNow;
-    videoEl.defaultMuted = !canUnmuteNow;
+    const shouldMute = !speakerEnabled;
+    videoEl.muted = shouldMute;
+    videoEl.defaultMuted = shouldMute;
 
     if (speakerEnabled) {
-      if (canUnmuteNow) {
+      if (userGesture) {
         safePlayVideo(videoEl, { allowMutedFallback: false }).catch(() => {});
       } else {
         queueVideoPlayback(videoEl, [0, 120, 260]);
@@ -885,13 +872,10 @@ async function buildScreenShareAudioTrack(screenStream) {
 function getPreferredScreenShareAudioTrack() {
   const mixedTrack = screenShareMixedAudioTrack;
   if (mixedTrack && mixedTrack.readyState === 'live') return mixedTrack;
-
-  const displayTrack = screenShareStream?.getAudioTracks?.().find((track) => track && track.readyState === 'live');
-  if (displayTrack) return displayTrack;
-
+  const shareTrack = screenShareStream?.getAudioTracks?.().find((track) => track && track.readyState === 'live');
+  if (shareTrack) return shareTrack;
   const micTrack = rawCameraStream?.getAudioTracks?.().find((track) => track && track.readyState === 'live');
   if (micTrack) return micTrack;
-
   return null;
 }
 
@@ -1235,18 +1219,13 @@ function addRemoteParticipant(sid, name) {
   updateParticipantCount();
 }
 
-
-function hasRenderableVideoTrack(stream) {
-  const track = stream?.getVideoTracks?.()[0] || null;
-  return !!track && track.readyState === 'live' && track.enabled !== false;
-}
-
 function addRemoteVideo(sid, stream) {
   const card = ensureCard(sid, getDisplayName(sid), false);
   const videoEl = card.querySelector('video');
   if (videoEl.srcObject !== stream) videoEl.srcObject = stream;
+  const hasRenderableVideo = !!stream?.getVideoTracks?.().some((track) => track.readyState === 'live' && track.enabled !== false);
   queueVideoPlayback(videoEl, [0, 120, 260]);
-  updatePlaceholder(card, hasRenderableVideoTrack(stream));
+  updatePlaceholder(card, hasRenderableVideo);
   applySpeakerState({ userGesture: mediaPlaybackActivated });
   queueRenderLayout();
 }
@@ -1316,7 +1295,7 @@ async function toggleScreenRecording() {
       recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: {
         echoCancellation: false,
         noiseSuppression: false,
-        autoGainControl: false
+        sampleRate: 48000
       } });
     } catch (audioErr) {
       recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
@@ -2030,13 +2009,15 @@ function leaveMeetingAndExit(message = TEXT_YOU_LEFT_MEETING, redirectUrl = '/')
 socket.on('connect', () => {
   ensureCard('local', getDisplayName('local'), true);
   queueRenderLayout();
-  applySpeakerState({ userGesture: mediaPlaybackActivated });
-  ensureInitialMediaRequest();
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
+  if ((PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream) {
+    runMediaTask('initial-request-media', async () => {
+      await requestMedia(currentFacingMode, false);
+    }).catch((err) => console.error(err));
+  }
 });
 
 socket.on('join_ok', async (data) => {
-  await ensureInitialMediaRequest();
   participantCountEl.textContent = data.participant_count;
   chatMessages.innerHTML = '';
   const existingParticipants = Array.isArray(data?.participants) ? data.participants : [];
@@ -2056,7 +2037,6 @@ socket.on('join_ok', async (data) => {
   if (isSharingScreen) {
     await syncScreenShareState(true);
   }
-  applySpeakerState({ userGesture: mediaPlaybackActivated });
   await Promise.allSettled(existingParticipants.filter((p) => p?.sid).map((p) => callPeer(p.sid)));
   refreshRtcDiagnostics().catch(() => {});
   if (data && data.host_present === false && IS_HOST) {
@@ -2067,7 +2047,6 @@ socket.on('join_ok', async (data) => {
 });
 
 socket.on('participant_joined', async (data) => {
-  await ensureInitialMediaRequest();
   addRemoteParticipant(data.sid, data.name);
   participantCountEl.textContent = data.participant_count;
   await callPeer(data.sid);
@@ -2268,9 +2247,6 @@ document.addEventListener('visibilitychange', () => {
     nativeFullscreenVideoEl = null;
     flushPendingLayoutIfNeeded();
   }
-  if (!document.hidden && speakerEnabled) {
-    applySpeakerState({ userGesture: mediaPlaybackActivated });
-  }
 });
 
 window.addEventListener('resize', () => {
@@ -2305,7 +2281,6 @@ videoHomePageBtn?.addEventListener('click', () => {
 
 toggleSpeakerBtn && (toggleSpeakerBtn.onclick = () => runMediaTask('toggle-speaker', async () => {
   speakerEnabled = !speakerEnabled;
-  if (speakerEnabled) mediaPlaybackActivated = true;
   applySpeakerState({ userGesture: speakerEnabled });
   setStatus(speakerEnabled ? TEXT_SPEAKER_ON : TEXT_SPEAKER_OFF);
 }));
@@ -2356,7 +2331,7 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
         audio: {
         echoCancellation: false,
         noiseSuppression: false,
-        autoGainControl: false
+        sampleRate: 48000
       }
       });
     } catch (audioErr) {
