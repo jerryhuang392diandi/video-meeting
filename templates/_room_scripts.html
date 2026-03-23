@@ -331,13 +331,23 @@ const roomDebugEnabled = new URLSearchParams(window.location.search).get('debugR
 let simulatedFullscreenCardSid = null;
 let pendingLayoutAfterFullscreen = false;
 let screenShareStream = null;
-let speakerEnabled = !isMobileDevice();
+let speakerEnabled = true;
 let screenShareAudioContext = null;
 let screenShareAudioDestination = null;
 let screenShareMixedAudioTrack = null;
 let syncPeerMediaPromise = null;
 let syncPeerMediaQueuedTargetSid = undefined;
 const videoPlaybackRetryTimers = new WeakMap();
+let mediaPlaybackActivated = false;
+
+function activateSpeakerPlaybackOnce() {
+  if (mediaPlaybackActivated || !speakerEnabled) return;
+  mediaPlaybackActivated = true;
+  applySpeakerState({ userGesture: true });
+}
+window.addEventListener('touchstart', activateSpeakerPlaybackOnce, true);
+window.addEventListener('click', activateSpeakerPlaybackOnce, true);
+
 
 function roomDebugLog(...args) {
   if (!roomDebugEnabled) return;
@@ -551,17 +561,17 @@ function applySpeakerState({ userGesture = false } = {}) {
       videoEl.defaultMuted = true;
       return;
     }
-const shouldMute = !speakerEnabled || (isMobileDevice() && !userGesture);
-videoEl.muted = shouldMute;
-videoEl.defaultMuted = shouldMute;
+    const shouldMute = !speakerEnabled;
+    videoEl.muted = shouldMute;
+    videoEl.defaultMuted = shouldMute;
 
-if (speakerEnabled) {
-  if (userGesture) {
-    safePlayVideo(videoEl, { allowMutedFallback: false }).catch(() => {});
-  } else {
-    queueVideoPlayback(videoEl, [0]);
-  }
-}
+    if (speakerEnabled) {
+      if (userGesture) {
+        safePlayVideo(videoEl, { allowMutedFallback: false }).catch(() => {});
+      } else {
+        queueVideoPlayback(videoEl, [0, 120, 260]);
+      }
+    }
   });
   if (toggleSpeakerBtn) toggleSpeakerBtn.textContent = speakerEnabled
     ? {{ ('扬声器开启' if lang == 'zh' else 'Speaker on')|tojson }}
@@ -852,12 +862,32 @@ async function buildScreenShareAudioTrack(screenStream) {
   return screenShareMixedAudioTrack;
 }
 
+function getPreferredScreenShareAudioTrack() {
+  const mixedTrack = screenShareMixedAudioTrack;
+  if (mixedTrack && mixedTrack.readyState === 'live') return mixedTrack;
+
+  const displayTrack = screenShareStream?.getAudioTracks?.().find((track) => track && track.readyState === 'live');
+  if (displayTrack) return displayTrack;
+
+  const micTrack = rawCameraStream?.getAudioTracks?.().find((track) => track && track.readyState === 'live');
+  if (micTrack) return micTrack;
+
+  return null;
+}
+
 async function refreshScreenShareAudioSenders() {
   if (!isSharingScreen || !screenShareStream) return;
-  const mixedAudioTrack = await buildScreenShareAudioTrack(screenShareStream);
+  await buildScreenShareAudioTrack(screenShareStream);
+  const preferredAudioTrack = getPreferredScreenShareAudioTrack();
   let addedAudioTrack = false;
   await Promise.allSettled(Object.values(peerConnections).map(async (pc) => {
-    const { added } = await replaceSenderTrack(pc, 'audio', mixedAudioTrack || rawCameraStream?.getAudioTracks?.()[0] || null, mixedAudioTrack ? new MediaStream([mixedAudioTrack]) : null, getSenderOptions(false));
+    const { added } = await replaceSenderTrack(
+      pc,
+      'audio',
+      preferredAudioTrack,
+      preferredAudioTrack ? new MediaStream([preferredAudioTrack]) : null,
+      getSenderOptions(false)
+    );
     if (added) addedAudioTrack = true;
   }));
   if (addedAudioTrack) {
@@ -1257,7 +1287,11 @@ async function toggleScreenRecording() {
 
   try {
     try {
-      recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      } });
     } catch (audioErr) {
       recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
     }
@@ -2255,7 +2289,7 @@ document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic
   const localTrack = localStream?.getAudioTracks?.()[0];
   if (!isSharingScreen && localTrack && localTrack !== rawTrack) localTrack.enabled = rawTrack.enabled;
   if (isSharingScreen && screenShareStream) {
-    await refreshScreenShareAudioSenders();
+    await refreshScreenShareAudioSenders().catch(err => console.error(err));
   }
   setStatus(rawTrack.enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
 });
@@ -2289,7 +2323,11 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
     try {
       screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: SCREEN_SHARE_CONSTRAINTS,
-        audio: true
+        audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      }
       });
     } catch (audioErr) {
       screenStream = await navigator.mediaDevices.getDisplayMedia({
@@ -2301,7 +2339,8 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
     const screenTrack = screenStream.getVideoTracks()[0];
     if (!screenTrack) throw new Error('screen_track_missing');
     try { screenTrack.contentHint = 'detail'; } catch (_) {}
-    const mixedAudioTrack = await buildScreenShareAudioTrack(screenStream);
+    await buildScreenShareAudioTrack(screenStream);
+    const preferredAudioTrack = getPreferredScreenShareAudioTrack();
     const screenCard = ensureCard('local', getDisplayName('local'), true);
     localVideo.srcObject = screenStream;
     queueVideoPlayback(localVideo, [0, 120]);
@@ -2313,7 +2352,7 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
 
     await Promise.allSettled(Object.values(peerConnections).map(async (pc) => {
       await replaceSenderTrack(pc, 'video', screenTrack, screenStream, { isScreenShare: true });
-      await replaceSenderTrack(pc, 'audio', mixedAudioTrack || rawCameraStream?.getAudioTracks?.()[0] || null, mixedAudioTrack ? new MediaStream([mixedAudioTrack]) : null);
+      await replaceSenderTrack(pc, 'audio', preferredAudioTrack, preferredAudioTrack ? new MediaStream([preferredAudioTrack]) : null);
     }));
 
     await scheduleSyncPeerMedia().catch((err) => console.error(err));
