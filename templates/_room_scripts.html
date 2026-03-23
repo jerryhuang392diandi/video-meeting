@@ -866,13 +866,31 @@ async function refreshScreenShareAudioSenders() {
 }
 
 function useLocalOutputStream(stream) {
-  localStream = stream;
-  if (localVideo.srcObject !== stream) localVideo.srcObject = stream;
+  if (!localStream) {
+    localStream = stream;
+    localVideo.srcObject = stream;
+  } else {
+    const newVideo = stream.getVideoTracks()[0];
+    const oldVideo = localStream.getVideoTracks()[0];
+
+    if (newVideo && oldVideo && newVideo !== oldVideo) {
+      oldVideo.stop();
+      localStream.removeTrack(oldVideo);
+      localStream.addTrack(newVideo);
+    }
+
+    const newAudio = stream.getAudioTracks()[0];
+    const oldAudio = localStream.getAudioTracks()[0];
+
+    if (newAudio && oldAudio && newAudio !== oldAudio) {
+      oldAudio.stop();
+      localStream.removeTrack(oldAudio);
+      localStream.addTrack(newAudio);
+    }
+  }
+
   queueVideoPlayback(localVideo, [0, 120]);
-  const localCard = ensureCard('local', getDisplayName('local'), true);
-  updatePlaceholder(localCard, !!stream?.getVideoTracks?.()[0]?.enabled);
   scheduleSyncPeerMedia().catch(err => console.error(err));
-  queueRenderLayout();
 }
 
 function getScaledSize(width, height) {
@@ -1257,7 +1275,11 @@ async function toggleScreenRecording() {
 
   try {
     try {
-      recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        sampleRate: 48000
+      } });
     } catch (audioErr) {
       recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
     }
@@ -2289,7 +2311,11 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
     try {
       screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: SCREEN_SHARE_CONSTRAINTS,
-        audio: true
+        audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        sampleRate: 48000
+      }
       });
     } catch (audioErr) {
       screenStream = await navigator.mediaDevices.getDisplayMedia({
