@@ -2,6 +2,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
 <script src="{{ url_for('static', filename='room_utils.js') }}"></script>
 <script src="{{ url_for('static', filename='room_rtc.js') }}"></script>
+<script src="{{ url_for('static', filename='room_ui.js') }}"></script>
+<script src="{{ url_for('static', filename='room_diagnostics.js') }}"></script>
 <script src="{{ url_for('static', filename='room_chat.js') }}"></script>
 <script>
 const ROOM_ID = {{ room_id|tojson }};
@@ -90,6 +92,8 @@ let currentSharerSid = null;
 
 const { normalizeParticipantSid, setStatus, stopStreamTracks, escapeHtml, copyText, fileToDataUrl, compressImageFile } = window.RoomPageUtils;
 const { getVideoSender, getAudioSender, applySenderOptimization, replaceSenderTrack, mergeIncomingTrackIntoStream } = window.RoomPageRtc;
+const { createRenderScheduler, createTaskQueue } = window.RoomPageUi;
+const { createRtcDiagnosticsController } = window.RoomPageDiagnostics;
 let currentGridPage = 0;
 let videoSearchKeyword = '';
 
@@ -309,11 +313,6 @@ function updateShareUiState() {
 const roomDebugEnabled = new URLSearchParams(window.location.search).get('debugRoom') === '1';
 let simulatedFullscreenCardSid = null;
 let pendingLayoutAfterFullscreen = false;
-let renderLayoutFrame = 0;
-let renderLayoutForcePending = false;
-let mediaTaskQueue = Promise.resolve();
-let rtcStatsTimer = null;
-let rtcStatsCache = {};
 let screenShareStream = null;
 let screenShareAudioContext = null;
 let screenShareAudioDestination = null;
@@ -343,38 +342,23 @@ function hasActiveFullscreenSession(videoEl = null) {
   return !!getFullscreenElement() || !!getSimulatedFullscreenCard() || !!nativeFullscreenVideoEl || !!(videoEl?.webkitDisplayingFullscreen);
 }
 
+const layoutScheduler = createRenderScheduler((force) => renderLayout(force), {
+  onDeferred: () => {
+    pendingLayoutAfterFullscreen = true;
+  },
+});
+const queueRenderLayout = (force = false) => layoutScheduler.queue(force);
+const runMediaTask = createTaskQueue({
+  onError: (err) => console.error(err),
+  onStart: (label) => roomDebugLog('media task start', { label }),
+  onFinish: (label) => roomDebugLog('media task end', { label }),
+});
+
 function flushPendingLayoutIfNeeded() {
   if (!pendingLayoutAfterFullscreen) return;
   pendingLayoutAfterFullscreen = false;
   roomDebugLog('flush deferred layout after fullscreen exit');
-  queueRenderLayout(true);
-}
-
-function queueRenderLayout(force = false) {
-  renderLayoutForcePending = renderLayoutForcePending || !!force;
-  if (renderLayoutFrame) return;
-  renderLayoutFrame = requestAnimationFrame(() => {
-    const shouldForce = renderLayoutForcePending;
-    renderLayoutFrame = 0;
-    renderLayoutForcePending = false;
-    renderLayout(shouldForce);
-  });
-}
-
-function runMediaTask(label, task) {
-  const execute = async () => {
-    roomDebugLog('media task start', { label });
-    try {
-      return await task();
-    } finally {
-      roomDebugLog('media task end', { label });
-    }
-  };
-  const chained = mediaTaskQueue.then(execute, execute);
-  mediaTaskQueue = chained.catch((err) => {
-    console.error(err);
-  });
-  return chained;
+  layoutScheduler.flush(true);
 }
 
 function applySimulatedFullscreen(card, sid) {
@@ -633,7 +617,7 @@ function renderLayout(force = false) {
   if (!videoMain || !videoSidebar || !videoStage) return;
   clearDockedCardState();
   if (!force && hasActiveFullscreenSession()) {
-    pendingLayoutAfterFullscreen = true;
+    layoutScheduler.defer();
     roomDebugLog('renderLayout deferred due to active fullscreen');
     return;
   }
@@ -1017,7 +1001,7 @@ function closePeer(targetSid, { preserveParticipant = false } = {}) {
   }
   delete peerConnections[targetSid];
   delete peerState[targetSid];
-  Object.keys(rtcStatsCache).forEach((key) => { if (key.startsWith(`${targetSid}:`)) delete rtcStatsCache[key]; });
+  rtcDiagnostics.pruneSid(targetSid);
   if (!preserveParticipant) removeRemoteVideo(targetSid);
 }
 
@@ -1813,90 +1797,21 @@ async function syncScreenShareState(forceBroadcast = false) {
   return true;
 }
 
-function formatKbps(value) {
-  if (!Number.isFinite(value)) return '-';
-  return `${value.toFixed(value >= 100 ? 0 : 1)} kbps`;
-}
-
-function formatMs(value) {
-  if (!Number.isFinite(value)) return '-';
-  return `${Math.round(value)} ms`;
-}
-
-async function collectPeerDiagnostics() {
-  const summaries = [];
-  const entries = Object.entries(peerConnections);
-  for (const [sid, pc] of entries) {
-    if (!pc?.getStats) continue;
-    let outboundVideoKbps = 0;
-    let inboundVideoKbps = 0;
-    let fps = 0;
-    let rttMs = null;
-    let framesDecoded = 0;
-    let packetsLost = 0;
-    try {
-      const stats = await pc.getStats();
-      stats.forEach((report) => {
-        const cacheKey = `${sid}:${report.id}`;
-        const cached = rtcStatsCache[cacheKey] || {};
-        if (report.type === 'outbound-rtp' && report.kind === 'video' && !report.isRemote) {
-          const lastBytes = cached.lastBytesSent || 0;
-          const lastTs = cached.lastTimestamp || 0;
-          if (lastTs && report.timestamp > lastTs && report.bytesSent >= lastBytes) {
-            outboundVideoKbps = Math.max(outboundVideoKbps, ((report.bytesSent - lastBytes) * 8) / (report.timestamp - lastTs));
-          }
-          rtcStatsCache[cacheKey] = { ...cached, lastBytesSent: report.bytesSent, lastTimestamp: report.timestamp };
-          fps = Math.max(fps, Number(report.framesPerSecond || 0));
-        }
-        if (report.type === 'inbound-rtp' && report.kind === 'video' && !report.isRemote) {
-          const lastBytes = cached.lastBytesReceived || 0;
-          const lastTs = cached.lastTimestamp || 0;
-          if (lastTs && report.timestamp > lastTs && report.bytesReceived >= lastBytes) {
-            inboundVideoKbps = Math.max(inboundVideoKbps, ((report.bytesReceived - lastBytes) * 8) / (report.timestamp - lastTs));
-          }
-          rtcStatsCache[cacheKey] = { ...cached, lastBytesReceived: report.bytesReceived, lastTimestamp: report.timestamp };
-          fps = Math.max(fps, Number(report.framesPerSecond || 0));
-          framesDecoded = Math.max(framesDecoded, Number(report.framesDecoded || 0));
-          packetsLost += Number(report.packetsLost || 0);
-        }
-        if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.nominated) {
-          if (Number.isFinite(report.currentRoundTripTime)) {
-            rttMs = Math.round(report.currentRoundTripTime * 1000);
-          }
-        }
-      });
-    } catch (err) {
-      summaries.push(`${getDisplayName(sid)}\n  error: ${err?.message || String(err)}`);
-      continue;
-    }
-    summaries.push(`${getDisplayName(sid)}\n  state: ${pc.connectionState || '-'} / ${pc.iceConnectionState || '-'}\n  out: ${formatKbps(outboundVideoKbps)}\n  in : ${formatKbps(inboundVideoKbps)}\n  rtt: ${formatMs(rttMs)}\n  fps: ${fps || '-'}\n  decoded: ${framesDecoded || '-'}\n  lost: ${packetsLost || 0}`);
-  }
-  return summaries;
-}
-
-async function refreshRtcDiagnostics() {
-  if (!rtcDiagnosticsOutput) return;
-  const peerCount = Object.keys(peerConnections).length;
-  const header = [
-    `peers: ${peerCount}`,
+const rtcDiagnostics = createRtcDiagnosticsController({
+  getPeerConnections: () => peerConnections,
+  getPeerLabel: (sid) => getDisplayName(sid),
+  getHeaderLines: () => ([
+    `peers: ${Object.keys(peerConnections).length}`,
     `sharing: ${isSharingScreen ? 'yes' : 'no'}`,
     `virtual_bg: ${virtualBgEnabled ? 'on' : 'off'}`,
-  ].join(' | ');
-  if (!peerCount) {
-    rtcDiagnosticsOutput.textContent = `${header}\n\nNo active peer connections.`;
-    return;
-  }
-  rtcDiagnosticsOutput.textContent = `${header}\n\nCollecting...`;
-  const summaries = await collectPeerDiagnostics();
-  rtcDiagnosticsOutput.textContent = `${header}\n\n${summaries.join('\n\n')}`;
-}
+  ]),
+  outputEl: rtcDiagnosticsOutput,
+  intervalMs: 4000,
+});
+const refreshRtcDiagnostics = () => rtcDiagnostics.refresh();
 
 function startRtcDiagnosticsLoop() {
-  if (rtcStatsTimer) clearInterval(rtcStatsTimer);
-  refreshRtcDiagnostics().catch(() => {});
-  rtcStatsTimer = setInterval(() => {
-    refreshRtcDiagnostics().catch(() => {});
-  }, 4000);
+  rtcDiagnostics.start();
 }
 
 function cleanupMeetingSession() {
@@ -1919,8 +1834,8 @@ function cleanupMeetingSession() {
   peerConnections = {};
   peerState = {};
   remoteMediaStreams = {};
-  rtcStatsCache = {};
-  if (rtcStatsTimer) { clearInterval(rtcStatsTimer); rtcStatsTimer = null; }
+  rtcDiagnostics.reset();
+  rtcDiagnostics.stop();
   participantMeta = {};
   window.participantMeta = participantMeta;
 }
@@ -2177,7 +2092,7 @@ window.addEventListener('resize', () => {
   const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
   currentGridPage = Math.min(currentGridPage, totalPages - 1);
   if (hasActiveFullscreenSession()) {
-    pendingLayoutAfterFullscreen = true;
+    layoutScheduler.defer();
     roomDebugLog('resize while fullscreen active; layout deferred');
     return;
   }
