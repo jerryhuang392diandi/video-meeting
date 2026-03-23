@@ -321,6 +321,8 @@ let speakerEnabled = true;
 let screenShareAudioContext = null;
 let screenShareAudioDestination = null;
 let screenShareMixedAudioTrack = null;
+let syncPeerMediaPromise = null;
+let syncPeerMediaQueuedTargetSid = undefined;
 
 function roomDebugLog(...args) {
   if (!roomDebugEnabled) return;
@@ -837,17 +839,17 @@ async function refreshScreenShareAudioSenders() {
     if (added) addedAudioTrack = true;
   }));
   if (addedAudioTrack) {
-    await syncPeerMedia().catch((err) => console.error(err));
+    await scheduleSyncPeerMedia().catch((err) => console.error(err));
   }
 }
 
 function useLocalOutputStream(stream) {
   localStream = stream;
-  localVideo.srcObject = stream;
+  if (localVideo.srcObject !== stream) localVideo.srcObject = stream;
   safePlayVideo(localVideo);
   const localCard = ensureCard('local', getDisplayName('local'), true);
   updatePlaceholder(localCard, !!stream?.getVideoTracks?.()[0]?.enabled);
-  syncPeerMedia().catch(err => console.error(err));
+  scheduleSyncPeerMedia().catch(err => console.error(err));
   queueRenderLayout();
 }
 
@@ -994,7 +996,7 @@ async function ensureRequestedTrack(kind) {
 
 function ensurePeerState(targetSid) {
   if (!peerState[targetSid]) {
-    peerState[targetSid] = { makingOffer: false, ignoreOffer: false, pendingCandidates: [] };
+    peerState[targetSid] = { makingOffer: false, ignoreOffer: false, pendingCandidates: [], disconnectTimer: null };
   }
   return peerState[targetSid];
 }
@@ -1021,13 +1023,15 @@ function closePeer(targetSid, { preserveParticipant = false } = {}) {
     try { pc.oniceconnectionstatechange = null; } catch (_) {}
     try { pc.close(); } catch (_) {}
   }
+  const state = peerState[targetSid];
+  if (state?.disconnectTimer) clearTimeout(state.disconnectTimer);
   delete peerConnections[targetSid];
   delete peerState[targetSid];
   rtcDiagnostics.pruneSid(targetSid);
   if (!preserveParticipant) removeRemoteVideo(targetSid);
 }
 
-async function syncPeerMedia(targetSid = null) {
+async function performSyncPeerMedia(targetSid = null) {
   const entries = targetSid
     ? (peerConnections[targetSid] ? [[targetSid, peerConnections[targetSid]]] : [])
     : Object.entries(peerConnections);
@@ -1067,11 +1071,38 @@ async function syncPeerMedia(targetSid = null) {
   if (renegotiateTasks.length) await Promise.allSettled(renegotiateTasks);
 }
 
+function scheduleSyncPeerMedia(targetSid = null) {
+  const nextTargetSid = targetSid || null;
+  if (syncPeerMediaPromise) {
+    syncPeerMediaQueuedTargetSid = syncPeerMediaQueuedTargetSid || nextTargetSid;
+    return syncPeerMediaPromise;
+  }
+  syncPeerMediaPromise = (async () => {
+    try {
+      await performSyncPeerMedia(nextTargetSid);
+    } finally {
+      syncPeerMediaPromise = null;
+      const queuedTargetSid = syncPeerMediaQueuedTargetSid;
+      syncPeerMediaQueuedTargetSid = undefined;
+      if (queuedTargetSid !== undefined) {
+        scheduleSyncPeerMedia(queuedTargetSid).catch((err) => console.error(err));
+      }
+    }
+  })();
+  return syncPeerMediaPromise;
+}
+
 function ensurePeer(targetSid) {
   if (peerConnections[targetSid]) return peerConnections[targetSid];
   const pc = new RTCPeerConnection(rtcConfig);
   peerConnections[targetSid] = pc;
   const state = ensurePeerState(targetSid);
+
+  const clearDisconnectTimer = () => {
+    if (!state.disconnectTimer) return;
+    clearTimeout(state.disconnectTimer);
+    state.disconnectTimer = null;
+  };
 
   const outboundVideoTrack = (isSharingScreen ? getCurrentScreenTrack() : null) || localStream?.getVideoTracks?.()[0] || null;
   if (outboundVideoTrack) {
@@ -1099,7 +1130,22 @@ function ensurePeer(targetSid) {
     }
   };
   pc.onconnectionstatechange = () => {
-    if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
+    if (pc.connectionState === 'connected' || pc.connectionState === 'connecting') {
+      clearDisconnectTimer();
+      return;
+    }
+    if (pc.connectionState === 'disconnected') {
+      clearDisconnectTimer();
+      state.disconnectTimer = setTimeout(() => {
+        if (pc.connectionState === 'disconnected') {
+          state.pendingCandidates = [];
+          closePeer(targetSid);
+        }
+      }, 8000);
+      return;
+    }
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      clearDisconnectTimer();
       state.pendingCandidates = [];
       closePeer(targetSid);
     }
@@ -1120,7 +1166,7 @@ function addRemoteParticipant(sid, name) {
 function addRemoteVideo(sid, stream) {
   const card = ensureCard(sid, getDisplayName(sid), false);
   const videoEl = card.querySelector('video');
-  videoEl.srcObject = stream;
+  if (videoEl.srcObject !== stream) videoEl.srcObject = stream;
   safePlayVideo(videoEl).catch(() => {});
   setTimeout(() => safePlayVideo(videoEl).catch(() => {}), 120);
   updatePlaceholder(card, true);
@@ -1828,7 +1874,7 @@ async function stopLocalScreenShareSession({ broadcast = true, restoreMedia = tr
       await requestMedia(currentFacingMode, true, ['video', 'audio']);
     }
   }
-  await syncPeerMedia().catch((err) => console.error(err));
+  await scheduleSyncPeerMedia().catch((err) => console.error(err));
   if (hadScreenShare && broadcast) broadcastUiEvent({ type: 'screen_share_stopped' });
   if (hadScreenShare && statusMessage) setStatus(statusMessage);
   return hadScreenShare;
@@ -1844,7 +1890,7 @@ async function syncScreenShareState(forceBroadcast = false) {
   focusedSid = 'local';
   hiddenSidebar = true;
   queueRenderLayout();
-  await syncPeerMedia().catch((err) => console.error(err));
+  await scheduleSyncPeerMedia().catch((err) => console.error(err));
   if (forceBroadcast) broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true, restored: true });
   return true;
 }
@@ -2200,7 +2246,7 @@ document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-
   if (outputVideoTrack && outputVideoTrack !== rawTrack) outputVideoTrack.enabled = rawTrack.enabled;
   updatePlaceholder(localCard, rawTrack.enabled);
   if (rawTrack.enabled) {
-    await syncPeerMedia().catch(err => console.error(err));
+    await scheduleSyncPeerMedia().catch(err => console.error(err));
   }
   setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 });
@@ -2245,7 +2291,7 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
       await replaceSenderTrack(pc, 'audio', mixedAudioTrack || rawCameraStream?.getAudioTracks?.()[0] || null, mixedAudioTrack ? new MediaStream([mixedAudioTrack]) : null);
     }));
 
-    await syncPeerMedia().catch((err) => console.error(err));
+    await scheduleSyncPeerMedia().catch((err) => console.error(err));
     queueRenderLayout();
     await optimizePeerSenders(null, { isScreenShare: true });
     setStatus(TEXT_SCREEN_SHARE_MODE);
