@@ -13,7 +13,6 @@ const DEFAULT_PREFERRED_NAME = {{ preferred_display_name|tojson }};
 const PREF_ENABLE_DANMAKU = {{ 'true' if default_danmaku_enabled else 'false' }};
 const PREF_AUTO_ENABLE_CAMERA = {{ 'true' if auto_enable_camera else 'false' }};
 const PREF_AUTO_ENABLE_MICROPHONE = {{ 'true' if auto_enable_microphone else 'false' }};
-const PREF_SPEAKER_ENABLED = localStorage.getItem('meeting_speaker_enabled');
 let USER_NAME = (localStorage.getItem('meeting_display_name') || DEFAULT_PREFERRED_NAME || DEFAULT_USER_NAME).trim() || DEFAULT_PREFERRED_NAME || DEFAULT_USER_NAME;
 const TEXT_PERMISSION_READY = {{ t('permission_ready')|tojson }};
 const TEXT_PERMISSION_FAILED = {{ t('permission_failed')|tojson }};
@@ -332,7 +331,8 @@ const roomDebugEnabled = new URLSearchParams(window.location.search).get('debugR
 let simulatedFullscreenCardSid = null;
 let pendingLayoutAfterFullscreen = false;
 let screenShareStream = null;
-let speakerEnabled = PREF_SPEAKER_ENABLED == null ? true : PREF_SPEAKER_ENABLED === '1';
+const SPEAKER_PREFERENCE_KEY = 'meeting_speaker_enabled';
+let speakerEnabled = (localStorage.getItem(SPEAKER_PREFERENCE_KEY) ?? '1') !== '0';
 let screenShareAudioContext = null;
 let screenShareAudioDestination = null;
 let screenShareMixedAudioTrack = null;
@@ -341,25 +341,26 @@ let syncPeerMediaQueuedTargetSid = undefined;
 const videoPlaybackRetryTimers = new WeakMap();
 let mediaPlaybackActivated = false;
 
-function persistSpeakerPreference() {
-  try {
-    localStorage.setItem('meeting_speaker_enabled', speakerEnabled ? '1' : '0');
-  } catch (_) {}
+function activateMediaPlayback() {
+  if (mediaPlaybackActivated || !speakerEnabled) return;
+  mediaPlaybackActivated = true;
+  applySpeakerState({ userGesture: true });
 }
 
-function setSpeakerEnabled(nextEnabled, { userGesture = false, showStatus = false } = {}) {
+function setSpeakerEnabled(nextEnabled, { userGesture = false, persist = true, showStatus = false } = {}) {
   speakerEnabled = !!nextEnabled;
+  if (persist) {
+    try {
+      localStorage.setItem(SPEAKER_PREFERENCE_KEY, speakerEnabled ? '1' : '0');
+    } catch (_) {}
+  }
   if (speakerEnabled && userGesture) {
     mediaPlaybackActivated = true;
   }
-  persistSpeakerPreference();
-  applySpeakerState({ userGesture: userGesture || mediaPlaybackActivated });
-  if (showStatus) setStatus(speakerEnabled ? TEXT_SPEAKER_ON : TEXT_SPEAKER_OFF);
-}
-
-function activateMediaPlayback() {
-  if (mediaPlaybackActivated || !speakerEnabled) return;
-  setSpeakerEnabled(true, { userGesture: true, showStatus: false });
+  applySpeakerState({ userGesture: speakerEnabled && (userGesture || mediaPlaybackActivated) });
+  if (showStatus) {
+    setStatus(speakerEnabled ? TEXT_SPEAKER_ON : TEXT_SPEAKER_OFF);
+  }
 }
 
 window.addEventListener('touchstart', activateMediaPlayback, true);
@@ -367,7 +368,7 @@ window.addEventListener('click', activateMediaPlayback, true);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && speakerEnabled) {
     queueVideoPlayback(localVideo, [0]);
-setSpeakerEnabled(speakerEnabled, { userGesture: mediaPlaybackActivated, showStatus: false });
+    applySpeakerState({ userGesture: mediaPlaybackActivated });
   }
 });
 
@@ -1242,7 +1243,7 @@ function addRemoteVideo(sid, stream) {
   const hasRenderableVideo = !!stream?.getVideoTracks?.().some((track) => track.readyState === 'live' && track.enabled !== false);
   queueVideoPlayback(videoEl, [0, 120, 260]);
   updatePlaceholder(card, hasRenderableVideo);
-  setSpeakerEnabled(speakerEnabled, { userGesture: mediaPlaybackActivated, showStatus: false });
+  applySpeakerState({ userGesture: mediaPlaybackActivated });
   queueRenderLayout();
 }
 
@@ -2296,7 +2297,7 @@ videoHomePageBtn?.addEventListener('click', () => {
 });
 
 toggleSpeakerBtn && (toggleSpeakerBtn.onclick = () => runMediaTask('toggle-speaker', async () => {
-  setSpeakerEnabled(!speakerEnabled, { userGesture: true, showStatus: true });
+  setSpeakerEnabled(!speakerEnabled, { userGesture: true, persist: true, showStatus: true });
 }));
 document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic', async () => {
   let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || null;
@@ -2509,7 +2510,7 @@ window.addEventListener('beforeunload', () => {
 });
 
 initChatUi();
-setSpeakerEnabled(speakerEnabled, { userGesture: false, showStatus: false });
+setSpeakerEnabled(speakerEnabled, { userGesture: false, persist: false, showStatus: false });
 refreshRtcStatsBtn?.addEventListener('click', () => { refreshRtcDiagnostics().catch(() => {}); });
 ensureCard('local', getDisplayName('local'), true);
 queueRenderLayout();
