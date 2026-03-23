@@ -551,16 +551,17 @@ function applySpeakerState({ userGesture = false } = {}) {
       videoEl.defaultMuted = true;
       return;
     }
-    const shouldMute = !speakerEnabled || (isMobileDevice() && !userGesture);
-    videoEl.muted = shouldMute;
-    videoEl.defaultMuted = shouldMute;
-    if (speakerEnabled) {
-      if (userGesture) {
-        safePlayVideo(videoEl, { allowMutedFallback: false }).catch(() => {});
-      } else {
-        queueVideoPlayback(videoEl, [0]);
-      }
-    }
+const shouldMute = !speakerEnabled || (isMobileDevice() && !userGesture);
+videoEl.muted = shouldMute;
+videoEl.defaultMuted = shouldMute;
+
+if (speakerEnabled) {
+  if (userGesture) {
+    safePlayVideo(videoEl, { allowMutedFallback: false }).catch(() => {});
+  } else {
+    queueVideoPlayback(videoEl, [0]);
+  }
+}
   });
   if (toggleSpeakerBtn) toggleSpeakerBtn.textContent = speakerEnabled
     ? {{ ('扬声器开启' if lang == 'zh' else 'Speaker on')|tojson }}
@@ -2253,6 +2254,9 @@ document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic
   rawTrack.enabled = !rawTrack.enabled;
   const localTrack = localStream?.getAudioTracks?.()[0];
   if (!isSharingScreen && localTrack && localTrack !== rawTrack) localTrack.enabled = rawTrack.enabled;
+  if (isSharingScreen && screenShareStream) {
+    await refreshScreenShareAudioSenders();
+  }
   setStatus(rawTrack.enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
 });
 document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-camera', async () => {
