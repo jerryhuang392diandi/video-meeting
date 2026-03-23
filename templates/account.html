@@ -54,6 +54,11 @@
         <option value="1" {% if auto_enable_microphone %}selected{% endif %}>{{ t('on') }}</option>
         <option value="0" {% if not auto_enable_microphone %}selected{% endif %}>{{ t('off') }}</option>
       </select>
+      <label>{{ t('enable_speaker_on_join') }}</label>
+      <select name="auto_enable_speaker">
+        <option value="1" {% if auto_enable_speaker %}selected{% endif %}>{{ t('on') }}</option>
+        <option value="0" {% if not auto_enable_speaker %}selected{% endif %}>{{ t('off') }}</option>
+      </select>
       <button class="primary-btn" type="submit">{{ t('save') }}</button>
     </form>
   </div>

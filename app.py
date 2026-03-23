@@ -110,6 +110,7 @@ class User(UserMixin, db.Model):
     default_danmaku_enabled = db.Column(db.Boolean, default=True)
     auto_enable_camera = db.Column(db.Boolean, default=True)
     auto_enable_microphone = db.Column(db.Boolean, default=True)
+    auto_enable_speaker = db.Column(db.Boolean, default=True)
 
     meetings = db.relationship("Meeting", backref="host", lazy=True)
 
@@ -224,6 +225,8 @@ def ensure_user_columns():
         cur.execute("ALTER TABLE users ADD COLUMN auto_enable_camera BOOLEAN DEFAULT 1")
     if "auto_enable_microphone" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN auto_enable_microphone BOOLEAN DEFAULT 1")
+    if "auto_enable_speaker" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN auto_enable_speaker BOOLEAN DEFAULT 1")
     cur.execute("CREATE TABLE IF NOT EXISTS password_reset_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, username VARCHAR(64) NOT NULL, contact VARCHAR(128), note TEXT, status VARCHAR(16) DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)")
     conn.commit()
     conn.close()
@@ -870,6 +873,7 @@ def account_page():
             default_danmaku_enabled = bool_from_form(request.form.get("default_danmaku_enabled"), True)
             auto_enable_camera = bool_from_form(request.form.get("auto_enable_camera"), True)
             auto_enable_microphone = bool_from_form(request.form.get("auto_enable_microphone"), True)
+            auto_enable_speaker = bool_from_form(request.form.get("auto_enable_speaker"), True)
             if preferred_locale not in {"auto", "zh", "en"}:
                 preferred_locale = "auto"
             if default_attachment_permission not in {"view", "download"}:
@@ -889,6 +893,7 @@ def account_page():
                     fresh_user.default_danmaku_enabled = default_danmaku_enabled
                     fresh_user.auto_enable_camera = auto_enable_camera
                     fresh_user.auto_enable_microphone = auto_enable_microphone
+                    fresh_user.auto_enable_speaker = auto_enable_speaker
                     db.session.commit()
                     message = t("profile_saved")
         elif action == "password":
@@ -918,6 +923,7 @@ def account_page():
         default_danmaku_enabled=bool(getattr(fresh_user, "default_danmaku_enabled", True)),
         auto_enable_camera=bool(getattr(fresh_user, "auto_enable_camera", True)),
         auto_enable_microphone=bool(getattr(fresh_user, "auto_enable_microphone", True)),
+        auto_enable_speaker=bool(getattr(fresh_user, "auto_enable_speaker", True)),
     )
 
 
@@ -1097,6 +1103,7 @@ def room_page(room_id):
         default_danmaku_enabled=bool(getattr(current_user, "default_danmaku_enabled", True)),
         auto_enable_camera=bool(getattr(current_user, "auto_enable_camera", True)),
         auto_enable_microphone=bool(getattr(current_user, "auto_enable_microphone", True)),
+        auto_enable_speaker=bool(getattr(current_user, "auto_enable_speaker", True)),
     )
 
 
