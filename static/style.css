@@ -35,8 +35,8 @@ body {
   mask-image: radial-gradient(circle at center, black, transparent 78%);
 }
 a { color: inherit; text-decoration: none; }
-input, button { font: inherit; }
-input {
+input, select, button { font: inherit; }
+input, select {
   width: 100%;
   padding: 14px 16px;
   border-radius: 14px;
@@ -45,7 +45,21 @@ input {
   color: var(--text);
   outline: none;
 }
-input:focus {
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 42px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 22px) calc(50% - 2px),
+    calc(100% - 16px) calc(50% - 2px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+input:focus, select:focus {
   border-color: rgba(130,177,255,.45);
   box-shadow: 0 0 0 3px rgba(130,177,255,.12);
 }
