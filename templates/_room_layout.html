@@ -22,6 +22,7 @@
       <button class="ghost-btn" id="virtualBgBtn">{{ t('virtual_bg') }}</button>
       <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
       <button class="ghost-btn" id="toggleMicBtn">{{ t('mic') }}</button>
+      <button class="ghost-btn" id="toggleSpeakerBtn">{{ ('扬声器' if lang == 'zh' else 'Speaker') }}</button>
       <button class="ghost-btn" id="toggleCameraBtn">{{ t('camera') }}</button>
       <button class="ghost-btn danger" id="leaveMeetingBtn">{{ t('leave') }}</button>
       {% if is_host %}<button class="ghost-btn danger" id="hostEndMeetingBtn">{{ t('host_end_meeting') }}</button>{% endif %}

@@ -44,6 +44,11 @@
         <option value="1" {% if default_danmaku_enabled %}selected{% endif %}>{{ t('on') }}</option>
         <option value="0" {% if not default_danmaku_enabled %}selected{% endif %}>{{ t('off') }}</option>
       </select>
+      <label>{{ t('enable_speaker_on_join') }}</label>
+      <select name="default_speaker_enabled">
+        <option value="1" {% if default_speaker_enabled %}selected{% endif %}>{{ t('on') }}</option>
+        <option value="0" {% if not default_speaker_enabled %}selected{% endif %}>{{ t('off') }}</option>
+      </select>
       <label>{{ t('enable_camera_on_join') }}</label>
       <select name="auto_enable_camera">
         <option value="1" {% if auto_enable_camera %}selected{% endif %}>{{ t('on') }}</option>

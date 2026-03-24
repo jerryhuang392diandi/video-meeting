@@ -108,6 +108,7 @@ class User(UserMixin, db.Model):
     preferred_locale = db.Column(db.String(16), nullable=True, default="auto")
     default_attachment_permission = db.Column(db.String(16), nullable=True, default="download")
     default_danmaku_enabled = db.Column(db.Boolean, default=True)
+    default_speaker_enabled = db.Column(db.Boolean, default=True)
     auto_enable_camera = db.Column(db.Boolean, default=True)
     auto_enable_microphone = db.Column(db.Boolean, default=True)
 
@@ -220,6 +221,8 @@ def ensure_user_columns():
         cur.execute("ALTER TABLE users ADD COLUMN default_attachment_permission VARCHAR(16) DEFAULT 'download'")
     if "default_danmaku_enabled" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN default_danmaku_enabled BOOLEAN DEFAULT 1")
+    if "default_speaker_enabled" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN default_speaker_enabled BOOLEAN DEFAULT 1")
     if "auto_enable_camera" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN auto_enable_camera BOOLEAN DEFAULT 1")
     if "auto_enable_microphone" not in cols:
@@ -320,6 +323,15 @@ def bool_from_form(value, default=False):
     if value is None:
         return default
     return str(value).strip().lower() in {"1", "true", "on", "yes"}
+
+
+def user_meeting_preferences(user):
+    return {
+        "default_danmaku_enabled": bool(getattr(user, "default_danmaku_enabled", True)),
+        "default_speaker_enabled": bool(getattr(user, "default_speaker_enabled", True)),
+        "auto_enable_camera": bool(getattr(user, "auto_enable_camera", True)),
+        "auto_enable_microphone": bool(getattr(user, "auto_enable_microphone", True)),
+    }
 
 
 def room_user_marker_key(user_id, sid=None):
@@ -868,6 +880,7 @@ def account_page():
             preferred_locale = (request.form.get("preferred_locale") or "auto").strip()[:16].lower()
             default_attachment_permission = (request.form.get("default_attachment_permission") or "download").strip()[:16].lower()
             default_danmaku_enabled = bool_from_form(request.form.get("default_danmaku_enabled"), True)
+            default_speaker_enabled = bool_from_form(request.form.get("default_speaker_enabled"), True)
             auto_enable_camera = bool_from_form(request.form.get("auto_enable_camera"), True)
             auto_enable_microphone = bool_from_form(request.form.get("auto_enable_microphone"), True)
             if preferred_locale not in {"auto", "zh", "en"}:
@@ -887,6 +900,7 @@ def account_page():
                     fresh_user.preferred_locale = preferred_locale
                     fresh_user.default_attachment_permission = default_attachment_permission
                     fresh_user.default_danmaku_enabled = default_danmaku_enabled
+                    fresh_user.default_speaker_enabled = default_speaker_enabled
                     fresh_user.auto_enable_camera = auto_enable_camera
                     fresh_user.auto_enable_microphone = auto_enable_microphone
                     db.session.commit()
@@ -906,6 +920,7 @@ def account_page():
                 disconnect_user_sockets(fresh_user.id, message=t("kicked"))
                 message = t("password_updated")
     fresh_user = db.session.get(User, current_user.id)
+    meeting_preferences = user_meeting_preferences(fresh_user)
     return render_template(
         "account.html",
         user=fresh_user,
@@ -915,9 +930,7 @@ def account_page():
         region=(fresh_user.region or "Asia/Tokyo"),
         preferred_locale=(fresh_user.preferred_locale or "auto"),
         default_attachment_permission=(fresh_user.default_attachment_permission or "download"),
-        default_danmaku_enabled=bool(getattr(fresh_user, "default_danmaku_enabled", True)),
-        auto_enable_camera=bool(getattr(fresh_user, "auto_enable_camera", True)),
-        auto_enable_microphone=bool(getattr(fresh_user, "auto_enable_microphone", True)),
+        **meeting_preferences,
     )
 
 
@@ -1094,9 +1107,7 @@ def room_page(room_id):
         traffic=traffic_summary_dict(current_user),
         turn_ice_servers=build_turn_ice_servers(),
         preferred_display_name=preferred_display_name(current_user),
-        default_danmaku_enabled=bool(getattr(current_user, "default_danmaku_enabled", True)),
-        auto_enable_camera=bool(getattr(current_user, "auto_enable_camera", True)),
-        auto_enable_microphone=bool(getattr(current_user, "auto_enable_microphone", True)),
+        **user_meeting_preferences(current_user),
     )
 
 
