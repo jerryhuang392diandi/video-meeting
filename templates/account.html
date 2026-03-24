@@ -15,7 +15,7 @@
     <h2>{{ t('profile') }}</h2>
     {% if message %}<div class="notice">{{ message }}</div>{% endif %}
     {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
-    <form method="post">
+    <form method="post" class="account-profile-form">
       <input type="hidden" name="action" value="profile" />
       <label>{{ t('username') }}</label>
       <input name="username" maxlength="32" value="{{ user.username }}" required />
