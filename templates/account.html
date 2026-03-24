@@ -46,7 +46,7 @@
         </div>
         <div class="muted speaker-pref-desc">{{ t('speaker_preference_desc') }}</div>
         <label>{{ t('enable_speaker_on_join') }}</label>
-        <select name="auto_enable_speaker">
+        <select name="auto_enable_speaker" class="speaker-pref-select">
           <option value="1" {% if auto_enable_speaker %}selected{% endif %}>{{ t('on') }}</option>
           <option value="0" {% if not auto_enable_speaker %}selected{% endif %}>{{ t('off') }}</option>
         </select>
@@ -82,3 +82,4 @@
   </div>
 </section>
 {% endblock %}
+

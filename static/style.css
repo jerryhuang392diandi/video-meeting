@@ -2245,6 +2245,10 @@ video:-webkit-full-screen {
 .speaker-pref-desc {
   margin-bottom: 8px;
 }
+
+.speaker-pref-select {
+  width: 100%;
+}
 @media (max-width: 768px) {
   .admin-metric-grid {
     grid-template-columns:1fr;
