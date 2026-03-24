@@ -186,10 +186,18 @@ def utc_iso(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def asset_version(filename: str) -> int:
+    static_path = os.path.join(BASE_DIR, "static", filename)
+    try:
+        return int(os.path.getmtime(static_path))
+    except OSError:
+        return int(time.time())
+
+
 @app.context_processor
 def inject_globals():
     lang = session.get("lang", "zh")
-    return {"t": t, "lang": lang, "supported_langs": ["zh", "en"], "utc_iso": utc_iso}
+    return {"t": t, "lang": lang, "supported_langs": ["zh", "en"], "utc_iso": utc_iso, "asset_version": asset_version}
 
 
 def ensure_user_columns():
