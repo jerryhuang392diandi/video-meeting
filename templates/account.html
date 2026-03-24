@@ -46,10 +46,11 @@
         </div>
         <div class="muted speaker-pref-desc">{{ t('speaker_preference_desc') }}</div>
         <label>{{ t('enable_speaker_on_join') }}</label>
-        <select name="auto_enable_speaker">
-          <option value="1" {% if auto_enable_speaker %}selected{% endif %}>{{ t('on') }}</option>
-          <option value="0" {% if not auto_enable_speaker %}selected{% endif %}>{{ t('off') }}</option>
-        </select>
+        <input type="hidden" name="auto_enable_speaker" id="speakerPreferenceInput" value="{{ '1' if auto_enable_speaker else '0' }}" />
+        <div class="speaker-pref-toggle" role="group" aria-label="{{ t('enable_speaker_on_join') }}">
+          <button type="button" class="chip speaker-pref-option {% if auto_enable_speaker %}active{% endif %}" data-speaker-value="1">{{ t('on') }}</button>
+          <button type="button" class="chip speaker-pref-option {% if not auto_enable_speaker %}active{% endif %}" data-speaker-value="0">{{ t('off') }}</button>
+        </div>
       </div>
       <label>{{ t('show_danmaku_default') }}</label>
       <select name="default_danmaku_enabled">
@@ -81,4 +82,26 @@
     </form>
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('speakerPreferenceInput');
+  const options = Array.from(document.querySelectorAll('.speaker-pref-option'));
+  if (!input || !options.length) return;
+  const setActive = (value) => {
+    input.value = value;
+    options.forEach((btn) => {
+      const active = btn.dataset.speakerValue === value;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  };
+  options.forEach((btn) => {
+    btn.addEventListener('click', () => setActive(btn.dataset.speakerValue || '1'));
+  });
+  setActive(input.value === '0' ? '0' : '1');
+});
+</script>
 {% endblock %}

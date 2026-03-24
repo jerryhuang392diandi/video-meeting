@@ -2245,6 +2245,22 @@ video:-webkit-full-screen {
 .speaker-pref-desc {
   margin-bottom: 8px;
 }
+
+.speaker-pref-toggle {
+  display:flex;
+  gap:8px;
+  margin-bottom: 6px;
+}
+.speaker-pref-option {
+  min-width:72px;
+  justify-content:center;
+}
+.speaker-pref-option.active {
+  border-color: rgba(142,191,255,.95);
+  background: linear-gradient(135deg, rgba(122,168,255,.34), rgba(103,212,255,.28));
+  color: #f6fbff;
+  box-shadow: 0 8px 22px rgba(35,106,196,.24);
+}
 @media (max-width: 768px) {
   .admin-metric-grid {
     grid-template-columns:1fr;
