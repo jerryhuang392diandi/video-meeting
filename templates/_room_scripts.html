@@ -332,9 +332,56 @@ const roomDebugEnabled = new URLSearchParams(window.location.search).get('debugR
 let simulatedFullscreenCardSid = null;
 let pendingLayoutAfterFullscreen = false;
 let screenShareStream = null;
-const SPEAKER_PREFERENCE_KEY = 'meeting_speaker_enabled';
-const speakerPrefRaw = localStorage.getItem(SPEAKER_PREFERENCE_KEY);
-let speakerEnabled = speakerPrefRaw == null ? !!PREF_AUTO_ENABLE_SPEAKER : speakerPrefRaw !== '0';
+const SPEAKER_PREFERENCE_KEY = 'meeting_speaker_enabled_v2';
+const LEGACY_SPEAKER_PREFERENCE_KEY = 'meeting_speaker_enabled';
+
+function getSpeakerPreferenceStorageKey() {
+  return `${SPEAKER_PREFERENCE_KEY}:${CURRENT_USER_ID || 'guest'}`;
+}
+
+function readSpeakerPreference() {
+  const fallback = !!PREF_AUTO_ENABLE_SPEAKER;
+  const storageKey = getSpeakerPreferenceStorageKey();
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.enabled !== 'boolean') return fallback;
+    if (typeof parsed?.basePreference !== 'boolean') return fallback;
+    if (parsed.basePreference !== fallback) {
+      localStorage.removeItem(storageKey);
+      return fallback;
+    }
+    return parsed.enabled;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function writeSpeakerPreference(enabled) {
+  const storageKey = getSpeakerPreferenceStorageKey();
+  const payload = JSON.stringify({
+    enabled: !!enabled,
+    basePreference: !!PREF_AUTO_ENABLE_SPEAKER,
+  });
+  try {
+    localStorage.setItem(storageKey, payload);
+  } catch (_) {}
+}
+
+function migrateLegacySpeakerPreference() {
+  const storageKey = getSpeakerPreferenceStorageKey();
+  try {
+    if (localStorage.getItem(storageKey) != null) return;
+    const legacyRaw = localStorage.getItem(LEGACY_SPEAKER_PREFERENCE_KEY);
+    if (legacyRaw == null) return;
+    writeSpeakerPreference(legacyRaw !== '0');
+    localStorage.removeItem(LEGACY_SPEAKER_PREFERENCE_KEY);
+  } catch (_) {}
+}
+
+migrateLegacySpeakerPreference();
+let speakerEnabled = readSpeakerPreference();
 let screenShareAudioContext = null;
 let screenShareAudioDestination = null;
 let screenShareMixedAudioTrack = null;
@@ -352,9 +399,7 @@ function activateMediaPlayback() {
 function setSpeakerEnabled(nextEnabled, { userGesture = false, persist = true, showStatus = false } = {}) {
   speakerEnabled = !!nextEnabled;
   if (persist) {
-    try {
-      localStorage.setItem(SPEAKER_PREFERENCE_KEY, speakerEnabled ? '1' : '0');
-    } catch (_) {}
+    writeSpeakerPreference(speakerEnabled);
   }
   if (speakerEnabled && userGesture) {
     mediaPlaybackActivated = true;
