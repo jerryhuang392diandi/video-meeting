@@ -1344,6 +1344,7 @@ async function performSyncPeerMedia(targetSid = null) {
         if (result.status === 'rejected') console.error(result.reason);
       });
       if ((!addedTrack && !changedTrack) || pc.signalingState !== 'stable') return;
+      if (!shouldInitiateOfferTo(sid)) return;
       const state = ensurePeerState(sid);
       if (state.makingOffer || pc.signalingState !== 'stable') return;
       try {
