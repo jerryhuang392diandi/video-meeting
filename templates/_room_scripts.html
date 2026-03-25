@@ -336,6 +336,7 @@ let pendingLayoutAfterFullscreen = false;
 let screenShareStream = null;
 const SPEAKER_PREFERENCE_KEY = 'meeting_speaker_enabled_v2';
 const LEGACY_SPEAKER_PREFERENCE_KEY = 'meeting_speaker_enabled';
+const RELOAD_RECOVERY_KEY = 'meeting_media_reload_recovery_v1';
 
 function getSpeakerPreferenceStorageKey() {
   return `${SPEAKER_PREFERENCE_KEY}:${CURRENT_USER_ID || 'guest'}`;
@@ -382,6 +383,32 @@ function migrateLegacySpeakerPreference() {
   } catch (_) {}
 }
 
+function writeReloadRecoveryHint() {
+  const payload = {
+    ts: Date.now(),
+    hadScreenShare: !!isSharingScreen,
+    cameraEnabled: !!rawCameraStream?.getVideoTracks?.().some((track) => track.enabled),
+    micEnabled: !!rawCameraStream?.getAudioTracks?.().some((track) => track.enabled),
+  };
+  try {
+    sessionStorage.setItem(RELOAD_RECOVERY_KEY, JSON.stringify(payload));
+  } catch (_) {}
+}
+
+function readReloadRecoveryHint() {
+  try {
+    const raw = sessionStorage.getItem(RELOAD_RECOVERY_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(RELOAD_RECOVERY_KEY);
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (Date.now() - Number(parsed.ts || 0) > 2 * 60 * 1000) return null;
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
 migrateLegacySpeakerPreference();
 let speakerEnabled = readSpeakerPreference();
 let screenShareAudioContext = null;
@@ -394,6 +421,9 @@ let mediaPlaybackActivated = false;
 let cameraRecoveryTimer = null;
 let cameraRecoveryInFlight = false;
 const monitoredRawVideoTracks = new WeakSet();
+let pendingReloadRecoveryHint = null;
+let screenShareAudioRefreshTimer = null;
+const boundScreenShareAudioTracks = new WeakSet();
 
 function activateMediaPlayback() {
   if (mediaPlaybackActivated || !speakerEnabled) return;
@@ -958,6 +988,14 @@ async function buildScreenShareAudioTrack(screenStream) {
   const screenAudioTracks = screenStream?.getAudioTracks?.() || [];
   const micAudioTracks = rawCameraStream?.getAudioTracks?.() || localStream?.getAudioTracks?.() || [];
   if (!screenAudioTracks.length && !micAudioTracks.length) return null;
+  if (!screenAudioTracks.length) {
+    screenShareMixedAudioTrack = micAudioTracks[0] || null;
+    return screenShareMixedAudioTrack;
+  }
+  if (!micAudioTracks.length) {
+    screenShareMixedAudioTrack = screenAudioTracks[0] || null;
+    return screenShareMixedAudioTrack;
+  }
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   if (!AudioCtx || typeof window.MediaStreamAudioDestinationNode === 'undefined') {
     screenShareMixedAudioTrack = screenAudioTracks[0] || micAudioTracks[0] || null;
@@ -994,6 +1032,24 @@ function getPreferredScreenShareAudioTrack() {
   const micTrack = rawCameraStream?.getAudioTracks?.().find((track) => track && track.readyState === 'live');
   if (micTrack) return micTrack;
   return null;
+}
+
+function bindScreenShareAudioTrackLifecycle(screenStream) {
+  const tracks = screenStream?.getAudioTracks?.() || [];
+  tracks.forEach((track) => {
+    if (!track || boundScreenShareAudioTracks.has(track)) return;
+    boundScreenShareAudioTracks.add(track);
+    const scheduleRefresh = () => {
+      if (screenShareAudioRefreshTimer) clearTimeout(screenShareAudioRefreshTimer);
+      screenShareAudioRefreshTimer = setTimeout(() => {
+        screenShareAudioRefreshTimer = null;
+        refreshScreenShareAudioSenders().catch((err) => console.error(err));
+      }, 180);
+    };
+    track.addEventListener('ended', scheduleRefresh);
+    track.addEventListener('mute', scheduleRefresh);
+    track.addEventListener('unmute', scheduleRefresh);
+  });
 }
 
 async function refreshScreenShareAudioSenders() {
@@ -2155,6 +2211,16 @@ socket.on('join_ok', async (data) => {
   if (isSharingScreen) {
     await syncScreenShareState(true);
   }
+  if (pendingReloadRecoveryHint && !isSharingScreen) {
+    const shouldRecoverMedia = !!pendingReloadRecoveryHint.hadScreenShare
+      || !!pendingReloadRecoveryHint.cameraEnabled
+      || !!pendingReloadRecoveryHint.micEnabled;
+    pendingReloadRecoveryHint = null;
+    if (shouldRecoverMedia) {
+      await requestMedia(currentFacingMode, true, ['video', 'audio']);
+      setStatus({{ ('页面刷新后已尝试恢复摄像头/麦克风；浏览器限制导致共享屏幕需手动重新开启。' if lang == 'zh' else 'Camera/microphone were recovered after refresh. Screen share must be started again due to browser limitations.')|tojson }});
+    }
+  }
   await Promise.allSettled(existingParticipants.filter((p) => p?.sid).map((p) => callPeer(p.sid)));
   refreshRtcDiagnostics().catch(() => {});
   if (data && data.host_present === false && IS_HOST) {
@@ -2462,6 +2528,7 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
     if (!screenTrack) throw new Error('screen_track_missing');
     try { screenTrack.contentHint = 'detail'; } catch (_) {}
     await buildScreenShareAudioTrack(screenStream);
+    bindScreenShareAudioTrackLifecycle(screenStream);
     const preferredAudioTrack = getPreferredScreenShareAudioTrack();
     const screenCard = ensureCard('local', getDisplayName('local'), true);
     localVideo.srcObject = screenStream;
@@ -2606,12 +2673,14 @@ if (switchRoomBtn) {
 }
 
 window.addEventListener('beforeunload', () => {
+  writeReloadRecoveryHint();
   if (!hasLeftMeeting) {
     try { socket.emit('leave_room'); } catch (_) {}
   }
 });
 
 initChatUi();
+pendingReloadRecoveryHint = readReloadRecoveryHint();
 setSpeakerEnabled(speakerEnabled, { userGesture: false, persist: false, showStatus: false });
 refreshRtcStatsBtn?.addEventListener('click', () => { refreshRtcDiagnostics().catch(() => {}); });
 ensureCard('local', getDisplayName('local'), true);
