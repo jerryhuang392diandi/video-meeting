@@ -100,7 +100,7 @@
   <div class="panel compact-panel">
     <div class="section-head">
       <h2>{{ t('traffic_usage') }}</h2>
-      <span class="section-tag">{{ t('traffic_turn_relay') }}</span>
+      <span class="section-tag">{{ t('traffic_server_observed') }}</span>
     </div>
     <div class="status-grid">
       <div><span>{{ t('monthly_quota') }}</span><strong id="quotaTotal">{{ traffic.monthly_quota_text }}</strong></div>
@@ -108,6 +108,7 @@
       <div><span>{{ t('remaining_traffic') }}</span><strong id="quotaRemaining">{{ traffic.remaining_traffic_text }}</strong></div>
       <div><span>{{ t('reset_cycle') }}</span><strong id="quotaReset">{{ traffic.reset_at_text }}</strong></div>
     </div>
+    <div class="muted" id="quotaTrackingNote">{{ traffic.tracking_note_text }}</div>
   </div>
 </section>
 
@@ -325,10 +326,12 @@ async function refreshTrafficSummary() {
     const used = document.getElementById('quotaUsed');
     const remaining = document.getElementById('quotaRemaining');
     const reset = document.getElementById('quotaReset');
+    const note = document.getElementById('quotaTrackingNote');
     if (total) total.textContent = data.monthly_quota_text;
     if (used) used.textContent = data.used_traffic_text;
     if (remaining) remaining.textContent = data.remaining_traffic_text;
     if (reset) reset.textContent = data.reset_at_text;
+    if (note) note.textContent = data.tracking_note_text || '';
   } catch (_) {}
 }
 

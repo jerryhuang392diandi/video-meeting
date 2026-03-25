@@ -401,11 +401,14 @@ function migrateLegacySpeakerPreference() {
 }
 
 function writeReloadRecoveryHint() {
+  const livekitState = IS_LIVEKIT_MODE && livekitController?.isConnected?.()
+    ? (livekitController.getLocalMediaState?.() || {})
+    : null;
   const payload = {
     ts: Date.now(),
-    hadScreenShare: !!isSharingScreen,
-    cameraEnabled: !!localStream?.getVideoTracks?.().some((track) => track.enabled),
-    micEnabled: !!localStream?.getAudioTracks?.().some((track) => track.enabled),
+    hadScreenShare: livekitState ? !!livekitState.screenShareEnabled : !!isSharingScreen,
+    cameraEnabled: livekitState ? !!livekitState.cameraEnabled : !!localStream?.getVideoTracks?.().some((track) => track.enabled),
+    micEnabled: livekitState ? !!livekitState.microphoneEnabled : !!localStream?.getAudioTracks?.().some((track) => track.enabled),
   };
   try {
     sessionStorage.setItem(RELOAD_RECOVERY_KEY, JSON.stringify(payload));
@@ -469,6 +472,7 @@ function clearCameraRecoveryTimer() {
 }
 
 function scheduleCameraRecovery(reason = 'unknown', delayMs = 200) {
+  if (IS_LIVEKIT_MODE) return;
   if (cameraRecoveryInFlight) return;
   clearCameraRecoveryTimer();
   cameraRecoveryTimer = setTimeout(() => {
@@ -1283,12 +1287,13 @@ function updateLiveKitShareFocus(sid, isActive) {
   queueRenderLayout();
 }
 
-function setLocalPreviewForLiveKit(stream, { hasVideo = false, isScreenShare = false } = {}) {
+function setLocalPreviewForLiveKit(stream, { hasVideo = false, hasAudio = false, isScreenShare = false } = {}) {
   localStream = stream || null;
   if (localVideo.srcObject !== (stream || null)) localVideo.srcObject = stream || null;
   queueVideoPlayback(localVideo, [0, 120]);
   const localCard = ensureCard('local', getDisplayName('local'), true);
   updatePlaceholder(localCard, !!hasVideo);
+  localCard.classList.toggle('audio-only', !!hasAudio && !hasVideo);
   isSharingScreen = !!isScreenShare;
   updateLiveKitShareFocus('local', !!isScreenShare);
 }
@@ -2030,6 +2035,13 @@ function broadcastUiEvent(payload) {
 
 const rtcDiagnostics = createRtcDiagnosticsController({
   getPeerConnections: () => ({}),
+  getDiagnosticEntries: () => {
+    if (!IS_LIVEKIT_MODE) return [];
+    if (!livekitController) {
+      return [{ label: 'LiveKit', lines: ['status: not initialized'] }];
+    }
+    return livekitController.getDiagnosticsEntries?.() || [];
+  },
   getPeerLabel: (sid) => getDisplayName(sid),
   getHeaderLines: () => ([
     `participants: ${Object.keys(participantMeta).length + 1}`,
@@ -2332,26 +2344,8 @@ document.getElementById('virtualBgBtn').onclick = () => runMediaTask('virtual-ba
   setStatus(TEXT_LIVEKIT_VBG_PENDING, 'warning');
 });
 virtualBgInput.onchange = (event) => runMediaTask('virtual-background-image', async () => {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  try {
-    virtualBgImageDataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-    if (!rawCameraStream) {
-      await requestMedia(currentFacingMode, true);
-      if (!rawCameraStream) return;
-    }
-    await activateVirtualBackground();
-  } catch (err) {
-    console.error(err);
-    setStatus(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || TEXT_IMAGE_NOT_SUPPORTED), 'warning');
-  } finally {
-    event.target.value = '';
-  }
+  event.target.value = '';
+  setStatus(TEXT_LIVEKIT_VBG_PENDING, 'warning');
 });
 recordingBtn.onclick = () => toggleScreenRecording();
 document.getElementById('leaveMeetingBtn').onclick = () => {
@@ -2461,7 +2455,9 @@ async function refreshTrafficPanel() {
     if (used) used.textContent = data.used_traffic_text;
     if (remaining) remaining.textContent = data.remaining_traffic_text;
     if (reset) reset.textContent = data.reset_at_text;
-    if ((data.remaining_traffic_mb || 0) <= 0) {
+    const note = document.getElementById('trafficQuotaNote');
+    if (note) note.textContent = data.tracking_note_text || '';
+    if (data.tracking_enabled !== false && typeof data.remaining_traffic_mb === 'number' && data.remaining_traffic_mb <= 0) {
       leaveMeetingAndExit(TEXT_TRAFFIC_LIMIT_REACHED);
     }
   } catch (_) {}

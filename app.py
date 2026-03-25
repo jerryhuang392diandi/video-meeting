@@ -20,6 +20,7 @@ from pathlib import Path
 from functools import wraps
 
 from flask import Flask, abort, after_this_request, jsonify, redirect, render_template, request, send_file, session, url_for
+from dotenv import load_dotenv
 
 try:
     import psutil
@@ -52,6 +53,7 @@ except Exception:
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 INSTANCE_DIR = os.path.join(BASE_DIR, "instance")
 DB_PATH = os.path.join(INSTANCE_DIR, "app.db")
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 os.makedirs(INSTANCE_DIR, exist_ok=True)
 
 app = Flask(__name__)
@@ -313,9 +315,17 @@ TRAFFIC_RESET_DAYS = 30
 _TRAFFIC_MONITOR = {"iface": None, "last_total_bytes": None, "last_ts": None}
 
 
-def traffic_accounting_enabled():
+def traffic_accounting_reason():
+    if get_rtc_mode() == "livekit":
+        return "livekit_sfu"
     disabled = (os.environ.get("DISABLE_TRAFFIC_ACCOUNTING") or "").strip().lower()
-    return disabled not in {"1", "true", "yes", "on"}
+    if disabled in {"1", "true", "yes", "on"}:
+        return "disabled"
+    return None
+
+
+def traffic_accounting_enabled():
+    return traffic_accounting_reason() is None
 
 
 def cycle_anchor_for_user(user):
@@ -363,6 +373,15 @@ def format_mb(mb_value):
     if value >= 1024:
         return f"{value / 1024:.2f} GB"
     return f"{value:.0f} MB"
+
+
+def traffic_tracking_note_text():
+    reason = traffic_accounting_reason()
+    if reason == "livekit_sfu":
+        return t("traffic_tracking_disabled_sfu")
+    if reason == "disabled":
+        return t("traffic_tracking_disabled")
+    return ""
 
 
 def bool_from_form(value, default=False):
@@ -573,7 +592,20 @@ def detect_traffic_interface():
                 if len(parts) >= 4 and parts[1] == "00000000":
                     return parts[0]
     except OSError:
-        return None
+        pass
+    if psutil:
+        try:
+            stats = psutil.net_if_stats()
+            counters = psutil.net_io_counters(pernic=True)
+            preferred = [
+                name for name, meta in stats.items()
+                if meta.isup and name in counters and not name.lower().startswith(("lo", "loopback"))
+            ]
+            if preferred:
+                preferred.sort(key=lambda name: (counters[name].bytes_sent + counters[name].bytes_recv), reverse=True)
+                return preferred[0]
+        except Exception:
+            return None
     return None
 
 
@@ -586,6 +618,13 @@ def read_interface_total_bytes(interface_name):
         tx = int((base / "tx_bytes").read_text().strip())
         return rx + tx
     except OSError:
+        if psutil:
+            try:
+                counters = psutil.net_io_counters(pernic=True).get(interface_name)
+                if counters:
+                    return int(counters.bytes_recv) + int(counters.bytes_sent)
+            except Exception:
+                return None
         return None
 
 
@@ -652,20 +691,25 @@ def sync_user_traffic(user_id=None):
 def traffic_summary_dict(user):
     refresh_user_traffic_cycle(user)
     remaining = user_remaining_quota_mb(user)
-    if not traffic_accounting_enabled():
-        remaining = max(remaining, 999999.0)
+    tracking_enabled = traffic_accounting_enabled()
+    note_text = traffic_tracking_note_text()
     anchor = cycle_anchor_for_user(user)
     reset_at = anchor + timedelta(days=TRAFFIC_RESET_DAYS)
+    used_text = format_mb(user.used_traffic_mb) if tracking_enabled else t("traffic_not_tracked")
+    remaining_text = format_mb(remaining) if tracking_enabled else t("traffic_not_tracked")
     return {
         "monthly_quota_mb": round(float(user.monthly_quota_mb or 0.0), 2),
         "used_traffic_mb": round(float(user.used_traffic_mb or 0.0), 2),
-        "remaining_traffic_mb": round(float(remaining), 2),
+        "remaining_traffic_mb": round(float(remaining), 2) if tracking_enabled else None,
         "monthly_quota_text": format_mb(user.monthly_quota_mb),
-        "used_traffic_text": format_mb(user.used_traffic_mb),
-        "remaining_traffic_text": format_mb(remaining),
+        "used_traffic_text": used_text,
+        "remaining_traffic_text": remaining_text,
         "reset_at_text": reset_at.strftime("%Y-%m-%d %H:%M UTC"),
         "reset_cycle_days": TRAFFIC_RESET_DAYS,
         "traffic_interface": _TRAFFIC_MONITOR.get("iface") or detect_traffic_interface() or "unknown",
+        "tracking_enabled": tracking_enabled,
+        "tracking_note_text": note_text,
+        "tracking_reason": traffic_accounting_reason() or "active",
     }
 
 
@@ -1257,6 +1301,12 @@ def api_join_room():
 @app.get("/room/<room_id>")
 @login_required
 def room_page(room_id):
+    if not livekit_enabled():
+        return render_template(
+            "404.html",
+            error_title="503",
+            error_message="LiveKit is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.",
+        ), 503
     meeting = Meeting.query.filter_by(room_id=room_id).first()
     if not ensure_meeting_not_expired(meeting):
         abort(404)

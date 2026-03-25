@@ -24,3 +24,8 @@ Systemd env vars example:
 - PUBLIC_SCHEME=https
 - ADMIN_USERNAME=root
 - ADMIN_PASSWORD=your-password
+
+LiveKit env vars required for meeting rooms:
+- LIVEKIT_URL=wss://your-livekit-host
+- LIVEKIT_API_KEY=your-api-key
+- LIVEKIT_API_SECRET=your-api-secret

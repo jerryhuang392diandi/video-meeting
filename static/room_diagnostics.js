@@ -1,6 +1,7 @@
 (function (global) {
   function createRtcDiagnosticsController({
     getPeerConnections,
+    getDiagnosticEntries,
     getPeerLabel,
     getHeaderLines,
     outputEl,
@@ -42,7 +43,7 @@
       return Number.isFinite(value) ? `${value} ms` : '-';
     }
 
-    async function collect() {
+    async function collectPeerConnectionSummaries() {
       const peerConnections = getPeerConnections?.() || {};
       const summaries = [];
       for (const [sid, pc] of Object.entries(peerConnections)) {
@@ -77,18 +78,25 @@
       return summaries;
     }
 
+    async function collectDiagnosticEntries() {
+      const entries = await Promise.resolve(getDiagnosticEntries?.() || []);
+      return entries
+        .filter((entry) => entry && entry.label)
+        .map((entry) => `${entry.label}\n  ${(entry.lines || ['no details']).join('\n  ')}`);
+    }
+
     async function refresh() {
       if (!outputEl) return;
       const peerConnections = getPeerConnections?.() || {};
       const peerCount = Object.keys(peerConnections).length;
       const header = (getHeaderLines?.() || []).join(' | ');
-      if (!peerCount) {
-        outputEl.textContent = `${header}\n\nNo active peer connections.`;
-        return;
-      }
       outputEl.textContent = `${header}\n\nCollecting...`;
-      const summaries = await collect();
-      outputEl.textContent = `${header}\n\n${summaries.join('\n\n')}`;
+      const peerSummaries = peerCount ? await collectPeerConnectionSummaries() : [];
+      const diagnosticEntries = await collectDiagnosticEntries();
+      const summaries = [...peerSummaries, ...diagnosticEntries].filter(Boolean);
+      outputEl.textContent = summaries.length
+        ? `${header}\n\n${summaries.join('\n\n')}`
+        : `${header}\n\nNo active RTC diagnostics.`;
     }
 
     return {
