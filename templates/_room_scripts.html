@@ -1527,7 +1527,7 @@ async function reconcilePeerConnections(participants = []) {
     const sid = participant?.sid;
     if (!sid || sid === socket.id) return;
     const pc = peerConnections[sid] || null;
-    const shouldOffer = !pc || pc.connectionState === 'new' || pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed';
+    const shouldOffer = !pc || pc.connectionState !== 'connected';
     if (shouldOffer) tasks.push(callPeer(sid));
   });
   if (!tasks.length) return;
@@ -2353,6 +2353,7 @@ socket.on('participant_joined', async (data) => {
 socket.on('participant_left', (data) => {
   participantCountEl.textContent = data.participant_count;
   if (currentGridPage > 0) currentGridPage = Math.max(0, currentGridPage - 1);
+  closePeer(data.sid, { preserveParticipant: true });
   removeRemoteVideo(data.sid);
   renderMentionPicker();
   refreshRtcDiagnostics().catch(() => {});
@@ -2377,7 +2378,10 @@ socket.on('participant_snapshot', async (data) => {
     }
   });
   Object.keys(participantMeta).forEach((sid) => {
-    if (!keep.has(sid)) removeRemoteVideo(sid);
+    if (!keep.has(sid)) {
+      closePeer(sid, { preserveParticipant: true });
+      removeRemoteVideo(sid);
+    }
   });
   participantCountEl.textContent = String(Math.max(1, count));
   renderMentionPicker();
