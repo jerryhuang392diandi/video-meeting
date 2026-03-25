@@ -86,12 +86,7 @@ def livekit_enabled() -> bool:
 
 
 def get_rtc_mode() -> str:
-    requested = (os.environ.get("RTC_BACKEND") or "").strip().lower()
-    if requested in {"mesh", "p2p", "webrtc"}:
-        return "mesh"
-    if requested == "livekit":
-        return "livekit" if livekit_enabled() else "mesh"
-    return "livekit" if livekit_enabled() else "mesh"
+    return "livekit"
 
 
 def debug_log(tag, **kwargs):
@@ -117,6 +112,8 @@ CHAT_ROOM_STORAGE_LIMIT_BYTES = 120 * 1024 * 1024
 CHAT_GLOBAL_STORAGE_LIMIT_BYTES = 512 * 1024 * 1024
 CHAT_IMAGE_MAX_DIMENSION = 1920
 ALLOWED_CHAT_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "mp4", "webm", "mov", "m4v", "avi", "3gp", "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "txt", "zip", "rar", "7z"}
+CHAT_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".heic", ".heif"}
+CHAT_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v", ".avi", ".3gp"}
 
 from translations import TRANSLATIONS
 
@@ -374,8 +371,136 @@ def bool_from_form(value, default=False):
     return str(value).strip().lower() in {"1", "true", "on", "yes"}
 
 
+def parse_int_list(values):
+    parsed = []
+    for item in values or []:
+        try:
+            parsed.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return parsed
+
+
 def room_user_marker_key(user_id, sid=None):
     return f"user:{user_id}" if user_id else f"sid:{sid or ''}"
+
+
+def room_allowed_user_ids(room):
+    if not room:
+        return set()
+    return {info.get("user_id") for info in room.get("participants", {}).values() if info.get("user_id")}
+
+
+def can_user_access_room(room, user_id):
+    if not room or not user_id:
+        return False
+    return user_id in room_allowed_user_ids(room) or user_id == room.get("host_user_id")
+
+
+def build_room_participant_payload(sid, info, host_user_id):
+    return {
+        "sid": sid,
+        "name": info.get("name") or "Guest",
+        "is_host": bool(info.get("user_id") == host_user_id),
+    }
+
+
+def mark_meeting_participant_left(sid):
+    participant = MeetingParticipant.query.filter_by(sid=sid).order_by(MeetingParticipant.id.desc()).first()
+    if participant and not participant.left_at:
+        participant.left_at = datetime.utcnow()
+    return participant
+
+
+def emit_host_presence_changed(room_id, host_present, message):
+    socketio.emit(
+        "host_presence_changed",
+        {"host_present": bool(host_present), "message": message},
+        room=room_id,
+    )
+
+
+def emit_participant_left(room_id, sid, participant_info, participant_count):
+    if not participant_info:
+        return
+    socketio.emit(
+        "participant_left",
+        {
+            "sid": sid,
+            "name": participant_info.get("name") or "Guest",
+            "participant_count": participant_count,
+        },
+        room=room_id,
+    )
+
+
+def prune_stale_room_participants(room_id, room, user_id, current_sid):
+    if not user_id:
+        return []
+    active_sids_for_user = set(user_active_sids.get(user_id, set()))
+    stale_sids = []
+    for sid, info in list(room.get("participants", {}).items()):
+        if sid == current_sid or info.get("user_id") != user_id:
+            continue
+        if sid in active_sids_for_user and sid_to_user.get(sid):
+            continue
+        stale_sids.append(sid)
+    for stale_sid in stale_sids:
+        room.get("participants", {}).pop(stale_sid, None)
+        sid_to_user.pop(stale_sid, None)
+        unbind_user_socket(user_id, stale_sid)
+        try:
+            socketio.server.leave_room(stale_sid, room_id, namespace='/')
+        except Exception:
+            pass
+        try:
+            socketio.server.disconnect(stale_sid, namespace='/')
+        except Exception:
+            pass
+        mark_meeting_participant_left(stale_sid)
+    return stale_sids
+
+
+def reconcile_rejoining_active_sharer(room_id, room, user_id):
+    if not user_id or room.get("active_sharer_user_id") != user_id:
+        return
+    previous_sharer_sid = room.get("active_sharer_sid")
+    sharer_active = bool(
+        previous_sharer_sid
+        and previous_sharer_sid in room.get("participants", {})
+        and sid_to_user.get(previous_sharer_sid)
+    )
+    if sharer_active:
+        return
+    room["active_sharer_sid"] = None
+    room["active_sharer_user_id"] = None
+    if previous_sharer_sid:
+        socketio.emit(
+            "room_ui_event",
+            {"type": "screen_share_stopped", "from": previous_sharer_sid, "reason": "sharer_reconnected"},
+            room=room_id,
+        )
+
+
+def reconcile_departing_active_sharer(room_id, room, sid, user_id):
+    if room.get("active_sharer_sid") != sid:
+        return
+    remaining_user_sids = list(user_active_sids.get(user_id, set())) if user_id else []
+    replacement_sid = next(
+        (candidate for candidate in remaining_user_sids if candidate != sid and candidate in room.get("participants", {})),
+        None,
+    )
+    if replacement_sid:
+        room["active_sharer_sid"] = replacement_sid
+        socketio.emit(
+            "room_ui_event",
+            {"type": "screen_share_started", "from": replacement_sid, "hideSidebar": True, "restored": True},
+            room=room_id,
+        )
+        return
+    room["active_sharer_sid"] = None
+    room["active_sharer_user_id"] = None
+    socketio.emit("room_ui_event", {"type": "screen_share_stopped", "from": sid}, room=room_id)
 
 
 def visible_chat_history_for_user(room, user_id, sid, is_room_host=False):
@@ -807,29 +932,16 @@ def remove_user_from_runtime_rooms(user_id, reason_message=None):
                 debug_log('RUNTIME_REMOVE_LEAVE_ROOM', user_id=user_id, room_id=room_id, sid=sid)
             except Exception as exc:
                 debug_log('RUNTIME_REMOVE_LEAVE_ROOM_ERROR', user_id=user_id, room_id=room_id, sid=sid, error=str(exc))
-            participant = MeetingParticipant.query.filter_by(sid=sid).order_by(MeetingParticipant.id.desc()).first()
-            if participant and not participant.left_at:
-                participant.left_at = datetime.utcnow()
+            participant = mark_meeting_participant_left(sid)
+            if participant:
                 debug_log('RUNTIME_REMOVE_PARTICIPANT_MARK_LEFT', user_id=user_id, room_id=room_id, sid=sid, participant_db_id=participant.id)
             if participant_info:
-                socketio.emit(
-                    "participant_left",
-                    {
-                        "sid": sid,
-                        "name": participant_info.get("name") or "Guest",
-                        "participant_count": len(room.get("participants", {})),
-                    },
-                    room=room_id,
-                )
+                emit_participant_left(room_id, sid, participant_info, len(room.get("participants", {})))
                 broadcast_room_participant_snapshot(room_id)
                 debug_log('RUNTIME_REMOVE_BROADCAST', user_id=user_id, room_id=room_id, sid=sid, participant_count_after=len(room.get('participants', {})))
         if user_id == room.get("host_user_id") and room.get("host_present"):
             room["host_present"] = False
-            socketio.emit(
-                "host_presence_changed",
-                {"host_present": False, "message": reason_message or t("host_left_room")},
-                room=room_id,
-            )
+            emit_host_presence_changed(room_id, False, reason_message or t("host_left_room"))
             debug_log('RUNTIME_REMOVE_HOST_LEFT', user_id=user_id, room_id=room_id)
         if not room.get("participants"):
             schedule_room_cleanup(room_id)
@@ -849,7 +961,7 @@ def broadcast_room_participant_snapshot(room_id):
     host_user_id = room.get("host_user_id")
     payload = {
         "participants": [
-            {"sid": sid, "name": info.get("name") or "Guest", "is_host": bool(info.get("user_id") == host_user_id)}
+            build_room_participant_payload(sid, info, host_user_id)
             for sid, info in room.get("participants", {}).items()
         ],
         "participant_count": len(room.get("participants", {})),
@@ -1424,13 +1536,7 @@ def admin_reset_user_traffic(user_id):
 @login_required
 @admin_required
 def admin_bulk_reset_user_traffic():
-    raw_ids = request.form.getlist("user_ids")
-    user_ids = []
-    for item in raw_ids:
-        try:
-            user_ids.append(int(item))
-        except (TypeError, ValueError):
-            continue
+    user_ids = parse_int_list(request.form.getlist("user_ids"))
     if not user_ids:
         return redirect(url_for("admin_dashboard"))
 
@@ -1549,13 +1655,7 @@ def admin_end_meeting(meeting_id):
 @login_required
 @admin_required
 def admin_bulk_end_meetings():
-    raw_ids = request.form.getlist("meeting_ids")
-    meeting_ids = []
-    for item in raw_ids:
-        try:
-            meeting_ids.append(int(item))
-        except (TypeError, ValueError):
-            continue
+    meeting_ids = parse_int_list(request.form.getlist("meeting_ids"))
     if not meeting_ids:
         return redirect(url_for("admin_dashboard"))
 
@@ -1596,13 +1696,7 @@ def admin_delete_meeting(meeting_id):
 @login_required
 @admin_required
 def admin_bulk_delete_meetings():
-    raw_ids = request.form.getlist("meeting_ids")
-    meeting_ids = []
-    for item in raw_ids:
-        try:
-            meeting_ids.append(int(item))
-        except (TypeError, ValueError):
-            continue
+    meeting_ids = parse_int_list(request.form.getlist("meeting_ids"))
     if not meeting_ids:
         return redirect(url_for("admin_dashboard"))
 
@@ -1687,31 +1781,12 @@ def on_join_room(data):
     # Clean up only truly stale sockets for the same authenticated user.
     # Keep other active sessions/tabs alive; only prune entries that are no
     # longer tracked as active sockets.
-    active_sids_for_user = set(user_active_sids.get(current_user.id, set()))
-    stale_sids = []
-    for osid, info in list(room.get("participants", {}).items()):
-        if osid == sid or info.get("user_id") != current_user.id:
-            continue
-        if osid in active_sids_for_user and sid_to_user.get(osid):
-            continue
-        stale_sids.append(osid)
-    for stale_sid in stale_sids:
-        room.get("participants", {}).pop(stale_sid, None)
-        sid_to_user.pop(stale_sid, None)
-        unbind_user_socket(current_user.id, stale_sid)
-        try:
-            socketio.server.leave_room(stale_sid, room_id, namespace='/')
-        except Exception:
-            pass
-        try:
-            socketio.server.disconnect(stale_sid, namespace='/')
-        except Exception:
-            pass
-        participant = MeetingParticipant.query.filter_by(sid=stale_sid).order_by(MeetingParticipant.id.desc()).first()
-        if participant and not participant.left_at:
-            participant.left_at = datetime.utcnow()
+    prune_stale_room_participants(room_id, room, current_user.id, sid)
 
-    existing = [{"sid": osid, "name": info["name"], "is_host": bool(info.get("user_id") == room.get("host_user_id"))} for osid, info in room["participants"].items()]
+    existing = [
+        build_room_participant_payload(osid, info, room.get("host_user_id"))
+        for osid, info in room["participants"].items()
+    ]
     room["participants"][sid] = {"name": user_name, "joined_at": time.time(), "user_id": current_user.id}
     sid_to_user[sid] = {"room_id": room_id, "name": user_name, "user_id": current_user.id}
     bind_user_socket(current_user.id, sid)
@@ -1723,20 +1798,10 @@ def on_join_room(data):
         host_returned = not room.get("host_present")
         room["host_present"] = True
 
-    if current_user.is_authenticated and room.get("active_sharer_user_id") == current_user.id:
-        # Only clear stale screen-share ownership when previous sharer socket is no longer active.
-        # If an active sibling session of the same user is still sharing, keep it.
-        previous_sharer_sid = room.get("active_sharer_sid")
-        sharer_active = bool(
-            previous_sharer_sid
-            and previous_sharer_sid in room.get("participants", {})
-            and sid_to_user.get(previous_sharer_sid)
-        )
-        if not sharer_active:
-            room["active_sharer_sid"] = None
-            room["active_sharer_user_id"] = None
-            if previous_sharer_sid:
-                socketio.emit("room_ui_event", {"type": "screen_share_stopped", "from": previous_sharer_sid, "reason": "sharer_reconnected"}, room=room_id)
+    if current_user.is_authenticated:
+        # Only clear stale screen-share ownership when the previous sharer
+        # socket is no longer active. Active sibling sessions keep ownership.
+        reconcile_rejoining_active_sharer(room_id, room, current_user.id)
 
     participant = MeetingParticipant(
         meeting_id=room["meeting_db_id"],
@@ -1774,11 +1839,7 @@ def on_join_room(data):
     broadcast_room_participant_snapshot(room_id)
 
     if host_returned:
-        socketio.emit(
-            "host_presence_changed",
-            {"host_present": True, "message": t("host_returned_room")},
-            room=room_id,
-        )
+        emit_host_presence_changed(room_id, True, t("host_returned_room"))
 
 
 @socketio.on("update_profile")
@@ -2042,22 +2103,47 @@ def _chat_attachment_abs_path(room_id: str, attachment: dict):
     return legacy_path
 
 def _can_access_room_attachment(room: dict | None) -> bool:
-    if not room:
-        return False
-    allowed_user_ids = {info.get("user_id") for info in room.get("participants", {}).values() if info.get("user_id")}
-    return current_user.id in allowed_user_ids or current_user.id == room.get("host_user_id")
+    return can_user_access_room(room, current_user.id)
+
+
+def _remove_path_quietly(path: str):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _normalize_upload_permission(value: str | None) -> str:
+    permission = str(value or "download").strip().lower()
+    return permission if permission in {"view", "download"} else "download"
+
+
+def _resolve_upload_kind(original_name: str, incoming_content_type: str, upload_mode: str):
+    content_type = _normalize_attachment_content_type(original_name, incoming_content_type)
+    kind = _attachment_kind(original_name, content_type)
+    ext = (Path(original_name).suffix or "").lower()
+
+    if upload_mode == "media" and kind not in {"image", "video", "audio"}:
+        if ext in CHAT_IMAGE_EXTENSIONS:
+            kind = "image"
+            content_type = _normalize_attachment_content_type(original_name, incoming_content_type)
+        elif ext in CHAT_VIDEO_EXTENSIONS:
+            kind = "video"
+            content_type = _normalize_attachment_content_type(original_name, incoming_content_type)
+        else:
+            return None, None, {"ok": False, "error": "media_only_upload", "detail": incoming_content_type, "name": original_name}, 400
+    if upload_mode == "doc" and kind in {"image", "video", "audio"}:
+        return None, None, {"ok": False, "error": "document_only_upload"}, 400
+    return kind, content_type, None, None
 
 def _api_chat_upload_impl(upload_mode: str = "any"):
     try:
         room_id = str(request.form.get("room_id") or "").strip()
-        permission = str(request.form.get("permission") or "download").strip().lower()
-        if permission not in {"view", "download"}:
-            permission = "download"
+        permission = _normalize_upload_permission(request.form.get("permission"))
         room = rooms.get(room_id)
         if not room:
             return jsonify({"ok": False, "error": "room_not_found"}), 404
-        allowed_user_ids = {info.get("user_id") for info in room.get("participants", {}).values() if info.get("user_id")}
-        if current_user.id not in allowed_user_ids and current_user.id != room.get("host_user_id"):
+        if not can_user_access_room(room, current_user.id):
             return jsonify({"ok": False, "error": "not_in_room"}), 403
         upload = request.files.get("file")
         if not upload or not upload.filename:
@@ -2065,22 +2151,9 @@ def _api_chat_upload_impl(upload_mode: str = "any"):
 
         incoming_content_type = (upload.mimetype or upload.content_type or "application/octet-stream").split(';', 1)[0].strip().lower()
         original_name = _build_safe_upload_name(upload.filename, incoming_content_type)
-        content_type = _normalize_attachment_content_type(original_name, incoming_content_type)
-        kind = _attachment_kind(original_name, content_type)
-        ext = (Path(original_name).suffix or '').lower()
-
-        if upload_mode == "media" and kind not in {"image", "video", "audio"}:
-            # 桌面端有些浏览器会把图片/视频传成 octet-stream，这里用扩展名兜底
-            if ext in {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.heic', '.heif'}:
-                kind = 'image'
-                content_type = _normalize_attachment_content_type(original_name, incoming_content_type)
-            elif ext in {'.mp4', '.webm', '.mov', '.m4v', '.avi', '.3gp'}:
-                kind = 'video'
-                content_type = _normalize_attachment_content_type(original_name, incoming_content_type)
-            else:
-                return jsonify({"ok": False, "error": "media_only_upload", "detail": incoming_content_type, "name": original_name}), 400
-        if upload_mode == "doc" and kind in {"image", "video", "audio"}:
-            return jsonify({"ok": False, "error": "document_only_upload"}), 400
+        kind, content_type, upload_error, status_code = _resolve_upload_kind(original_name, incoming_content_type, upload_mode)
+        if upload_error:
+            return jsonify(upload_error), status_code
 
         if not _allowed_chat_file(upload.filename, incoming_content_type):
             return jsonify({"ok": False, "error": "file_type_not_allowed", "detail": incoming_content_type}), 400
@@ -2105,17 +2178,11 @@ def _api_chat_upload_impl(upload_mode: str = "any"):
         upload.save(abs_path)
         size = os.path.getsize(abs_path)
         if size > size_limit:
-            try:
-                os.remove(abs_path)
-            except OSError:
-                pass
+            _remove_path_quietly(abs_path)
             return jsonify({"ok": False, "error": "file_too_large", "limit": size_limit}), 413
         quota_error = _enforce_chat_storage_limits(room_id, size)
         if quota_error:
-            try:
-                os.remove(abs_path)
-            except OSError:
-                pass
+            _remove_path_quietly(abs_path)
             return jsonify({"ok": False, "error": quota_error}), 507
 
         display_name = original_name[:120]
@@ -2380,9 +2447,7 @@ def on_toggle_danmaku(data):
 
 @socketio.on("signal")
 def on_signal(data):
-    target_sid = data.get("target")
-    if target_sid:
-        emit("signal", data, to=target_sid)
+    return None
 
 
 @socketio.on("room_ui_event")
@@ -2472,36 +2537,18 @@ def on_leave_room(*_args):
         name = room["participants"][sid]["name"]
         del room["participants"][sid]
         host_left = False
-        if room.get("active_sharer_sid") == sid:
-            remaining_user_sids = list(user_active_sids.get(info.get("user_id"), set())) if info.get("user_id") else []
-            replacement_sid = next((candidate for candidate in remaining_user_sids if candidate != sid and candidate in room.get("participants", {})), None)
-            if replacement_sid:
-                room["active_sharer_sid"] = replacement_sid
-                socketio.emit("room_ui_event", {"type": "screen_share_started", "from": replacement_sid, "hideSidebar": True, "restored": True}, room=room_id)
-            else:
-                room["active_sharer_sid"] = None
-                room["active_sharer_user_id"] = None
-                socketio.emit("room_ui_event", {"type": "screen_share_stopped", "from": sid}, room=room_id)
+        reconcile_departing_active_sharer(room_id, room, sid, info.get("user_id"))
         if current_user.is_authenticated and current_user.id == room.get("host_user_id"):
             if room.get("host_present"):
                 host_left = True
             room["host_present"] = False
-        participant = MeetingParticipant.query.filter_by(sid=sid).order_by(MeetingParticipant.id.desc()).first()
-        if participant and not participant.left_at:
-            participant.left_at = datetime.utcnow()
+        participant = mark_meeting_participant_left(sid)
+        if participant:
             db.session.commit()
-        emit(
-            "participant_left",
-            {"sid": sid, "name": name, "participant_count": len(room["participants"])},
-            room=room_id,
-        )
+        emit_participant_left(room_id, sid, {"name": name}, len(room["participants"]))
         broadcast_room_participant_snapshot(room_id)
         if host_left:
-            socketio.emit(
-                "host_presence_changed",
-                {"host_present": False, "message": t("host_left_room")},
-                room=room_id,
-            )
+            emit_host_presence_changed(room_id, False, t("host_left_room"))
         debug_log('SOCKET_LEAVE_DONE', sid=sid, room_id=room_id, remaining_participants=list(room.get("participants", {}).keys()), user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids})
         if not room["participants"]:
             schedule_room_cleanup(room_id)

@@ -2,7 +2,6 @@
 <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
 <script src="{{ url_for('static', filename='room_utils.js') }}?v={{ asset_version('room_utils.js') }}"></script>
-<script src="{{ url_for('static', filename='room_rtc.js') }}?v={{ asset_version('room_rtc.js') }}"></script>
 <script src="{{ url_for('static', filename='room_ui.js') }}?v={{ asset_version('room_ui.js') }}"></script>
 <script src="{{ url_for('static', filename='room_diagnostics.js') }}?v={{ asset_version('room_diagnostics.js') }}"></script>
 <script src="{{ url_for('static', filename='room_chat.js') }}?v={{ asset_version('room_chat.js') }}"></script>
@@ -93,7 +92,6 @@ const IS_MOBILE = window.matchMedia('(max-width: 768px)').matches || /Android|iP
 
 const socket = io();
 window.socket = socket;
-const rtcConfig = { iceServers: {{ turn_ice_servers|tojson }}, iceTransportPolicy: 'all' };
 
 let localStream = null;
 let rawCameraStream = null;
@@ -106,9 +104,9 @@ let focusedSid = 'local';
 let hiddenSidebar = false;
 let currentSharerSid = null;
 let livekitController = null;
+let livekitLocalShareActive = false;
 
 const { normalizeParticipantSid, setStatus, stopStreamTracks, escapeHtml, copyText, fileToDataUrl, compressImageFile } = window.RoomPageUtils;
-const { getVideoSender, getAudioSender, applySenderOptimization, replaceSenderTrack, mergeIncomingTrackIntoStream } = window.RoomPageRtc;
 const { createRenderScheduler, createTaskQueue } = window.RoomPageUi;
 const { createRtcDiagnosticsController } = window.RoomPageDiagnostics;
 let currentGridPage = 0;
@@ -406,8 +404,8 @@ function writeReloadRecoveryHint() {
   const payload = {
     ts: Date.now(),
     hadScreenShare: !!isSharingScreen,
-    cameraEnabled: !!rawCameraStream?.getVideoTracks?.().some((track) => track.enabled),
-    micEnabled: !!rawCameraStream?.getAudioTracks?.().some((track) => track.enabled),
+    cameraEnabled: !!localStream?.getVideoTracks?.().some((track) => track.enabled),
+    micEnabled: !!localStream?.getAudioTracks?.().some((track) => track.enabled),
   };
   try {
     sessionStorage.setItem(RELOAD_RECOVERY_KEY, JSON.stringify(payload));
@@ -1181,287 +1179,6 @@ async function optimizePeerSenders(targetSid = null, { isScreenShare = false } =
   }));
 }
 
-async function getUserMediaWithFallback({ constraints, wantsVideo = false, wantsAudio = false, forceFacingMode = null }) {
-  const fallbackConstraints = [];
-  if (wantsVideo) {
-    fallbackConstraints.push({
-      audio: wantsAudio ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true } : false,
-      video: {
-        width: { ideal: 640, max: 1280 },
-        height: { ideal: 360, max: 720 },
-        frameRate: { ideal: 10, max: 15 },
-        ...(forceFacingMode && !IS_IOS ? { facingMode: { ideal: forceFacingMode } } : {}),
-      },
-    });
-    fallbackConstraints.push({
-      audio: wantsAudio,
-      video: true,
-    });
-  }
-  const candidates = [constraints, ...fallbackConstraints];
-  let lastErr = null;
-  for (const candidate of candidates) {
-    try {
-      return await navigator.mediaDevices.getUserMedia(candidate);
-    } catch (err) {
-      lastErr = err;
-      const name = String(err?.name || '');
-      if (name === 'NotAllowedError' || name === 'SecurityError') break;
-    }
-  }
-  throw lastErr || new Error('getUserMedia failed');
-}
-
-async function requestMedia(forceFacingMode = null, manualRequest = false, preferredKinds = null) {
-  const wantsVideo = Array.isArray(preferredKinds) ? preferredKinds.includes('video') : (manualRequest ? true : !!PREF_AUTO_ENABLE_CAMERA);
-  const wantsAudio = Array.isArray(preferredKinds) ? preferredKinds.includes('audio') : (manualRequest ? true : !!PREF_AUTO_ENABLE_MICROPHONE);
-  if (!wantsVideo && !wantsAudio) {
-    setStatus({{ ('当前未设置自动打开摄像头或麦克风，请手动开启。' if lang == 'zh' else 'Camera and microphone are both off by default. Enable either one manually when needed.')|tojson }});
-    return null;
-  }
-  try {
-    const constraints = {
-      audio: wantsAudio ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true } : false,
-      video: wantsVideo ? {
-        ...CAMERA_TARGET_CONSTRAINTS,
-        ...(forceFacingMode && !IS_IOS ? { facingMode: { ideal: forceFacingMode } } : {}),
-      } : false,
-    };
-    let nextRawStream = await getUserMediaWithFallback({ constraints, wantsVideo, wantsAudio, forceFacingMode });
-    if (wantsVideo && isMobileDevice()) {
-      const warmupVideoTrack = nextRawStream.getVideoTracks()[0] || null;
-      const needsRetry = !warmupVideoTrack || warmupVideoTrack.readyState !== 'live';
-      if (needsRetry) {
-        stopStreamTracks(nextRawStream);
-        nextRawStream = await getUserMediaWithFallback({
-          constraints: { audio: wantsAudio, video: true },
-          wantsVideo,
-          wantsAudio,
-          forceFacingMode,
-        });
-      }
-    }
-    const nextVideoTrack = nextRawStream.getVideoTracks()[0] || null;
-    const nextAudioTrack = nextRawStream.getAudioTracks()[0] || null;
-
-    if (rawCameraStream) {
-      const oldVideoTrack = rawCameraStream.getVideoTracks()[0] || null;
-      const oldAudioTrack = rawCameraStream.getAudioTracks()[0] || null;
-      if (oldVideoTrack && nextVideoTrack && oldVideoTrack !== nextVideoTrack) { try { oldVideoTrack.stop(); } catch (_) {} }
-      if (oldAudioTrack && nextAudioTrack && oldAudioTrack !== nextAudioTrack) { try { oldAudioTrack.stop(); } catch (_) {} }
-      const merged = new MediaStream();
-      if (nextVideoTrack || oldVideoTrack) merged.addTrack(nextVideoTrack || oldVideoTrack);
-      if (nextAudioTrack || oldAudioTrack) merged.addTrack(nextAudioTrack || oldAudioTrack);
-      rawCameraStream = merged;
-    } else {
-      rawCameraStream = nextRawStream;
-    }
-
-    disableVirtualBackgroundState({ stopCanvas: true });
-    rawPreviewVideo.srcObject = rawCameraStream;
-    queueVideoPlayback(rawPreviewVideo, [0, 120]);
-    monitorRawVideoTrack(rawCameraStream.getVideoTracks()[0] || null);
-
-    if (!manualRequest) {
-      rawCameraStream.getVideoTracks().forEach(track => { track.enabled = !!PREF_AUTO_ENABLE_CAMERA; });
-      rawCameraStream.getAudioTracks().forEach(track => { track.enabled = !!PREF_AUTO_ENABLE_MICROPHONE; });
-    }
-
-    useLocalOutputStream(rawCameraStream);
-    await optimizePeerSenders(null, { isScreenShare: false });
-
-    if (virtualBgImageDataUrl && !isSharingScreen && !currentSharerSid) {
-      try {
-        await activateVirtualBackground();
-      } catch (vbgErr) {
-        console.error(vbgErr);
-        fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (vbgErr.message || 'unknown error'));
-      }
-    } else {
-      setStatus(TEXT_PERMISSION_READY);
-    }
-    return rawCameraStream;
-  } catch (err) {
-    console.error(err);
-    setStatus(TEXT_PERMISSION_FAILED + ': ' + err.message, 'error');
-    return null;
-  }
-}
-
-async function ensureRequestedTrack(kind) {
-  const track = kind === 'video' ? rawCameraStream?.getVideoTracks?.()[0] : rawCameraStream?.getAudioTracks?.()[0];
-  if (track) return track;
-  const stream = await requestMedia(currentFacingMode, true, [kind]);
-  return kind === 'video' ? stream?.getVideoTracks?.()[0] : stream?.getAudioTracks?.()[0];
-}
-
-function ensurePeerState(targetSid) {
-  if (!peerState[targetSid]) {
-    peerState[targetSid] = { makingOffer: false, ignoreOffer: false, isSettingRemoteAnswerPending: false, pendingCandidates: [], disconnectTimer: null };
-  }
-  return peerState[targetSid];
-}
-
-async function flushPendingCandidates(targetSid, pc) {
-  const state = ensurePeerState(targetSid);
-  if (!pc?.remoteDescription) return;
-  const pending = state.pendingCandidates.splice(0, state.pendingCandidates.length);
-  for (const candidate of pending) {
-    try {
-      await pc.addIceCandidate(candidate);
-    } catch (err) {
-      console.error(err);
-    }
-  }
-}
-
-function closePeer(targetSid, { preserveParticipant = false } = {}) {
-  const pc = peerConnections[targetSid];
-  if (pc) {
-    try { pc.onicecandidate = null; } catch (_) {}
-    try { pc.ontrack = null; } catch (_) {}
-    try { pc.onnegotiationneeded = null; } catch (_) {}
-    try { pc.onconnectionstatechange = null; } catch (_) {}
-    try { pc.oniceconnectionstatechange = null; } catch (_) {}
-    try { pc.close(); } catch (_) {}
-  }
-  const state = peerState[targetSid];
-  if (state?.disconnectTimer) clearTimeout(state.disconnectTimer);
-  delete peerConnections[targetSid];
-  delete peerState[targetSid];
-  rtcDiagnostics.pruneSid(targetSid);
-  if (!preserveParticipant) removeRemoteVideo(targetSid);
-}
-
-async function performSyncPeerMedia(targetSid = null) {
-  const entries = targetSid
-    ? (peerConnections[targetSid] ? [[targetSid, peerConnections[targetSid]]] : [])
-    : Object.entries(peerConnections);
-  const tracks = [];
-  const activeVideoTrack = (isSharingScreen ? getCurrentScreenTrack() : null) || localStream?.getVideoTracks?.()[0] || null;
-  if (activeVideoTrack) tracks.push(activeVideoTrack);
-  getOutboundAudioTracks().forEach((track) => tracks.push(track));
-  const renegotiateTasks = [];
-
-  entries.forEach(([sid, pc]) => {
-    if (!pc) return;
-    ensurePeerState(sid);
-    renegotiateTasks.push((async () => {
-      let addedTrack = false;
-      let changedTrack = false;
-      const results = await Promise.allSettled(tracks.map((track) => replaceSenderTrack(pc, track.kind, track, localStream, getSenderOptions(!!isSharingScreen))));
-      results.forEach((result) => {
-        if (result.status === 'fulfilled' && result.value?.added) addedTrack = true;
-        if (result.status === 'fulfilled' && result.value?.changed) changedTrack = true;
-        if (result.status === 'rejected') console.error(result.reason);
-      });
-      if (!addedTrack && !changedTrack) return;
-      await sendOfferForPeer(sid, pc);
-    })());
-  });
-
-  if (renegotiateTasks.length) await Promise.allSettled(renegotiateTasks);
-}
-
-function scheduleSyncPeerMedia(targetSid = null) {
-  const nextTargetSid = targetSid || null;
-  if (syncPeerMediaPromise) {
-    syncPeerMediaQueuedTargetSid = syncPeerMediaQueuedTargetSid || nextTargetSid;
-    return syncPeerMediaPromise;
-  }
-  syncPeerMediaPromise = (async () => {
-    try {
-      await performSyncPeerMedia(nextTargetSid);
-    } finally {
-      syncPeerMediaPromise = null;
-      const queuedTargetSid = syncPeerMediaQueuedTargetSid;
-      syncPeerMediaQueuedTargetSid = undefined;
-      if (queuedTargetSid !== undefined) {
-        scheduleSyncPeerMedia(queuedTargetSid).catch((err) => console.error(err));
-      }
-    }
-  })();
-  return syncPeerMediaPromise;
-}
-
-function ensurePeer(targetSid) {
-  if (peerConnections[targetSid]) return peerConnections[targetSid];
-  const pc = new RTCPeerConnection(rtcConfig);
-  peerConnections[targetSid] = pc;
-  const state = ensurePeerState(targetSid);
-
-  const clearDisconnectTimer = () => {
-    if (!state.disconnectTimer) return;
-    clearTimeout(state.disconnectTimer);
-    state.disconnectTimer = null;
-  };
-
-  const ensureBaseTransceiver = (kind) => {
-    const existing = (pc.getTransceivers?.() || []).some((transceiver) => {
-      if (!transceiver || transceiver.stopped) return false;
-      const tKind = transceiver.receiver?.track?.kind || transceiver.sender?.track?.kind || null;
-      return tKind === kind;
-    });
-    if (!existing) {
-      try { pc.addTransceiver(kind, { direction: 'sendrecv' }); } catch (_) {}
-    }
-  };
-  // Ensure m-lines exist even before local media is ready, otherwise first offer may carry no media sections.
-  ensureBaseTransceiver('video');
-  ensureBaseTransceiver('audio');
-
-  const outboundVideoTrack = (isSharingScreen ? getCurrentScreenTrack() : null) || localStream?.getVideoTracks?.()[0] || null;
-  if (outboundVideoTrack) {
-    replaceSenderTrack(pc, 'video', outboundVideoTrack, localVideo?.srcObject || localStream, getSenderOptions(!!isSharingScreen)).catch(() => {});
-  }
-  getOutboundAudioTracks().forEach((track) => replaceSenderTrack(pc, 'audio', track, localStream || new MediaStream([track]), getSenderOptions(false)).catch(() => {}));
-
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      socket.emit('signal', { target: targetSid, from: socket.id, candidate: event.candidate });
-    }
-  };
-
-  pc.ontrack = (event) => {
-    mergeIncomingTrackIntoStream(remoteMediaStreams, targetSid, event, (mergedStream) => addRemoteVideo(targetSid, mergedStream));
-  };
-  pc.onnegotiationneeded = () => {
-    sendOfferForPeer(targetSid, pc).catch((err) => console.error(err));
-  };
-  pc.oniceconnectionstatechange = async () => {
-    if (pc.iceConnectionState === 'failed') {
-      try {
-        await pc.restartIce();
-        await sendOfferForPeer(targetSid, pc, { iceRestart: true });
-      } catch (err) {
-        console.error(err);
-      }
-    }
-  };
-  pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'connected' || pc.connectionState === 'connecting') {
-      clearDisconnectTimer();
-      return;
-    }
-    if (pc.connectionState === 'disconnected') {
-      clearDisconnectTimer();
-      state.disconnectTimer = setTimeout(() => {
-        if (pc.connectionState === 'disconnected') {
-          state.pendingCandidates = [];
-          closePeer(targetSid);
-        }
-      }, 8000);
-      return;
-    }
-    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-      clearDisconnectTimer();
-      state.pendingCandidates = [];
-      closePeer(targetSid);
-    }
-  };
-  return pc;
-}
-
 function setParticipantMeta(sid, { name = null, isHost = false } = {}) {
   if (!sid || sid === socket.id) return null;
   const nextMeta = {
@@ -1486,7 +1203,6 @@ function addRemoteParticipant(sid, name, isHost = false) {
 
 function syncParticipantRoster(participants = [], { pruneMissing = false } = {}) {
   const keep = new Set();
-  const toConnect = [];
   participants.forEach((participant) => {
     const sid = participant?.sid;
     if (!sid || sid === socket.id) return;
@@ -1494,22 +1210,18 @@ function syncParticipantRoster(participants = [], { pruneMissing = false } = {})
     const existed = !!participantMeta[sid];
     if (!existed) {
       addRemoteParticipant(sid, participant.name || sid, !!participant.is_host);
-      toConnect.push({ sid });
       return;
     }
     setParticipantMeta(sid, { name: participant.name || sid, isHost: !!participant.is_host });
     const labelEl = document.querySelector(`#card-${CSS.escape(sid)} .video-label`);
     if (labelEl) labelEl.textContent = participantMeta[sid].name;
-    if (!peerConnections[sid]) toConnect.push({ sid });
   });
   if (pruneMissing) {
     Object.keys(participantMeta).forEach((sid) => {
       if (keep.has(sid)) return;
-      closePeer(sid, { preserveParticipant: true });
       removeRemoteVideo(sid);
     });
   }
-  return toConnect;
 }
 
 function addRemoteVideo(sid, stream) {
@@ -1540,7 +1252,6 @@ function clearRemoteMedia(sid) {
 
 function removeRemoteVideo(sid) {
   document.getElementById('card-' + sid)?.remove();
-  delete peerState[sid];
   delete remoteMediaStreams[sid];
   delete participantMeta[sid];
   window.participantMeta = participantMeta;
@@ -1582,6 +1293,39 @@ function setLocalPreviewForLiveKit(stream, { hasVideo = false, isScreenShare = f
   updateLiveKitShareFocus('local', !!isScreenShare);
 }
 
+function handleLocalLiveKitScreenShareState(isActive) {
+  const nextState = !!isActive;
+  if (livekitLocalShareActive === nextState) return;
+  livekitLocalShareActive = nextState;
+  if (nextState) {
+    broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true });
+    setStatus(TEXT_SCREEN_SHARE_MODE);
+    return;
+  }
+  broadcastUiEvent({ type: 'screen_share_stopped' });
+  setStatus(TEXT_SCREEN_SHARE_STOPPED);
+}
+
+async function restoreLiveKitMediaAfterReload(hint) {
+  if (!IS_LIVEKIT_MODE || !hint) return false;
+  const shouldRestoreCamera = !!hint.cameraEnabled;
+  const shouldRestoreMicrophone = !!hint.micEnabled;
+  if (!shouldRestoreCamera && !shouldRestoreMicrophone) {
+    if (hint.hadScreenShare) {
+      setStatus({{ ('页面刷新后无法自动恢复共享屏幕，请手动重新开启。' if lang == 'zh' else 'Screen share cannot be restored automatically after refresh. Please start sharing again manually.')|tojson }});
+    }
+    return false;
+  }
+  const controller = await ensureLiveKitConnected();
+  if (!controller) return false;
+  await Promise.allSettled([
+    controller.setCameraEnabled(shouldRestoreCamera),
+    controller.setMicrophoneEnabled(shouldRestoreMicrophone),
+  ]);
+  setStatus({{ ('页面刷新后已尝试恢复摄像头/麦克风；浏览器限制导致共享屏幕需手动重新开启。' if lang == 'zh' else 'Camera/microphone were recovered after refresh. Screen share must be started again due to browser limitations.')|tojson }});
+  return true;
+}
+
 function ensureLiveKitController() {
   if (!IS_LIVEKIT_MODE) return null;
   if (livekitController) return livekitController;
@@ -1610,6 +1354,7 @@ function ensureLiveKitController() {
     },
     setLocalPreview: setLocalPreviewForLiveKit,
     onScreenShareState: updateLiveKitShareFocus,
+    onLocalScreenShareState: handleLocalLiveKitScreenShareState,
     setStatus,
   });
   return livekitController;
@@ -1633,64 +1378,6 @@ async function ensureLiveKitConnected() {
     console.error(err);
     setStatus(`${TEXT_LIVEKIT_CONNECT_FAILED}: ${err?.message || 'unknown error'}`, 'error');
     throw err;
-  }
-}
-
-async function callPeer(targetSid) {
-  if (!targetSid || targetSid === socket.id) return;
-  const pc = ensurePeer(targetSid);
-  await sendOfferForPeer(targetSid, pc);
-}
-
-function scheduleRenegotiationSweep(reason = 'unknown', delayMs = 1200) {
-  setTimeout(() => {
-    const targets = Object.keys(participantMeta || {}).map((sid) => ({ sid }));
-    reconcilePeerConnections(targets).catch((err) => console.error(err));
-  }, Math.max(0, delayMs));
-}
-
-async function reconcilePeerConnections(participants = []) {
-  const tasks = [];
-  participants.forEach((participant) => {
-    const sid = participant?.sid;
-    if (!sid || sid === socket.id) return;
-    if (!shouldInitiateOfferTo(sid)) return;
-    const pc = peerConnections[sid] || null;
-    const shouldOffer = !pc || pc.connectionState !== 'connected';
-    if (shouldOffer) tasks.push(callPeer(sid));
-  });
-  if (!tasks.length) return;
-  await Promise.allSettled(tasks);
-  await scheduleSyncPeerMedia().catch((err) => console.error(err));
-}
-
-function shouldInitiateOfferTo(targetSid) {
-  return !!targetSid && targetSid !== socket.id;
-}
-
-async function sendOfferForPeer(targetSid, pc, { iceRestart = false } = {}) {
-  if (!targetSid || targetSid === socket.id) return false;
-  if (!shouldInitiateOfferTo(targetSid)) return false;
-  const peer = pc || peerConnections[targetSid];
-  if (!peer) return false;
-  const state = ensurePeerState(targetSid);
-  if (state.makingOffer || peer.signalingState !== 'stable') return false;
-  try {
-    state.makingOffer = true;
-    if (iceRestart) {
-      const offer = await peer.createOffer({ iceRestart: true });
-      if (peer.signalingState !== 'stable') return false;
-      await peer.setLocalDescription(offer);
-    } else {
-      await peer.setLocalDescription();
-    }
-    socket.emit('signal', { target: targetSid, from: socket.id, description: peer.localDescription, senderName: USER_NAME });
-    return true;
-  } catch (err) {
-    console.error(err);
-    return false;
-  } finally {
-    state.makingOffer = false;
   }
 }
 
@@ -2341,56 +2028,11 @@ function broadcastUiEvent(payload) {
   socket.emit('room_ui_event', payload);
 }
 
-function getCurrentScreenTrack() {
-  return localVideo?.srcObject?.getVideoTracks?.()[0] || null;
-}
-
-async function stopLocalScreenShareSession({ broadcast = true, restoreMedia = true, statusMessage = TEXT_SCREEN_SHARE_STOPPED } = {}) {
-  const hadScreenShare = !!isSharingScreen || !!screenShareStream || currentSharerSid === 'local';
-  isSharingScreen = false;
-  currentSharerSid = null;
-  hiddenSidebar = false;
-  focusedSid = 'local';
-  queueRenderLayout(true);
-  scheduleParticipantVideoResume();
-  cleanupScreenShareAudioMix({ stopContext: true });
-  try { stopStreamTracks(screenShareStream); } catch (_) {}
-  screenShareStream = null;
-  if (restoreMedia) {
-    if (virtualBgImageDataUrl) {
-      await activateVirtualBackground();
-    } else if (rawCameraStream) {
-      fallbackToRawCamera();
-    } else {
-      await requestMedia(currentFacingMode, true, ['video', 'audio']);
-    }
-  }
-  await scheduleSyncPeerMedia().catch((err) => console.error(err));
-  if (hadScreenShare && broadcast) broadcastUiEvent({ type: 'screen_share_stopped' });
-  if (hadScreenShare && statusMessage) setStatus(statusMessage);
-  return hadScreenShare;
-}
-
-async function syncScreenShareState(forceBroadcast = false) {
-  const screenTrack = isSharingScreen ? getCurrentScreenTrack() : null;
-  if (!screenTrack || screenTrack.readyState === 'ended') {
-    await stopLocalScreenShareSession({ broadcast: forceBroadcast, restoreMedia: true, statusMessage: null });
-    return false;
-  }
-  currentSharerSid = 'local';
-  focusedSid = 'local';
-  hiddenSidebar = true;
-  queueRenderLayout();
-  await scheduleSyncPeerMedia().catch((err) => console.error(err));
-  if (forceBroadcast) broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true, restored: true });
-  return true;
-}
-
 const rtcDiagnostics = createRtcDiagnosticsController({
-  getPeerConnections: () => peerConnections,
+  getPeerConnections: () => ({}),
   getPeerLabel: (sid) => getDisplayName(sid),
   getHeaderLines: () => ([
-    `peers: ${Object.keys(peerConnections).length}`,
+    `participants: ${Object.keys(participantMeta).length + 1}`,
     `sharing: ${isSharingScreen ? 'yes' : 'no'}`,
     `virtual_bg: ${virtualBgEnabled ? 'on' : 'off'}`,
   ]),
@@ -2406,6 +2048,7 @@ function startRtcDiagnosticsLoop() {
 function cleanupMeetingSession() {
   if (hasLeftMeeting) return;
   hasLeftMeeting = true;
+  livekitLocalShareActive = false;
   if (livekitController) {
     try { livekitController.disconnect(); } catch (_) {}
     livekitController = null;
@@ -2416,16 +2059,8 @@ function cleanupMeetingSession() {
   try { recorderStream?.getTracks?.().forEach(track => track.stop()); } catch (_) {}
   recorderStream = null;
   try { stopStreamTracks(localStream); } catch (_) {}
-  try { stopStreamTracks(rawCameraStream); } catch (_) {}
   try { stopStreamTracks(processedCanvasStream); } catch (_) {}
   cleanupScreenShareAudioMix({ stopContext: true });
-  try { stopStreamTracks(screenShareStream); } catch (_) {}
-  screenShareStream = null;
-  Object.values(peerConnections).forEach(pc => {
-    try { pc.close(); } catch (_) {}
-  });
-  peerConnections = {};
-  peerState = {};
   remoteMediaStreams = {};
   rtcDiagnostics.reset();
   rtcDiagnostics.stop();
@@ -2445,18 +2080,6 @@ socket.on('connect', () => {
   ensureCard('local', getDisplayName('local'), true);
   queueRenderLayout();
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
-  if (!IS_LIVEKIT_MODE && (PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream) {
-    runMediaTask('initial-request-media', async () => {
-      const stream = await requestMedia(currentFacingMode, false);
-      if (!stream && isMobileDevice()) {
-        setTimeout(() => {
-          runMediaTask('initial-request-media-retry', async () => {
-            await requestMedia(currentFacingMode, true, ['video', 'audio']);
-          }).catch((err) => console.error(err));
-        }, 800);
-      }
-    }).catch((err) => console.error(err));
-  }
 });
 
 socket.on('join_ok', async (data) => {
@@ -2483,24 +2106,11 @@ socket.on('join_ok', async (data) => {
   } else {
     updateShareUiState();
   }
-  if (IS_LIVEKIT_MODE) {
-    await ensureLiveKitConnected();
-  } else if (isSharingScreen) {
-    await syncScreenShareState(true);
-  }
-  if (pendingReloadRecoveryHint && !isSharingScreen) {
-    const shouldRecoverMedia = !!pendingReloadRecoveryHint.hadScreenShare
-      || !!pendingReloadRecoveryHint.cameraEnabled
-      || !!pendingReloadRecoveryHint.micEnabled;
+  await ensureLiveKitConnected();
+  if (pendingReloadRecoveryHint) {
+    const reloadHint = pendingReloadRecoveryHint;
     pendingReloadRecoveryHint = null;
-    if (shouldRecoverMedia) {
-      await requestMedia(currentFacingMode, true, ['video', 'audio']);
-      setStatus({{ ('页面刷新后已尝试恢复摄像头/麦克风；浏览器限制导致共享屏幕需手动重新开启。' if lang == 'zh' else 'Camera/microphone were recovered after refresh. Screen share must be started again due to browser limitations.')|tojson }});
-    }
-  }
-  if (!IS_LIVEKIT_MODE) {
-    await reconcilePeerConnections(existingParticipants);
-    scheduleRenegotiationSweep('join_ok', 1000);
+    await restoreLiveKitMediaAfterReload(reloadHint);
   }
   refreshRtcDiagnostics().catch(() => {});
   if (data && data.host_present === false && IS_HOST) {
@@ -2513,14 +2123,12 @@ socket.on('join_ok', async (data) => {
 socket.on('participant_joined', async (data) => {
   addRemoteParticipant(data.sid, data.name, !!data.is_host);
   participantCountEl.textContent = data.participant_count;
-  if (!IS_LIVEKIT_MODE) await reconcilePeerConnections([data]);
   refreshRtcDiagnostics().catch(() => {});
 });
 
 socket.on('participant_left', (data) => {
   participantCountEl.textContent = data.participant_count;
   if (currentGridPage > 0) currentGridPage = Math.max(0, currentGridPage - 1);
-  if (!IS_LIVEKIT_MODE) closePeer(data.sid, { preserveParticipant: true });
   removeRemoteVideo(data.sid);
   renderMentionPicker();
   refreshRtcDiagnostics().catch(() => {});
@@ -2529,13 +2137,9 @@ socket.on('participant_left', (data) => {
 socket.on('participant_snapshot', async (data) => {
   const list = Array.isArray(data?.participants) ? data.participants : [];
   const count = Number(data?.participant_count || list.length || 0);
-  const toConnect = syncParticipantRoster(list, { pruneMissing: true });
+  syncParticipantRoster(list, { pruneMissing: true });
   participantCountEl.textContent = String(Math.max(1, count));
   renderMentionPicker();
-  if (!IS_LIVEKIT_MODE) {
-    await reconcilePeerConnections(toConnect);
-    scheduleRenegotiationSweep('participant_snapshot', 800);
-  }
   refreshRtcDiagnostics().catch(() => {});
 });
 
@@ -2598,51 +2202,6 @@ socket.on('host_presence_changed', (data) => {
 
 socket.on('host_action_error', (data) => {
   setStatus(data?.message || 'Action failed', 'error');
-});
-
-socket.on('signal', async (data) => {
-  if (IS_LIVEKIT_MODE) return;
-  const from = data.from;
-  const pc = ensurePeer(from);
-  const state = ensurePeerState(from);
-  const polite = String(socket.id) > String(from);
-  try {
-    if (data.description) {
-      const readyForOffer = !state.makingOffer && (pc.signalingState === 'stable' || state.isSettingRemoteAnswerPending);
-      const offerCollision = data.description.type === 'offer' && !readyForOffer;
-      state.ignoreOffer = !polite && offerCollision;
-      if (state.ignoreOffer) return;
-      if (offerCollision) {
-        await Promise.all([
-          pc.setLocalDescription({ type: 'rollback' }),
-          pc.setRemoteDescription(data.description),
-        ]);
-      } else {
-        state.isSettingRemoteAnswerPending = data.description.type === 'answer';
-        await pc.setRemoteDescription(data.description);
-        state.isSettingRemoteAnswerPending = false;
-      }
-      await flushPendingCandidates(from, pc);
-      if (data.description.type === 'offer') {
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        socket.emit('signal', { target: from, from: socket.id, description: pc.localDescription, senderName: USER_NAME });
-      }
-    } else if (data.candidate) {
-      if (pc.remoteDescription) {
-        try {
-          await pc.addIceCandidate(data.candidate);
-        } catch (err) {
-          if (!state.ignoreOffer) throw err;
-        }
-      } else {
-        state.pendingCandidates.push(data.candidate);
-      }
-    }
-  } catch (err) {
-    state.isSettingRemoteAnswerPending = false;
-    console.error(err);
-  }
 });
 
 socket.on('room_ui_event', (data) => {
@@ -2746,144 +2305,31 @@ toggleSpeakerBtn && (toggleSpeakerBtn.onclick = () => runMediaTask('toggle-speak
   setSpeakerEnabled(!speakerEnabled, { userGesture: true, persist: true, showStatus: true });
 }));
 document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic', async () => {
-  if (IS_LIVEKIT_MODE) {
-    const controller = await ensureLiveKitConnected();
-    if (!controller) return;
-    const enabled = await controller.setMicrophoneEnabled();
-    setStatus(enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
-    return;
-  }
-  let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || null;
-  if (!rawTrack) {
-    rawTrack = await ensureRequestedTrack('audio');
-    if (!rawTrack) return;
-  }
-  rawTrack.enabled = !rawTrack.enabled;
-  const localTrack = localStream?.getAudioTracks?.()[0];
-  if (!isSharingScreen && localTrack && localTrack !== rawTrack) localTrack.enabled = rawTrack.enabled;
-  if (isSharingScreen && screenShareStream) {
-    await refreshScreenShareAudioSenders().catch(err => console.error(err));
-  }
-  setStatus(rawTrack.enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
+  const controller = await ensureLiveKitConnected();
+  if (!controller) return;
+  const enabled = await controller.setMicrophoneEnabled();
+  setStatus(enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
 });
 document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-camera', async () => {
-  if (IS_LIVEKIT_MODE) {
-    const controller = await ensureLiveKitConnected();
-    if (!controller) return;
-    const enabled = await controller.setCameraEnabled();
-    const localCard = ensureCard('local', getDisplayName('local'), true);
-    updatePlaceholder(localCard, !!enabled);
-    setStatus(enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
-    return;
-  }
-  let rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
+  const controller = await ensureLiveKitConnected();
+  if (!controller) return;
+  const enabled = await controller.setCameraEnabled();
   const localCard = ensureCard('local', getDisplayName('local'), true);
-  if (!rawTrack || rawTrack.readyState === 'ended') {
-    rawTrack = await ensureRequestedTrack('video');
-    if (!rawTrack) return;
-  }
-  monitorRawVideoTrack(rawTrack);
-  rawTrack.enabled = !rawTrack.enabled;
-  const outputVideoTrack = localStream?.getVideoTracks?.()[0];
-  if (outputVideoTrack && outputVideoTrack !== rawTrack) outputVideoTrack.enabled = rawTrack.enabled;
-  updatePlaceholder(localCard, rawTrack.enabled);
-  if (rawTrack.enabled && !isSharingScreen) {
-    await scheduleSyncPeerMedia().catch(err => console.error(err));
-  }
-  setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
+  updatePlaceholder(localCard, !!enabled);
+  setStatus(enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 });
 document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-screen', async () => {
-  if (IS_LIVEKIT_MODE) {
-    const controller = await ensureLiveKitConnected();
-    if (!controller) return;
-    const enabled = await controller.setScreenShareEnabled();
-    if (enabled) {
-      broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true });
-      setStatus(TEXT_SCREEN_SHARE_MODE);
-    } else {
-      broadcastUiEvent({ type: 'screen_share_stopped' });
-      setStatus(TEXT_SCREEN_SHARE_STOPPED);
-    }
-    return;
-  }
-  if (!navigator.mediaDevices?.getDisplayMedia) {
-    setStatus({{ ('当前设备/浏览器不支持共享屏幕' if lang == 'zh' else 'This device/browser does not support screen sharing')|tojson }}, 'warning');
-    return;
-  }
-  if (currentSharerSid && currentSharerSid !== 'local') {
-    setStatus({{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }}, 'warning');
-    return;
-  }
+  const controller = await ensureLiveKitConnected();
+  if (!controller) return;
   try {
-    let screenStream;
-    try {
-      screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: SCREEN_SHARE_CONSTRAINTS,
-        audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        sampleRate: 48000
-      }
-      });
-    } catch (audioErr) {
-      screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: SCREEN_SHARE_CONSTRAINTS,
-        audio: false
-      });
-    }
-    screenShareStream = screenStream;
-    const screenTrack = screenStream.getVideoTracks()[0];
-    if (!screenTrack) throw new Error('screen_track_missing');
-    try { screenTrack.contentHint = 'detail'; } catch (_) {}
-    await buildScreenShareAudioTrack(screenStream);
-    bindScreenShareAudioTrackLifecycle(screenStream);
-    const preferredAudioTrack = getPreferredScreenShareAudioTrack();
-    const screenCard = ensureCard('local', getDisplayName('local'), true);
-    localVideo.srcObject = screenStream;
-    queueVideoPlayback(localVideo, [0, 120]);
-    updatePlaceholder(screenCard, true);
-    isSharingScreen = true;
-    currentSharerSid = 'local';
-    hiddenSidebar = true;
-    focusedSid = 'local';
-
-    await Promise.allSettled(Object.values(peerConnections).map(async (pc) => {
-      await replaceSenderTrack(pc, 'video', screenTrack, screenStream, { isScreenShare: true });
-      await replaceSenderTrack(pc, 'audio', preferredAudioTrack, preferredAudioTrack ? new MediaStream([preferredAudioTrack]) : null);
-    }));
-
-    await scheduleSyncPeerMedia().catch((err) => console.error(err));
-    queueRenderLayout();
-    await optimizePeerSenders(null, { isScreenShare: true });
-    setStatus(TEXT_SCREEN_SHARE_MODE);
-    broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true });
-
-    screenTrack.onended = () => runMediaTask('share-screen-ended', async () => {
-      await stopLocalScreenShareSession({ broadcast: true, restoreMedia: true, statusMessage: TEXT_SCREEN_SHARE_STOPPED });
-    });
+    await controller.setScreenShareEnabled();
   } catch (err) {
-    setStatus(err.message, 'error');
+    setStatus(err?.message || TEXT_LIVEKIT_CONNECT_FAILED, 'error');
+    throw err;
   }
 });
 document.getElementById('virtualBgBtn').onclick = () => runMediaTask('virtual-background-toggle', async () => {
-  if (IS_LIVEKIT_MODE) {
-    setStatus(TEXT_LIVEKIT_VBG_PENDING, 'warning');
-    return;
-  }
-  if (isSharingScreen || currentSharerSid) {
-    setStatus({{ ('共享屏幕期间不可使用虚拟背景' if lang == 'zh' else 'Virtual background is unavailable during screen sharing')|tojson }}, 'warning');
-    return;
-  }
-  if (virtualBgEnabled) {
-    deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF);
-    return;
-  }
-  if (!rawCameraStream) {
-    await requestMedia(currentFacingMode, true);
-    if (!rawCameraStream) return;
-  }
-  setStatus(TEXT_VIRTUAL_BG_PICK, 'warning');
-  virtualBgInput.click();
+  setStatus(TEXT_LIVEKIT_VBG_PENDING, 'warning');
 });
 virtualBgInput.onchange = (event) => runMediaTask('virtual-background-image', async () => {
   const file = event.target.files?.[0];

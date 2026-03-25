@@ -1,6 +1,11 @@
 (function (global) {
   const lk = global.LivekitClient;
-  const rtcHelpers = global.RoomPageRtc || {};
+  const SOURCE_FIELD_MAP = new Map([
+    [lk?.Track?.Source?.Camera, 'cameraVideo'],
+    [lk?.Track?.Source?.ScreenShare, 'screenVideo'],
+    [lk?.Track?.Source?.Microphone, 'microphone'],
+    [lk?.Track?.Source?.ScreenShareAudio, 'screenAudio'],
+  ]);
 
   function createRemoteState() {
     return {
@@ -29,6 +34,7 @@
       removeRemoteVideo,
       setLocalPreview,
       onScreenShareState,
+      onLocalScreenShareState,
       setStatus,
     } = options;
 
@@ -44,40 +50,9 @@
       return remoteStates.get(identity);
     }
 
-    function assignTrack(target, source, mediaTrack) {
-      if (source === lk.Track.Source.Camera) {
-        target.cameraVideo = mediaTrack;
-        return;
-      }
-      if (source === lk.Track.Source.ScreenShare) {
-        target.screenVideo = mediaTrack;
-        return;
-      }
-      if (source === lk.Track.Source.ScreenShareAudio) {
-        target.screenAudio = mediaTrack;
-        return;
-      }
-      if (source === lk.Track.Source.Microphone) {
-        target.microphone = mediaTrack;
-      }
-    }
-
-    function clearTrack(target, source) {
-      if (source === lk.Track.Source.Camera) {
-        target.cameraVideo = null;
-        return;
-      }
-      if (source === lk.Track.Source.ScreenShare) {
-        target.screenVideo = null;
-        return;
-      }
-      if (source === lk.Track.Source.ScreenShareAudio) {
-        target.screenAudio = null;
-        return;
-      }
-      if (source === lk.Track.Source.Microphone) {
-        target.microphone = null;
-      }
+    function setTrackField(target, source, mediaTrack) {
+      const fieldName = SOURCE_FIELD_MAP.get(source);
+      if (fieldName) target[fieldName] = mediaTrack || null;
     }
 
     function buildStream(target) {
@@ -121,19 +96,24 @@
       return track?.mediaStreamTrack || null;
     }
 
+    function requireRoom() {
+      if (!room) throw new Error('LiveKit room is not connected');
+      return room;
+    }
+
     function bindRoomEvents() {
       room
         .on(lk.RoomEvent.TrackSubscribed, (track, publication, participant) => {
           const mediaTrack = trackToMediaStreamTrack(track);
           if (!mediaTrack || !participant?.identity) return;
           const state = getRemoteState(participant.identity);
-          assignTrack(state, publication?.source, mediaTrack);
+          setTrackField(state, publication?.source, mediaTrack);
           syncRemoteParticipant(participant.identity);
         })
         .on(lk.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
           if (!participant?.identity) return;
           const state = getRemoteState(participant.identity);
-          clearTrack(state, publication?.source);
+          setTrackField(state, publication?.source, null);
           syncRemoteParticipant(participant.identity);
         })
         .on(lk.RoomEvent.ParticipantDisconnected, (participant) => {
@@ -145,15 +125,22 @@
         })
         .on(lk.RoomEvent.LocalTrackPublished, (publication) => {
           const mediaTrack = trackToMediaStreamTrack(publication?.track);
-          assignTrack(localState, publication?.source, mediaTrack);
+          setTrackField(localState, publication?.source, mediaTrack);
           syncLocalPreview();
+          if (publication?.source === lk.Track.Source.ScreenShare) {
+            onLocalScreenShareState?.(true);
+          }
         })
         .on(lk.RoomEvent.LocalTrackUnpublished, (publication) => {
-          clearTrack(localState, publication?.source);
+          setTrackField(localState, publication?.source, null);
           syncLocalPreview();
+          if (publication?.source === lk.Track.Source.ScreenShare) {
+            onLocalScreenShareState?.(false);
+          }
         })
         .on(lk.RoomEvent.Disconnected, () => {
           connected = false;
+          onLocalScreenShareState?.(false);
         });
     }
 
@@ -200,32 +187,32 @@
     }
 
     async function setMicrophoneEnabled(nextEnabled) {
-      if (!room) throw new Error('LiveKit room is not connected');
-      const publication = room.localParticipant.getTrackPublication(lk.Track.Source.Microphone);
+      const activeRoom = requireRoom();
+      const publication = activeRoom.localParticipant.getTrackPublication(lk.Track.Source.Microphone);
       const enabled = typeof nextEnabled === 'boolean'
         ? nextEnabled
         : !(publication?.isMuted === false && publication?.track);
-      await room.localParticipant.setMicrophoneEnabled(enabled);
+      await activeRoom.localParticipant.setMicrophoneEnabled(enabled);
       return enabled;
     }
 
     async function setCameraEnabled(nextEnabled) {
-      if (!room) throw new Error('LiveKit room is not connected');
-      const publication = room.localParticipant.getTrackPublication(lk.Track.Source.Camera);
+      const activeRoom = requireRoom();
+      const publication = activeRoom.localParticipant.getTrackPublication(lk.Track.Source.Camera);
       const enabled = typeof nextEnabled === 'boolean'
         ? nextEnabled
         : !(publication?.isMuted === false && publication?.track);
-      await room.localParticipant.setCameraEnabled(enabled);
+      await activeRoom.localParticipant.setCameraEnabled(enabled);
       return enabled;
     }
 
     async function setScreenShareEnabled(nextEnabled) {
-      if (!room) throw new Error('LiveKit room is not connected');
-      const publication = room.localParticipant.getTrackPublication(lk.Track.Source.ScreenShare);
+      const activeRoom = requireRoom();
+      const publication = activeRoom.localParticipant.getTrackPublication(lk.Track.Source.ScreenShare);
       const enabled = typeof nextEnabled === 'boolean'
         ? nextEnabled
         : !(publication?.isMuted === false && publication?.track);
-      await room.localParticipant.setScreenShareEnabled(enabled);
+      await activeRoom.localParticipant.setScreenShareEnabled(enabled);
       return enabled;
     }
 
