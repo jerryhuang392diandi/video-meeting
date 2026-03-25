@@ -812,9 +812,10 @@ def broadcast_room_participant_snapshot(room_id):
     room = rooms.get(room_id)
     if not room:
         return
+    host_user_id = room.get("host_user_id")
     payload = {
         "participants": [
-            {"sid": sid, "name": info.get("name") or "Guest"}
+            {"sid": sid, "name": info.get("name") or "Guest", "is_host": bool(info.get("user_id") == host_user_id)}
             for sid, info in room.get("participants", {}).items()
         ],
         "participant_count": len(room.get("participants", {})),
@@ -1610,7 +1611,7 @@ def on_join_room(data):
         if participant and not participant.left_at:
             participant.left_at = datetime.utcnow()
 
-    existing = [{"sid": osid, "name": info["name"]} for osid, info in room["participants"].items()]
+    existing = [{"sid": osid, "name": info["name"], "is_host": bool(info.get("user_id") == room.get("host_user_id"))} for osid, info in room["participants"].items()]
     room["participants"][sid] = {"name": user_name, "joined_at": time.time(), "user_id": current_user.id}
     sid_to_user[sid] = {"room_id": room_id, "name": user_name, "user_id": current_user.id}
     bind_user_socket(current_user.id, sid)
@@ -1666,7 +1667,7 @@ def on_join_room(data):
     )
     emit(
         "participant_joined",
-        {"sid": sid, "name": user_name, "participant_count": len(room["participants"])},
+        {"sid": sid, "name": user_name, "is_host": bool(current_user.id == room.get("host_user_id")), "participant_count": len(room["participants"])},
         room=room_id,
         include_self=False,
     )

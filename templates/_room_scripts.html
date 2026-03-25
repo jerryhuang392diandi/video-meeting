@@ -1458,8 +1458,8 @@ function ensurePeer(targetSid) {
   return pc;
 }
 
-function addRemoteParticipant(sid, name) {
-  participantMeta[sid] = { name: name || sid };
+function addRemoteParticipant(sid, name, isHost = false) {
+  participantMeta[sid] = { name: name || sid, isHost: !!isHost };
   window.participantMeta = participantMeta;
   const card = ensureCard(sid, participantMeta[sid].name, false);
   updatePlaceholder(card, false);
@@ -1500,6 +1500,8 @@ function removeRemoteVideo(sid) {
 }
 
 async function callPeer(targetSid) {
+  if (!targetSid || targetSid === socket.id) return;
+  if (!shouldInitiateOfferTo(targetSid)) return;
   const pc = ensurePeer(targetSid);
   const state = ensurePeerState(targetSid);
   if (state.makingOffer || pc.signalingState !== 'stable') return;
@@ -1528,6 +1530,7 @@ async function reconcilePeerConnections(participants = []) {
   participants.forEach((participant) => {
     const sid = participant?.sid;
     if (!sid || sid === socket.id) return;
+    if (!shouldInitiateOfferTo(sid)) return;
     const pc = peerConnections[sid] || null;
     const shouldOffer = !pc || pc.connectionState !== 'connected';
     if (shouldOffer) tasks.push(callPeer(sid));
@@ -1535,6 +1538,13 @@ async function reconcilePeerConnections(participants = []) {
   if (!tasks.length) return;
   await Promise.allSettled(tasks);
   await scheduleSyncPeerMedia().catch((err) => console.error(err));
+}
+
+function shouldInitiateOfferTo(targetSid) {
+  const remoteIsHost = !!participantMeta?.[targetSid]?.isHost;
+  if (IS_HOST && !remoteIsHost) return true;
+  if (!IS_HOST && remoteIsHost) return false;
+  return String(socket.id) < String(targetSid);
 }
 
 function downloadBlob(blob, filename) {
@@ -2303,7 +2313,7 @@ socket.on('join_ok', async (data) => {
   chatMessages.innerHTML = '';
   const existingParticipants = Array.isArray(data?.participants) ? data.participants : [];
   const existingSidSet = new Set(existingParticipants.map((p) => p?.sid).filter(Boolean));
-  for (const p of existingParticipants) addRemoteParticipant(p.sid, p.name);
+  for (const p of existingParticipants) addRemoteParticipant(p.sid, p.name, !!p.is_host);
   (data.chat_history || []).forEach(item => appendChatMessage(item));
   focusParticipant('local');
   danmakuEnabled = !!data.danmaku_enabled;
@@ -2346,7 +2356,7 @@ socket.on('join_ok', async (data) => {
 });
 
 socket.on('participant_joined', async (data) => {
-  addRemoteParticipant(data.sid, data.name);
+  addRemoteParticipant(data.sid, data.name, !!data.is_host);
   participantCountEl.textContent = data.participant_count;
   await reconcilePeerConnections([data]);
   refreshRtcDiagnostics().catch(() => {});
@@ -2370,10 +2380,11 @@ socket.on('participant_snapshot', async (data) => {
     if (!item?.sid || item.sid === socket.id) return;
     keep.add(item.sid);
     if (!participantMeta[item.sid]) {
-      addRemoteParticipant(item.sid, item.name || item.sid);
+      addRemoteParticipant(item.sid, item.name || item.sid, !!item.is_host);
       toConnect.push(item);
     } else {
       participantMeta[item.sid].name = item.name || item.sid;
+      participantMeta[item.sid].isHost = !!item.is_host;
       const labelEl = document.querySelector(`#card-${CSS.escape(item.sid)} .video-label`);
       if (labelEl) labelEl.textContent = item.name || item.sid;
       if (!peerConnections[item.sid]) toConnect.push(item);
