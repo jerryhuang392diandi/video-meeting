@@ -1,0 +1,41 @@
+# Repository Guidelines
+
+## Project Structure & Module Organization
+This is a Flask + Flask-SocketIO app with a mostly monolithic backend in `app.py`. Keep feature changes grouped by concern inside that file (auth, room lifecycle, chat upload, admin).
+
+- `app.py`: routes, Socket.IO events, SQLAlchemy models, runtime config.
+- `templates/`: Jinja2 pages and room partials (for example `_room_layout.html`, `_room_scripts.html`).
+- `static/`: room frontend logic (`room_rtc.js`, `room_ui.js`, `room_chat.js`, diagnostics) and shared styles.
+- `translations.py`: Chinese/English translation keys used by `t(...)` in templates and backend.
+- `check_i18n.py`: lightweight i18n consistency checker for hardcoded Chinese in templates.
+- `instance/` (generated, ignored): SQLite DB and runtime uploads.
+
+## Build, Test, and Development Commands
+- `python -m venv venv` then `venv\Scripts\activate` (Windows): create and activate local environment.
+- `pip install -r requirements.txt`: install Flask/SocketIO dependencies.
+- `python app.py`: run local server.
+- `python check_i18n.py`: scan templates for untranslated hardcoded Chinese text.
+
+There is currently no formal CI test runner in this repo; use the checks below before opening a PR.
+
+## Coding Style & Naming Conventions
+Use Python 4-space indentation and keep naming consistent with existing code:
+- `snake_case` for functions/variables (`preferred_display_name`, `chat_upload_dir`).
+- `UPPER_SNAKE_CASE` for constants (`MAX_PARTICIPANTS`).
+- clear, short event/route names aligned with existing Socket.IO and Flask patterns.
+
+For templates, prefer translation keys (`t('key')`) over inline UI text. For static JS/CSS, keep changes modular by file responsibility (RTC logic in `room_rtc.js`, UI state in `room_ui.js`).
+
+## Testing Guidelines
+Before submitting:
+- run `python check_i18n.py`;
+- start the app and smoke test login, room join/leave, media controls, and chat attachment upload;
+- verify both `zh` and `en` UI paths for any changed template.
+
+## Commit & Pull Request Guidelines
+Recent history favors concise, imperative commit subjects (for example: “Fix ...”, “Improve ...”, “Tune ...”).
+
+- Keep commit titles specific and action-first.
+- Scope PRs to one functional change area.
+- PR description should include: problem, solution summary, manual test steps, and screenshots/GIFs for UI changes.
+- Link related issues and call out config/env var changes explicitly (`PUBLIC_HOST`, `PUBLIC_SCHEME`, admin credentials).

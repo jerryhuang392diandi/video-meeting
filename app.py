@@ -282,6 +282,11 @@ TRAFFIC_RESET_DAYS = 30
 _TRAFFIC_MONITOR = {"iface": None, "last_total_bytes": None, "last_ts": None}
 
 
+def traffic_accounting_enabled():
+    disabled = (os.environ.get("DISABLE_TRAFFIC_ACCOUNTING") or "").strip().lower()
+    return disabled not in {"1", "true", "yes", "on"}
+
+
 def cycle_anchor_for_user(user):
     anchor = getattr(user, "traffic_cycle_start_at", None)
     if anchor:
@@ -317,6 +322,8 @@ def user_remaining_quota_mb(user):
 
 
 def user_quota_exceeded(user):
+    if not traffic_accounting_enabled():
+        return False
     return user_remaining_quota_mb(user) <= 0.0001
 
 
@@ -424,6 +431,8 @@ def read_interface_total_bytes(interface_name):
 
 
 def sync_network_traffic(now_ts=None):
+    if not traffic_accounting_enabled():
+        return
     now_ts = now_ts or time.time()
     if not _TRAFFIC_MONITOR.get("iface"):
         _TRAFFIC_MONITOR["iface"] = detect_traffic_interface()
@@ -472,6 +481,8 @@ def sync_network_traffic(now_ts=None):
 
 
 def sync_user_traffic(user_id=None):
+    if not traffic_accounting_enabled():
+        return
     sync_network_traffic()
     if user_id:
         user = db.session.get(User, user_id)
@@ -482,6 +493,8 @@ def sync_user_traffic(user_id=None):
 def traffic_summary_dict(user):
     refresh_user_traffic_cycle(user)
     remaining = user_remaining_quota_mb(user)
+    if not traffic_accounting_enabled():
+        remaining = max(remaining, 999999.0)
     anchor = cycle_anchor_for_user(user)
     reset_at = anchor + timedelta(days=TRAFFIC_RESET_DAYS)
     return {
@@ -498,17 +511,23 @@ def traffic_summary_dict(user):
 
 
 def build_turn_ice_servers():
+    public_host = (os.environ.get("TURN_PUBLIC_HOST") or os.environ.get("PUBLIC_HOST") or request.host.split(":")[0]).strip()
     urls_raw = (os.environ.get("TURN_URLS") or "").strip()
     username = (os.environ.get("TURN_USERNAME") or "").strip()
     credential = (os.environ.get("TURN_PASSWORD") or "").strip()
     if urls_raw and username and credential:
         urls = [item.strip() for item in urls_raw.split(",") if item.strip()]
     else:
-        public_host = (os.environ.get("TURN_PUBLIC_HOST") or os.environ.get("PUBLIC_HOST") or request.host.split(":")[0]).strip()
         urls = [f"turn:{public_host}:3478?transport=udp", f"turn:{public_host}:3478?transport=tcp"]
         username = username or (os.environ.get("TURN_USERNAME") or "turnuser").strip() or "turnuser"
         credential = credential or (os.environ.get("TURN_PASSWORD") or "turnpassword123").strip() or "turnpassword123"
-    return [{"urls": urls, "username": username, "credential": credential}]
+    stun_urls_raw = (os.environ.get("STUN_URLS") or f"stun:{public_host}:3478").strip()
+    stun_urls = [item.strip() for item in stun_urls_raw.split(",") if item.strip()]
+    ice_servers = []
+    if stun_urls:
+        ice_servers.append({"urls": stun_urls})
+    ice_servers.append({"urls": urls, "username": username, "credential": credential})
+    return ice_servers
 
 
 

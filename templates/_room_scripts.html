@@ -79,10 +79,11 @@ const TEXT_ATTACHMENT_LIMIT_IMAGE = {{ ('图片请控制在 25MB 以内' if lang
 const TEXT_ATTACHMENT_LIMIT_VIDEO = {{ ('视频请控制在 120MB 以内' if lang == 'zh' else 'Please keep videos under 120MB')|tojson }};
 const TEXT_ATTACHMENT_LIMIT_FILE = {{ ('文档或压缩包请控制在 25MB 以内' if lang == 'zh' else 'Please keep documents or archives under 25MB')|tojson }};
 const TEXT_ROOM_STORAGE_LIMIT = {{ ('当前会议附件空间已接近上限，请先清理聊天或稍后再试' if lang == 'zh' else 'Meeting attachment storage is nearly full. Please clear chat or try later')|tojson }};
+const IS_MOBILE = window.matchMedia('(max-width: 768px)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 const socket = io();
 window.socket = socket;
-const rtcConfig = { iceServers: {{ turn_ice_servers|tojson }}, iceTransportPolicy: 'relay' };
+const rtcConfig = { iceServers: {{ turn_ice_servers|tojson }}, iceTransportPolicy: 'all' };
 
 let localStream = null;
 let rawCameraStream = null;
@@ -129,14 +130,18 @@ let hasLeftMeeting = false;
 const MAX_VBG_WIDTH = 960;
 const MAX_VBG_HEIGHT = 540;
 const VBG_CAPTURE_FPS = 15;
-const CAMERA_TARGET_CONSTRAINTS = { width: { ideal: 640, max: 1280 }, height: { ideal: 360, max: 720 }, frameRate: { ideal: 15, max: 24 } };
-const SCREEN_SHARE_CONSTRAINTS = { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 }, frameRate: { ideal: 24, max: 30 } };
-const SCREEN_SHARE_MAX_BITRATE = 2_200_000;
-const SCREEN_SHARE_HIGH_BITRATE = 3_000_000;
-const SCREEN_SHARE_TOTAL_UPLINK_BUDGET = 8_000_000;
-const CAMERA_TOTAL_UPLINK_BUDGET = 3_000_000;
-const CAMERA_MAX_BITRATE = 1_200_000;
-const CAMERA_LOW_BITRATE = 700_000;
+const CAMERA_TARGET_CONSTRAINTS = IS_MOBILE
+  ? { width: { ideal: 480, max: 640 }, height: { ideal: 270, max: 360 }, frameRate: { ideal: 12, max: 15 } }
+  : { width: { ideal: 640, max: 1280 }, height: { ideal: 360, max: 720 }, frameRate: { ideal: 15, max: 24 } };
+const SCREEN_SHARE_CONSTRAINTS = IS_MOBILE
+  ? { width: { ideal: 960, max: 1280 }, height: { ideal: 540, max: 720 }, frameRate: { ideal: 10, max: 12 } }
+  : { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 }, frameRate: { ideal: 24, max: 30 } };
+const SCREEN_SHARE_MAX_BITRATE = IS_MOBILE ? 1_100_000 : 2_200_000;
+const SCREEN_SHARE_HIGH_BITRATE = IS_MOBILE ? 1_600_000 : 3_000_000;
+const SCREEN_SHARE_TOTAL_UPLINK_BUDGET = IS_MOBILE ? 3_000_000 : 8_000_000;
+const CAMERA_TOTAL_UPLINK_BUDGET = IS_MOBILE ? 1_500_000 : 3_000_000;
+const CAMERA_MAX_BITRATE = IS_MOBILE ? 700_000 : 1_200_000;
+const CAMERA_LOW_BITRATE = IS_MOBILE ? 420_000 : 700_000;
 const AUDIO_MIX_GAIN = 1.0;
 const VIDEO_SENDER_PROFILES = {
   screenShare: {
@@ -238,7 +243,7 @@ function getDisplayName(sid) {
 }
 
 function isMobileDevice() {
-  return window.matchMedia('(max-width: 768px)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  return IS_MOBILE;
 }
 
 let nativeFullscreenVideoEl = null;
@@ -489,6 +494,7 @@ function monitorRawVideoTrack(track) {
   });
   track.addEventListener('mute', () => {
     if (!track.enabled || track.readyState !== 'live') return;
+    if (isMobileDevice()) return;
     scheduleCameraRecovery('muted', 2500);
   });
   track.addEventListener('unmute', () => {
@@ -1620,6 +1626,10 @@ async function startSegmentationLoop() {
 
 async function activateVirtualBackground() {
   if (!rawCameraStream || !virtualBgImageDataUrl) return false;
+  if (isMobileDevice()) {
+    fallbackToRawCamera({{ ('移动端为保证稳定性，暂不启用虚拟背景。' if lang == 'zh' else 'Virtual background is disabled on mobile to improve stability.')|tojson }});
+    return false;
+  }
   const activationToken = ++virtualBgActivationToken;
   let hadWorkingVbg = !!processedVideoStream && localStream === processedVideoStream;
   const previousBgImageEl = virtualBgImageEl;
