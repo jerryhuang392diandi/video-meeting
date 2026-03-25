@@ -130,17 +130,17 @@ const MAX_VBG_WIDTH = 960;
 const MAX_VBG_HEIGHT = 540;
 const VBG_CAPTURE_FPS = 15;
 const CAMERA_TARGET_CONSTRAINTS = { width: { ideal: 640, max: 1280 }, height: { ideal: 360, max: 720 }, frameRate: { ideal: 15, max: 24 } };
-const SCREEN_SHARE_CONSTRAINTS = { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 }, frameRate: { ideal: 15, max: 20 } };
-const SCREEN_SHARE_MAX_BITRATE = 2_500_000;
-const SCREEN_SHARE_HIGH_BITRATE = 3_500_000;
+const SCREEN_SHARE_CONSTRAINTS = { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 }, frameRate: { ideal: 30, max: 30 } };
+const SCREEN_SHARE_MAX_BITRATE = 4_000_000;
+const SCREEN_SHARE_HIGH_BITRATE = 5_000_000;
 const CAMERA_MAX_BITRATE = 1_200_000;
 const CAMERA_LOW_BITRATE = 700_000;
 const AUDIO_MIX_GAIN = 1.0;
 const VIDEO_SENDER_PROFILES = {
   screenShare: {
-    small: { maxBitrate: SCREEN_SHARE_HIGH_BITRATE, maxFramerate: 18, degradationPreference: 'maintain-resolution', priority: 'high', networkPriority: 'high' },
-    medium: { maxBitrate: SCREEN_SHARE_MAX_BITRATE, maxFramerate: 15, degradationPreference: 'maintain-resolution', priority: 'high', networkPriority: 'high' },
-    large: { maxBitrate: 1_800_000, maxFramerate: 12, degradationPreference: 'balanced', priority: 'medium', networkPriority: 'medium' },
+    small: { maxBitrate: SCREEN_SHARE_HIGH_BITRATE, maxFramerate: 30, degradationPreference: 'maintain-framerate', priority: 'high', networkPriority: 'high' },
+    medium: { maxBitrate: SCREEN_SHARE_MAX_BITRATE, maxFramerate: 24, degradationPreference: 'maintain-framerate', priority: 'high', networkPriority: 'high' },
+    large: { maxBitrate: 2_400_000, maxFramerate: 18, degradationPreference: 'balanced', priority: 'medium', networkPriority: 'medium' },
   },
   camera: {
     small: { maxBitrate: CAMERA_MAX_BITRATE, maxFramerate: 24, degradationPreference: 'balanced', priority: 'medium', networkPriority: 'medium' },
