@@ -1521,10 +1521,7 @@ async function reconcilePeerConnections(participants = []) {
 }
 
 function shouldInitiateOfferTo(targetSid) {
-  const remoteIsHost = !!participantMeta?.[targetSid]?.isHost;
-  if (IS_HOST && !remoteIsHost) return true;
-  if (!IS_HOST && remoteIsHost) return false;
-  return String(socket.id) < String(targetSid);
+  return !!targetSid && targetSid !== socket.id;
 }
 
 async function sendOfferForPeer(targetSid, pc, { iceRestart = false } = {}) {
@@ -1536,9 +1533,13 @@ async function sendOfferForPeer(targetSid, pc, { iceRestart = false } = {}) {
   if (state.makingOffer || peer.signalingState !== 'stable') return false;
   try {
     state.makingOffer = true;
-    const offer = await peer.createOffer(iceRestart ? { iceRestart: true } : undefined);
-    if (peer.signalingState !== 'stable') return false;
-    await peer.setLocalDescription(offer);
+    if (iceRestart) {
+      const offer = await peer.createOffer({ iceRestart: true });
+      if (peer.signalingState !== 'stable') return false;
+      await peer.setLocalDescription(offer);
+    } else {
+      await peer.setLocalDescription();
+    }
     socket.emit('signal', { target: targetSid, from: socket.id, description: peer.localDescription, senderName: USER_NAME });
     return true;
   } catch (err) {
