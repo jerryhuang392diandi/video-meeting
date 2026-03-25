@@ -1623,13 +1623,19 @@ def on_join_room(data):
         room["host_present"] = True
 
     if current_user.is_authenticated and room.get("active_sharer_user_id") == current_user.id:
-        # A browser refresh cannot preserve getDisplayMedia capture state.
-        # Clear stale share ownership instead of transferring sharer sid to a new socket.
+        # Only clear stale screen-share ownership when previous sharer socket is no longer active.
+        # If an active sibling session of the same user is still sharing, keep it.
         previous_sharer_sid = room.get("active_sharer_sid")
-        room["active_sharer_sid"] = None
-        room["active_sharer_user_id"] = None
-        if previous_sharer_sid:
-            socketio.emit("room_ui_event", {"type": "screen_share_stopped", "from": previous_sharer_sid, "reason": "sharer_reconnected"}, room=room_id)
+        sharer_active = bool(
+            previous_sharer_sid
+            and previous_sharer_sid in room.get("participants", {})
+            and sid_to_user.get(previous_sharer_sid)
+        )
+        if not sharer_active:
+            room["active_sharer_sid"] = None
+            room["active_sharer_user_id"] = None
+            if previous_sharer_sid:
+                socketio.emit("room_ui_event", {"type": "screen_share_stopped", "from": previous_sharer_sid, "reason": "sharer_reconnected"}, room=room_id)
 
     participant = MeetingParticipant(
         meeting_id=room["meeting_db_id"],

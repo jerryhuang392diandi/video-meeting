@@ -724,7 +724,8 @@ function applySpeakerState({ userGesture = false } = {}) {
       videoEl.defaultMuted = true;
       return;
     }
-    const shouldMute = !speakerEnabled;
+    // On mobile, keep remote media muted until explicit user gesture to avoid autoplay blocking video render.
+    const shouldMute = !speakerEnabled || (isMobileDevice() && !mediaPlaybackActivated);
     videoEl.muted = shouldMute;
     videoEl.defaultMuted = shouldMute;
 
@@ -2299,12 +2300,16 @@ socket.on('join_ok', async (data) => {
   participantCountEl.textContent = data.participant_count;
   chatMessages.innerHTML = '';
   const existingParticipants = Array.isArray(data?.participants) ? data.participants : [];
+  const existingSidSet = new Set(existingParticipants.map((p) => p?.sid).filter(Boolean));
   for (const p of existingParticipants) addRemoteParticipant(p.sid, p.name);
   (data.chat_history || []).forEach(item => appendChatMessage(item));
   focusParticipant('local');
   danmakuEnabled = !!data.danmaku_enabled;
   window.danmakuEnabled = danmakuEnabled;
   currentSharerSid = normalizeParticipantSid(data?.active_sharer_sid || null);
+  if (currentSharerSid && currentSharerSid !== socket.id && !existingSidSet.has(currentSharerSid)) {
+    currentSharerSid = null;
+  }
   if (currentSharerSid === socket.id && !isSharingScreen) {
     currentSharerSid = null;
   }
