@@ -134,6 +134,19 @@
     return ext.slice(0, 6) || 'FILE';
   }
 
+  function buildAttachmentLinks({ viewUrl = '', downloadUrl = '', openLabel = '', downloadLabel = '' }) {
+    if (!viewUrl) return '';
+    return `<div class="chat-file-links"><a class="ghost-btn" href="${viewUrl}" target="_blank">${openLabel}</a>${downloadUrl ? `<a class="ghost-btn" href="${downloadUrl}" target="_blank">${downloadLabel}</a>` : ''}</div>`;
+  }
+
+  function buildMediaAttachmentHtml({ kind = '', rawUrl = '', name = '', permissionLabel = '', links = '' }) {
+    if (!rawUrl || !kind) return '';
+    const mediaTag = kind === 'video'
+      ? `<video class="chat-media" src="${rawUrl}" controls playsinline preload="metadata"></video>`
+      : `<img class="chat-media" src="${rawUrl}" alt="${name}" />`;
+    return `<div class="chat-attachment-block">${mediaTag}<div class="chat-file-meta"><span>${name}</span><span>${permissionLabel}</span></div>${links}</div>`;
+  }
+
   function buildAttachmentHtml(attachment) {
     if (!attachment) return '';
     const name = escapeHtml(attachment.name || 'attachment');
@@ -141,14 +154,24 @@
     const openLabel = attachment.permission === 'download' ? global.TEXT_ATTACHMENT_OPEN : global.TEXT_ATTACHMENT_VIEW;
     const downloadLabel = global.TEXT_DOWNLOAD_LABEL;
     const rawUrl = attachment.rawUrl || '';
-    if (rawUrl && attachment.kind === 'image') {
-      return `<div class="chat-attachment-block"><img class="chat-media" src="${rawUrl}" alt="${name}" /><div class="chat-file-meta"><span>${name}</span><span>${permissionLabel}</span></div><div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">${openLabel}</a>${attachment.downloadUrl ? `<a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">${downloadLabel}</a>` : ''}</div></div>`;
-    }
-    if (rawUrl && attachment.kind === 'video') {
-      return `<div class="chat-attachment-block"><video class="chat-media" src="${rawUrl}" controls playsinline preload="metadata"></video><div class="chat-file-meta"><span>${name}</span><span>${permissionLabel}</span></div><div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">${openLabel}</a>${attachment.downloadUrl ? `<a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">${downloadLabel}</a>` : ''}</div></div>`;
+    const links = buildAttachmentLinks({
+      viewUrl: attachment.viewUrl,
+      downloadUrl: attachment.downloadUrl,
+      openLabel,
+      downloadLabel,
+    });
+    if (attachment.kind === 'image' || attachment.kind === 'video') {
+      const mediaHtml = buildMediaAttachmentHtml({
+        kind: attachment.kind,
+        rawUrl,
+        name,
+        permissionLabel,
+        links,
+      });
+      if (mediaHtml) return mediaHtml;
     }
     if (attachment.viewUrl) {
-      return `<div class="chat-attachment-block chat-file-card standardized"><div class="chat-file-badge">${getAttachmentBadge(attachment)}</div><div class="chat-file-meta"><strong>${name}</strong><span>${permissionLabel}</span></div><div class="chat-file-links"><a class="ghost-btn" href="${attachment.viewUrl}" target="_blank">${openLabel}</a>${attachment.downloadUrl ? `<a class="ghost-btn" href="${attachment.downloadUrl}" target="_blank">${downloadLabel}</a>` : ''}</div></div>`;
+      return `<div class="chat-attachment-block chat-file-card standardized"><div class="chat-file-badge">${getAttachmentBadge(attachment)}</div><div class="chat-file-meta"><strong>${name}</strong><span>${permissionLabel}</span></div>${links}</div>`;
     }
     return '';
   }
