@@ -724,8 +724,9 @@ function applySpeakerState({ userGesture = false } = {}) {
       videoEl.defaultMuted = true;
       return;
     }
-    // On mobile, keep remote media muted until explicit user gesture to avoid autoplay blocking video render.
-    const shouldMute = !speakerEnabled || (isMobileDevice() && !mediaPlaybackActivated);
+    // Keep remote media muted until explicit user gesture on all platforms.
+    // This prevents autoplay blocking that can look like a black video tile.
+    const shouldMute = !speakerEnabled || !mediaPlaybackActivated;
     videoEl.muted = shouldMute;
     videoEl.defaultMuted = shouldMute;
 
