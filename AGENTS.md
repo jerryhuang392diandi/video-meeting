@@ -45,6 +45,15 @@ Minimum manual check after editing this area:
 - After `join_ok` and `participant_snapshot`, ensure a renegotiation sweep still runs so late media readiness does not leave peers in "only self visible" state.
 - Joining with the same account on two devices must not evict the other active device; only truly stale same-user sids may be pruned.
 
+### Mandatory RTC Change Review
+Before shipping any RTC/signaling change, do a full conflict audit across all offer paths, not only the function being edited.
+
+Required checklist:
+- Enumerate every `createOffer` call site and verify they all use the same initiator rule.
+- Verify `callPeer`, media-sync renegotiation, ICE-failure recovery, and snapshot/join handlers cannot bypass that rule.
+- Re-check server-side room state transitions (`join_room`, `participant_snapshot`, `active_sharer_*`) for stale-state conflicts after refresh/reconnect.
+- Run desktop↔mobile first-join tests in both directions, then refresh-and-rejoin tests, before finalizing.
+
 ## Commit & Pull Request Guidelines
 Recent history favors concise, imperative commit subjects (for example: “Fix ...”, “Improve ...”, “Tune ...”).
 

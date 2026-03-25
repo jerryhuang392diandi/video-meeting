@@ -1,10 +1,10 @@
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
-<script src="{{ url_for('static', filename='room_utils.js') }}"></script>
-<script src="{{ url_for('static', filename='room_rtc.js') }}"></script>
-<script src="{{ url_for('static', filename='room_ui.js') }}"></script>
-<script src="{{ url_for('static', filename='room_diagnostics.js') }}"></script>
-<script src="{{ url_for('static', filename='room_chat.js') }}"></script>
+<script src="{{ url_for('static', filename='room_utils.js') }}?v={{ asset_version('room_utils.js') }}"></script>
+<script src="{{ url_for('static', filename='room_rtc.js') }}?v={{ asset_version('room_rtc.js') }}"></script>
+<script src="{{ url_for('static', filename='room_ui.js') }}?v={{ asset_version('room_ui.js') }}"></script>
+<script src="{{ url_for('static', filename='room_diagnostics.js') }}?v={{ asset_version('room_diagnostics.js') }}"></script>
+<script src="{{ url_for('static', filename='room_chat.js') }}?v={{ asset_version('room_chat.js') }}"></script>
 <script>
 const ROOM_ID = {{ room_id|tojson }};
 const ROOM_PASSWORD = {{ room_password|tojson }};
@@ -1286,7 +1286,7 @@ async function ensureRequestedTrack(kind) {
 
 function ensurePeerState(targetSid) {
   if (!peerState[targetSid]) {
-    peerState[targetSid] = { makingOffer: false, ignoreOffer: false, pendingCandidates: [], disconnectTimer: null };
+    peerState[targetSid] = { makingOffer: false, ignoreOffer: false, isSettingRemoteAnswerPending: false, pendingCandidates: [], disconnectTimer: null };
   }
   return peerState[targetSid];
 }
@@ -1309,6 +1309,7 @@ function closePeer(targetSid, { preserveParticipant = false } = {}) {
   if (pc) {
     try { pc.onicecandidate = null; } catch (_) {}
     try { pc.ontrack = null; } catch (_) {}
+    try { pc.onnegotiationneeded = null; } catch (_) {}
     try { pc.onconnectionstatechange = null; } catch (_) {}
     try { pc.oniceconnectionstatechange = null; } catch (_) {}
     try { pc.close(); } catch (_) {}
@@ -1343,21 +1344,8 @@ async function performSyncPeerMedia(targetSid = null) {
         if (result.status === 'fulfilled' && result.value?.changed) changedTrack = true;
         if (result.status === 'rejected') console.error(result.reason);
       });
-      if ((!addedTrack && !changedTrack) || pc.signalingState !== 'stable') return;
-      if (!shouldInitiateOfferTo(sid)) return;
-      const state = ensurePeerState(sid);
-      if (state.makingOffer || pc.signalingState !== 'stable') return;
-      try {
-        state.makingOffer = true;
-        const offer = await pc.createOffer();
-        if (pc.signalingState !== 'stable') return;
-        await pc.setLocalDescription(offer);
-        socket.emit('signal', { target: sid, from: socket.id, description: pc.localDescription, senderName: USER_NAME });
-      } catch (err) {
-        console.error(err);
-      } finally {
-        state.makingOffer = false;
-      }
+      if (!addedTrack && !changedTrack) return;
+      await sendOfferForPeer(sid, pc);
     })());
   });
 
@@ -1426,11 +1414,14 @@ function ensurePeer(targetSid) {
   pc.ontrack = (event) => {
     mergeIncomingTrackIntoStream(remoteMediaStreams, targetSid, event, (mergedStream) => addRemoteVideo(targetSid, mergedStream));
   };
+  pc.onnegotiationneeded = () => {
+    sendOfferForPeer(targetSid, pc).catch((err) => console.error(err));
+  };
   pc.oniceconnectionstatechange = async () => {
     if (pc.iceConnectionState === 'failed') {
       try {
         await pc.restartIce();
-        await callPeer(targetSid);
+        await sendOfferForPeer(targetSid, pc, { iceRestart: true });
       } catch (err) {
         console.error(err);
       }
@@ -1503,21 +1494,8 @@ function removeRemoteVideo(sid) {
 
 async function callPeer(targetSid) {
   if (!targetSid || targetSid === socket.id) return;
-  if (!shouldInitiateOfferTo(targetSid)) return;
   const pc = ensurePeer(targetSid);
-  const state = ensurePeerState(targetSid);
-  if (state.makingOffer || pc.signalingState !== 'stable') return;
-  try {
-    state.makingOffer = true;
-    const offer = await pc.createOffer();
-    if (pc.signalingState !== 'stable') return;
-    await pc.setLocalDescription(offer);
-    socket.emit('signal', { target: targetSid, from: socket.id, description: pc.localDescription, senderName: USER_NAME });
-  } catch (err) {
-    console.error(err);
-  } finally {
-    state.makingOffer = false;
-  }
+  await sendOfferForPeer(targetSid, pc);
 }
 
 function scheduleRenegotiationSweep(reason = 'unknown', delayMs = 1200) {
@@ -1547,6 +1525,28 @@ function shouldInitiateOfferTo(targetSid) {
   if (IS_HOST && !remoteIsHost) return true;
   if (!IS_HOST && remoteIsHost) return false;
   return String(socket.id) < String(targetSid);
+}
+
+async function sendOfferForPeer(targetSid, pc, { iceRestart = false } = {}) {
+  if (!targetSid || targetSid === socket.id) return false;
+  if (!shouldInitiateOfferTo(targetSid)) return false;
+  const peer = pc || peerConnections[targetSid];
+  if (!peer) return false;
+  const state = ensurePeerState(targetSid);
+  if (state.makingOffer || peer.signalingState !== 'stable') return false;
+  try {
+    state.makingOffer = true;
+    const offer = await peer.createOffer(iceRestart ? { iceRestart: true } : undefined);
+    if (peer.signalingState !== 'stable') return false;
+    await peer.setLocalDescription(offer);
+    socket.emit('signal', { target: targetSid, from: socket.id, description: peer.localDescription, senderName: USER_NAME });
+    return true;
+  } catch (err) {
+    console.error(err);
+    return false;
+  } finally {
+    state.makingOffer = false;
+  }
 }
 
 function downloadBlob(blob, filename) {
@@ -2470,10 +2470,10 @@ socket.on('signal', async (data) => {
   const from = data.from;
   const pc = ensurePeer(from);
   const state = ensurePeerState(from);
-  const polite = socket.id > from;
+  const polite = String(socket.id) > String(from);
   try {
     if (data.description) {
-      const readyForOffer = !state.makingOffer && (pc.signalingState === 'stable' || pc.signalingState === 'have-remote-offer');
+      const readyForOffer = !state.makingOffer && (pc.signalingState === 'stable' || state.isSettingRemoteAnswerPending);
       const offerCollision = data.description.type === 'offer' && !readyForOffer;
       state.ignoreOffer = !polite && offerCollision;
       if (state.ignoreOffer) return;
@@ -2483,7 +2483,9 @@ socket.on('signal', async (data) => {
           pc.setRemoteDescription(data.description),
         ]);
       } else {
+        state.isSettingRemoteAnswerPending = data.description.type === 'answer';
         await pc.setRemoteDescription(data.description);
+        state.isSettingRemoteAnswerPending = false;
       }
       await flushPendingCandidates(from, pc);
       if (data.description.type === 'offer') {
@@ -2493,12 +2495,17 @@ socket.on('signal', async (data) => {
       }
     } else if (data.candidate) {
       if (pc.remoteDescription) {
-        await pc.addIceCandidate(data.candidate);
+        try {
+          await pc.addIceCandidate(data.candidate);
+        } catch (err) {
+          if (!state.ignoreOffer) throw err;
+        }
       } else {
         state.pendingCandidates.push(data.candidate);
       }
     }
   } catch (err) {
+    state.isSettingRemoteAnswerPending = false;
     console.error(err);
   }
 });
