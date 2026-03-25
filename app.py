@@ -1619,7 +1619,13 @@ def on_join_room(data):
         room["host_present"] = True
 
     if current_user.is_authenticated and room.get("active_sharer_user_id") == current_user.id:
-        room["active_sharer_sid"] = sid
+        # A browser refresh cannot preserve getDisplayMedia capture state.
+        # Clear stale share ownership instead of transferring sharer sid to a new socket.
+        previous_sharer_sid = room.get("active_sharer_sid")
+        room["active_sharer_sid"] = None
+        room["active_sharer_user_id"] = None
+        if previous_sharer_sid:
+            socketio.emit("room_ui_event", {"type": "screen_share_stopped", "from": previous_sharer_sid, "reason": "sharer_reconnected"}, room=room_id)
 
     participant = MeetingParticipant(
         meeting_id=room["meeting_db_id"],

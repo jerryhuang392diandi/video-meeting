@@ -1168,6 +1168,37 @@ async function optimizePeerSenders(targetSid = null, { isScreenShare = false } =
   }));
 }
 
+async function getUserMediaWithFallback({ constraints, wantsVideo = false, wantsAudio = false, forceFacingMode = null }) {
+  const fallbackConstraints = [];
+  if (wantsVideo) {
+    fallbackConstraints.push({
+      audio: wantsAudio ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true } : false,
+      video: {
+        width: { ideal: 640, max: 1280 },
+        height: { ideal: 360, max: 720 },
+        frameRate: { ideal: 10, max: 15 },
+        ...(forceFacingMode && !IS_IOS ? { facingMode: { ideal: forceFacingMode } } : {}),
+      },
+    });
+    fallbackConstraints.push({
+      audio: wantsAudio,
+      video: true,
+    });
+  }
+  const candidates = [constraints, ...fallbackConstraints];
+  let lastErr = null;
+  for (const candidate of candidates) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(candidate);
+    } catch (err) {
+      lastErr = err;
+      const name = String(err?.name || '');
+      if (name === 'NotAllowedError' || name === 'SecurityError') break;
+    }
+  }
+  throw lastErr || new Error('getUserMedia failed');
+}
+
 async function requestMedia(forceFacingMode = null, manualRequest = false, preferredKinds = null) {
   const wantsVideo = Array.isArray(preferredKinds) ? preferredKinds.includes('video') : (manualRequest ? true : !!PREF_AUTO_ENABLE_CAMERA);
   const wantsAudio = Array.isArray(preferredKinds) ? preferredKinds.includes('audio') : (manualRequest ? true : !!PREF_AUTO_ENABLE_MICROPHONE);
@@ -1183,7 +1214,20 @@ async function requestMedia(forceFacingMode = null, manualRequest = false, prefe
         ...(forceFacingMode && !IS_IOS ? { facingMode: { ideal: forceFacingMode } } : {}),
       } : false,
     };
-    const nextRawStream = await navigator.mediaDevices.getUserMedia(constraints);
+    let nextRawStream = await getUserMediaWithFallback({ constraints, wantsVideo, wantsAudio, forceFacingMode });
+    if (wantsVideo && isMobileDevice()) {
+      const warmupVideoTrack = nextRawStream.getVideoTracks()[0] || null;
+      const needsRetry = !warmupVideoTrack || warmupVideoTrack.readyState !== 'live';
+      if (needsRetry) {
+        stopStreamTracks(nextRawStream);
+        nextRawStream = await getUserMediaWithFallback({
+          constraints: { audio: wantsAudio, video: true },
+          wantsVideo,
+          wantsAudio,
+          forceFacingMode,
+        });
+      }
+    }
     const nextVideoTrack = nextRawStream.getVideoTracks()[0] || null;
     const nextAudioTrack = nextRawStream.getAudioTracks()[0] || null;
 
@@ -1348,6 +1392,20 @@ function ensurePeer(targetSid) {
     state.disconnectTimer = null;
   };
 
+  const ensureBaseTransceiver = (kind) => {
+    const existing = (pc.getTransceivers?.() || []).some((transceiver) => {
+      if (!transceiver || transceiver.stopped) return false;
+      const tKind = transceiver.receiver?.track?.kind || transceiver.sender?.track?.kind || null;
+      return tKind === kind;
+    });
+    if (!existing) {
+      try { pc.addTransceiver(kind, { direction: 'sendrecv' }); } catch (_) {}
+    }
+  };
+  // Ensure m-lines exist even before local media is ready, otherwise first offer may carry no media sections.
+  ensureBaseTransceiver('video');
+  ensureBaseTransceiver('audio');
+
   const outboundVideoTrack = (isSharingScreen ? getCurrentScreenTrack() : null) || localStream?.getVideoTracks?.()[0] || null;
   if (outboundVideoTrack) {
     replaceSenderTrack(pc, 'video', outboundVideoTrack, localVideo?.srcObject || localStream, getSenderOptions(!!isSharingScreen)).catch(() => {});
@@ -1453,6 +1511,21 @@ async function callPeer(targetSid) {
   } finally {
     state.makingOffer = false;
   }
+}
+
+function scheduleRenegotiationSweep(reason = 'unknown', delayMs = 1200) {
+  setTimeout(() => {
+    const targets = Object.keys(participantMeta || {});
+    if (!targets.length) return;
+    Promise.allSettled(targets.map(async (sid) => {
+      const pc = peerConnections[sid] || null;
+      if (!pc || pc.connectionState === 'new' || pc.connectionState === 'connecting' || pc.connectionState === 'disconnected') {
+        await callPeer(sid);
+      }
+    })).then(() => {
+      scheduleSyncPeerMedia().catch((err) => console.error(err));
+    }).catch((err) => console.error(err));
+  }, Math.max(0, delayMs));
 }
 
 function downloadBlob(blob, filename) {
@@ -2204,7 +2277,14 @@ socket.on('connect', () => {
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
   if ((PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream) {
     runMediaTask('initial-request-media', async () => {
-      await requestMedia(currentFacingMode, false);
+      const stream = await requestMedia(currentFacingMode, false);
+      if (!stream && isMobileDevice()) {
+        setTimeout(() => {
+          runMediaTask('initial-request-media-retry', async () => {
+            await requestMedia(currentFacingMode, true, ['video', 'audio']);
+          }).catch((err) => console.error(err));
+        }, 800);
+      }
     }).catch((err) => console.error(err));
   }
 });
@@ -2219,6 +2299,9 @@ socket.on('join_ok', async (data) => {
   danmakuEnabled = !!data.danmaku_enabled;
   window.danmakuEnabled = danmakuEnabled;
   currentSharerSid = normalizeParticipantSid(data?.active_sharer_sid || null);
+  if (currentSharerSid === socket.id && !isSharingScreen) {
+    currentSharerSid = null;
+  }
   if (currentSharerSid) {
     focusedSid = currentSharerSid;
     hiddenSidebar = true;
@@ -2240,6 +2323,7 @@ socket.on('join_ok', async (data) => {
     }
   }
   await Promise.allSettled(existingParticipants.filter((p) => p?.sid).map((p) => callPeer(p.sid)));
+  scheduleRenegotiationSweep('join_ok');
   refreshRtcDiagnostics().catch(() => {});
   if (data && data.host_present === false && IS_HOST) {
     setStatus(TEXT_HOST_RETURNED_ROOM);
@@ -2283,6 +2367,7 @@ socket.on('participant_snapshot', (data) => {
   });
   participantCountEl.textContent = String(Math.max(1, count));
   renderMentionPicker();
+  scheduleRenegotiationSweep('participant_snapshot', 800);
   refreshRtcDiagnostics().catch(() => {});
 });
 

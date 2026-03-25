@@ -31,6 +31,18 @@ Before submitting:
 - run `python check_i18n.py`;
 - start the app and smoke test login, room join/leave, media controls, and chat attachment upload;
 - verify both `zh` and `en` UI paths for any changed template.
+- for RTC changes, explicitly test the `join_ok` path with two clients (desktop + mobile): after first join (without refresh), each side must see the other side's card/video.
+- verify that joining with local camera/mic still blocked or not yet granted can still receive remote media (no "only self visible" regression).
+
+## RTC Regression Guard
+`templates/_room_scripts.html` has a recurring failure point around `join_ok` + `ensurePeer(...)`. Do not remove the base audio/video transceiver bootstrap unless replaced with an equivalent negotiation strategy.
+
+Minimum manual check after editing this area:
+- User A enters room, then User B enters from mobile Safari/Chrome.
+- B should immediately see A (without page refresh).
+- Both sides should receive `participant_snapshot` updates and keep remote cards visible.
+- If sharer refreshes while screen sharing, server must clear stale `active_sharer_*` state; client must not stay stuck in "self is sharer" layout.
+- After `join_ok` and `participant_snapshot`, ensure a renegotiation sweep still runs so late media readiness does not leave peers in "only self visible" state.
 
 ## Commit & Pull Request Guidelines
 Recent history favors concise, imperative commit subjects (for example: “Fix ...”, “Improve ...”, “Tune ...”).
