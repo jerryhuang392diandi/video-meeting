@@ -25,6 +25,8 @@ const TEXT_SPEAKER_ON = {{ ('扬声器已开启' if lang == 'zh' else 'Speaker e
 const TEXT_SPEAKER_OFF = {{ ('扬声器已静音' if lang == 'zh' else 'Speaker muted')|tojson }};
 const TEXT_CAMERA_ON = {{ t('camera_on')|tojson }};
 const TEXT_CAMERA_OFF = {{ t('camera_off')|tojson }};
+const TEXT_CAMERA_RECOVERING = {{ ('检测到摄像头中断，正在自动重连…' if lang == 'zh' else 'Camera interruption detected, reconnecting automatically...')|tojson }};
+const TEXT_CAMERA_RECOVERED = {{ ('摄像头已自动恢复' if lang == 'zh' else 'Camera was recovered automatically')|tojson }};
 const TEXT_SCREEN_SHARE_MODE = {{ ('共享屏幕模式已开启' if lang == 'zh' else 'Screen share mode enabled')|tojson }};
 const TEXT_SCREEN_SHARE_STOPPED = {{ ('共享屏幕模式已结束' if lang == 'zh' else 'Screen share mode ended')|tojson }};
 const TEXT_SCREEN_SHARE_BANNER_SELF = {{ ('正在共享屏幕，其他参会者已临时隐藏' if lang == 'zh' else 'You are sharing your screen. Other participants are temporarily hidden')|tojson }};
@@ -389,6 +391,9 @@ let syncPeerMediaPromise = null;
 let syncPeerMediaQueuedTargetSid = undefined;
 const videoPlaybackRetryTimers = new WeakMap();
 let mediaPlaybackActivated = false;
+let cameraRecoveryTimer = null;
+let cameraRecoveryInFlight = false;
+const monitoredRawVideoTracks = new WeakSet();
 
 function activateMediaPlayback() {
   if (mediaPlaybackActivated || !speakerEnabled) return;
@@ -408,6 +413,54 @@ function setSpeakerEnabled(nextEnabled, { userGesture = false, persist = true, s
   if (showStatus) {
     setStatus(speakerEnabled ? TEXT_SPEAKER_ON : TEXT_SPEAKER_OFF);
   }
+}
+
+function clearCameraRecoveryTimer() {
+  if (!cameraRecoveryTimer) return;
+  clearTimeout(cameraRecoveryTimer);
+  cameraRecoveryTimer = null;
+}
+
+function scheduleCameraRecovery(reason = 'unknown', delayMs = 200) {
+  if (cameraRecoveryInFlight) return;
+  clearCameraRecoveryTimer();
+  cameraRecoveryTimer = setTimeout(() => {
+    runMediaTask(`recover-camera:${reason}`, async () => {
+      if (cameraRecoveryInFlight) return;
+      cameraRecoveryInFlight = true;
+      try {
+        setStatus(TEXT_CAMERA_RECOVERING, 'warning');
+        const stream = await requestMedia(currentFacingMode, true, ['video', 'audio']);
+        if (!stream?.getVideoTracks?.().length) return;
+        const recoveredTrack = stream.getVideoTracks()[0];
+        recoveredTrack.enabled = true;
+        if (virtualBgImageDataUrl && !isSharingScreen && !currentSharerSid) {
+          await activateVirtualBackground();
+        }
+        await scheduleSyncPeerMedia().catch((err) => console.error(err));
+        setStatus(TEXT_CAMERA_RECOVERED);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        cameraRecoveryInFlight = false;
+      }
+    });
+  }, Math.max(0, delayMs));
+}
+
+function monitorRawVideoTrack(track) {
+  if (!track || monitoredRawVideoTracks.has(track)) return;
+  monitoredRawVideoTracks.add(track);
+  track.addEventListener('ended', () => {
+    scheduleCameraRecovery('ended');
+  });
+  track.addEventListener('mute', () => {
+    if (!track.enabled || track.readyState !== 'live') return;
+    scheduleCameraRecovery('muted', 2500);
+  });
+  track.addEventListener('unmute', () => {
+    clearCameraRecoveryTimer();
+  });
 }
 
 window.addEventListener('touchstart', activateMediaPlayback, true);
@@ -1080,6 +1133,7 @@ async function requestMedia(forceFacingMode = null, manualRequest = false, prefe
     disableVirtualBackgroundState({ stopCanvas: true });
     rawPreviewVideo.srcObject = rawCameraStream;
     queueVideoPlayback(rawPreviewVideo, [0, 120]);
+    monitorRawVideoTrack(rawCameraStream.getVideoTracks()[0] || null);
 
     if (!manualRequest) {
       rawCameraStream.getVideoTracks().forEach(track => { track.enabled = !!PREF_AUTO_ENABLE_CAMERA; });
@@ -2363,10 +2417,11 @@ document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic
 document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-camera', async () => {
   let rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
   const localCard = ensureCard('local', getDisplayName('local'), true);
-  if (!rawTrack) {
+  if (!rawTrack || rawTrack.readyState === 'ended') {
     rawTrack = await ensureRequestedTrack('video');
     if (!rawTrack) return;
   }
+  monitorRawVideoTrack(rawTrack);
   rawTrack.enabled = !rawTrack.enabled;
   const outputVideoTrack = localStream?.getVideoTracks?.()[0];
   if (outputVideoTrack && outputVideoTrack !== rawTrack) outputVideoTrack.enabled = rawTrack.enabled;
