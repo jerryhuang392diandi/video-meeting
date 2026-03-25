@@ -44,6 +44,11 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
 
+try:
+    from livekit import api as livekit_api
+except Exception:
+    livekit_api = None
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 INSTANCE_DIR = os.path.join(BASE_DIR, "instance")
 DB_PATH = os.path.join(INSTANCE_DIR, "app.db")
@@ -62,6 +67,31 @@ login_manager.login_view = "login"
 
 
 DEBUG_ROOM = os.environ.get("DEBUG_ROOM") == "1"
+
+
+def livekit_server_url() -> str:
+    return (os.environ.get("LIVEKIT_URL") or "").strip()
+
+
+def livekit_api_key() -> str:
+    return (os.environ.get("LIVEKIT_API_KEY") or "").strip()
+
+
+def livekit_api_secret() -> str:
+    return (os.environ.get("LIVEKIT_API_SECRET") or "").strip()
+
+
+def livekit_enabled() -> bool:
+    return bool(livekit_api and livekit_server_url() and livekit_api_key() and livekit_api_secret())
+
+
+def get_rtc_mode() -> str:
+    requested = (os.environ.get("RTC_BACKEND") or "").strip().lower()
+    if requested in {"mesh", "p2p", "webrtc"}:
+        return "mesh"
+    if requested == "livekit":
+        return "livekit" if livekit_enabled() else "mesh"
+    return "livekit" if livekit_enabled() else "mesh"
 
 
 def debug_log(tag, **kwargs):
@@ -192,6 +222,10 @@ def asset_version(filename: str) -> int:
         return int(os.path.getmtime(static_path))
     except OSError:
         return int(time.time())
+
+
+def build_livekit_room_name(room_id: str) -> str:
+    return f"meeting-{room_id}"
 
 
 @app.context_processor
@@ -1117,6 +1151,7 @@ def room_page(room_id):
     room_password = request.args.get("pwd", meeting.room_password)
     invite_url = f"{get_base_url()}{url_for('room_page', room_id=room_id)}?pwd={quote(room_password)}"
     is_host = current_user.is_authenticated and current_user.id == meeting.host_user_id
+    rtc_mode = get_rtc_mode()
     sync_user_traffic(current_user.id)
     db.session.refresh(current_user)
     return render_template(
@@ -1127,6 +1162,10 @@ def room_page(room_id):
         is_host=is_host,
         traffic=traffic_summary_dict(current_user),
         turn_ice_servers=build_turn_ice_servers(),
+        rtc_mode=rtc_mode,
+        livekit_enabled=livekit_enabled(),
+        livekit_url=livekit_server_url(),
+        livekit_token_endpoint=url_for("api_livekit_token"),
         preferred_display_name=preferred_display_name(current_user),
         default_danmaku_enabled=bool(getattr(current_user, "default_danmaku_enabled", True)),
         auto_enable_camera=bool(getattr(current_user, "auto_enable_camera", True)),
@@ -1143,6 +1182,67 @@ def api_traffic_summary():
     if user_quota_exceeded(current_user):
         disconnect_user_sockets(current_user.id, message=t("traffic_limit_reached"))
     return jsonify({"success": True, **traffic_summary_dict(current_user)})
+
+
+@app.post("/api/livekit/token")
+@login_required
+def api_livekit_token():
+    if get_rtc_mode() != "livekit" or not livekit_enabled():
+        return jsonify({"success": False, "message": "LiveKit is not configured"}), 503
+
+    payload = request.get_json(silent=True) or {}
+    room_id = (payload.get("room_id") or "").strip()
+    participant_sid = (payload.get("participant_sid") or "").strip()
+    display_name = (payload.get("name") or preferred_display_name(current_user)).strip()[:32] or preferred_display_name(current_user)
+    password = normalize_password(payload.get("password"))
+
+    if not room_id or not participant_sid:
+        return jsonify({"success": False, "message": "room_id and participant_sid are required"}), 400
+
+    meeting = Meeting.query.filter_by(room_id=room_id).first()
+    if not ensure_meeting_not_expired(meeting):
+        return jsonify({"success": False, "message": t("meeting_not_found")}), 404
+    if normalize_password(meeting.room_password) != password:
+        return jsonify({"success": False, "message": t("wrong_password")}), 403
+
+    is_host = current_user.id == meeting.host_user_id
+    metadata = json.dumps(
+        {
+            "user_id": current_user.id,
+            "room_id": room_id,
+            "socket_sid": participant_sid,
+            "is_host": is_host,
+        },
+        ensure_ascii=True,
+    )
+    token = (
+        livekit_api.AccessToken(livekit_api_key(), livekit_api_secret())
+        .with_identity(participant_sid)
+        .with_name(display_name)
+        .with_metadata(metadata)
+        .with_grants(
+            livekit_api.VideoGrants(
+                room_join=True,
+                room=build_livekit_room_name(room_id),
+                room_admin=is_host,
+                can_publish=True,
+                can_subscribe=True,
+                can_publish_data=True,
+                can_update_own_metadata=True,
+            )
+        )
+        .to_jwt()
+    )
+    return jsonify(
+        {
+            "success": True,
+            "rtc_mode": "livekit",
+            "url": livekit_server_url(),
+            "room_name": build_livekit_room_name(room_id),
+            "identity": participant_sid,
+            "token": token,
+        }
+    )
 
 
 @app.get("/history")

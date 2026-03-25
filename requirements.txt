@@ -6,3 +6,4 @@ python-dotenv
 simple-websocket
 pillow
 psutil
+livekit-api

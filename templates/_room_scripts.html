@@ -1,13 +1,20 @@
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
 <script src="{{ url_for('static', filename='room_utils.js') }}?v={{ asset_version('room_utils.js') }}"></script>
 <script src="{{ url_for('static', filename='room_rtc.js') }}?v={{ asset_version('room_rtc.js') }}"></script>
 <script src="{{ url_for('static', filename='room_ui.js') }}?v={{ asset_version('room_ui.js') }}"></script>
 <script src="{{ url_for('static', filename='room_diagnostics.js') }}?v={{ asset_version('room_diagnostics.js') }}"></script>
 <script src="{{ url_for('static', filename='room_chat.js') }}?v={{ asset_version('room_chat.js') }}"></script>
+<script src="{{ url_for('static', filename='room_livekit.js') }}?v={{ asset_version('room_livekit.js') }}"></script>
 <script>
 const ROOM_ID = {{ room_id|tojson }};
 const ROOM_PASSWORD = {{ room_password|tojson }};
+const RTC_MODE = {{ rtc_mode|tojson }};
+const LIVEKIT_ENABLED = {{ livekit_enabled|tojson }};
+const LIVEKIT_URL = {{ livekit_url|tojson }};
+const LIVEKIT_TOKEN_ENDPOINT = {{ livekit_token_endpoint|tojson }};
+const IS_LIVEKIT_MODE = RTC_MODE === 'livekit';
 const DEFAULT_USER_NAME = {{ current_user.username|tojson }};
 const DEFAULT_PREFERRED_NAME = {{ preferred_display_name|tojson }};
 const PREF_ENABLE_DANMAKU = {{ 'true' if default_danmaku_enabled else 'false' }};
@@ -35,6 +42,9 @@ const TEXT_NO_VIDEO = {{ ('未开启摄像头' if lang == 'zh' else 'Camera off'
 const TEXT_RECORD_STOP = {{ ('停止录屏' if lang == 'zh' else 'Stop recording')|tojson }};
 const TEXT_RECORD_SAVED = {{ ('录屏文件已保存' if lang == 'zh' else 'Recording saved')|tojson }};
 const TEXT_RECORD_NOT_SUPPORTED = {{ ('当前浏览器不支持录屏' if lang == 'zh' else 'Screen recording is not supported in this browser')|tojson }};
+const TEXT_LIVEKIT_CONFIG_MISSING = {{ ('LiveKit 未配置完成，暂时无法启用 SFU 模式' if lang == 'zh' else 'LiveKit is not configured yet, so SFU mode is unavailable')|tojson }};
+const TEXT_LIVEKIT_CONNECT_FAILED = {{ ('连接 LiveKit 失败' if lang == 'zh' else 'Failed to connect to LiveKit')|tojson }};
+const TEXT_LIVEKIT_VBG_PENDING = {{ ('LiveKit 迁移阶段暂未接入虚拟背景，请先关闭 SFU 模式或等待下一步迁移。' if lang == 'zh' else 'Virtual background is not wired into LiveKit yet. Disable SFU mode or wait for the next migration step.')|tojson }};
 const TEXT_VIRTUAL_BG_PICK = {{ ('请选择一张背景图片，系统会开始做人像抠图并替换背景' if lang == 'zh' else 'Choose a background image and the app will start person segmentation with background replacement')|tojson }};
 const TEXT_VIRTUAL_BG_LOADING = {{ ('正在加载虚拟背景模型...' if lang == 'zh' else 'Loading virtual background model...')|tojson }};
 const TEXT_VIRTUAL_BG_READY = {{ ('虚拟背景已启用' if lang == 'zh' else 'Virtual background enabled')|tojson }};
@@ -95,6 +105,7 @@ let participantMeta = {};
 let focusedSid = 'local';
 let hiddenSidebar = false;
 let currentSharerSid = null;
+let livekitController = null;
 
 const { normalizeParticipantSid, setStatus, stopStreamTracks, escapeHtml, copyText, fileToDataUrl, compressImageFile } = window.RoomPageUtils;
 const { getVideoSender, getAudioSender, applySenderOptimization, replaceSenderTrack, mergeIncomingTrackIntoStream } = window.RoomPageRtc;
@@ -1512,6 +1523,21 @@ function addRemoteVideo(sid, stream) {
   queueRenderLayout();
 }
 
+function clearRemoteMedia(sid) {
+  const card = document.getElementById('card-' + sid);
+  if (!card) return;
+  const videoEl = card.querySelector('video');
+  if (videoEl && videoEl.srcObject) videoEl.srcObject = null;
+  delete remoteMediaStreams[sid];
+  updatePlaceholder(card, false);
+  if (currentSharerSid === sid) {
+    currentSharerSid = null;
+    hiddenSidebar = false;
+  }
+  updateShareUiState();
+  queueRenderLayout();
+}
+
 function removeRemoteVideo(sid) {
   document.getElementById('card-' + sid)?.remove();
   delete peerState[sid];
@@ -1530,6 +1556,84 @@ function removeRemoteVideo(sid) {
   currentGridPage = Math.min(currentGridPage, totalPages - 1);
   queueRenderLayout();
   updateParticipantCount();
+}
+
+function updateLiveKitShareFocus(sid, isActive) {
+  if (isActive) {
+    currentSharerSid = sid;
+    focusedSid = sid;
+    hiddenSidebar = true;
+  } else if (currentSharerSid === sid) {
+    currentSharerSid = null;
+    focusedSid = 'local';
+    hiddenSidebar = false;
+  }
+  updateShareUiState();
+  queueRenderLayout();
+}
+
+function setLocalPreviewForLiveKit(stream, { hasVideo = false, isScreenShare = false } = {}) {
+  localStream = stream || null;
+  if (localVideo.srcObject !== (stream || null)) localVideo.srcObject = stream || null;
+  queueVideoPlayback(localVideo, [0, 120]);
+  const localCard = ensureCard('local', getDisplayName('local'), true);
+  updatePlaceholder(localCard, !!hasVideo);
+  isSharingScreen = !!isScreenShare;
+  updateLiveKitShareFocus('local', !!isScreenShare);
+}
+
+function ensureLiveKitController() {
+  if (!IS_LIVEKIT_MODE) return null;
+  if (livekitController) return livekitController;
+  if (!window.RoomPageLiveKit) {
+    setStatus(TEXT_LIVEKIT_CONFIG_MISSING, 'error');
+    return null;
+  }
+  livekitController = window.RoomPageLiveKit.createController({
+    url: LIVEKIT_URL,
+    tokenEndpoint: LIVEKIT_TOKEN_ENDPOINT,
+    roomId: ROOM_ID,
+    roomPassword: ROOM_PASSWORD,
+    isHost: IS_HOST === true || IS_HOST === 'true',
+    getParticipantSid: () => socket.id,
+    getDisplayName: () => USER_NAME,
+    addRemoteVideo: (sid, stream) => {
+      remoteMediaStreams[sid] = stream;
+      addRemoteVideo(sid, stream);
+    },
+    clearRemoteMedia: (sid) => {
+      clearRemoteMedia(sid);
+    },
+    removeRemoteVideo: (sid) => {
+      delete remoteMediaStreams[sid];
+      removeRemoteVideo(sid);
+    },
+    setLocalPreview: setLocalPreviewForLiveKit,
+    onScreenShareState: updateLiveKitShareFocus,
+    setStatus,
+  });
+  return livekitController;
+}
+
+async function ensureLiveKitConnected() {
+  if (!IS_LIVEKIT_MODE) return null;
+  if (!LIVEKIT_ENABLED || !LIVEKIT_URL || !LIVEKIT_TOKEN_ENDPOINT) {
+    setStatus(TEXT_LIVEKIT_CONFIG_MISSING, 'error');
+    return null;
+  }
+  const controller = ensureLiveKitController();
+  if (!controller || controller.isConnected()) return controller;
+  try {
+    await controller.connect({
+      autoEnableCamera: !!PREF_AUTO_ENABLE_CAMERA,
+      autoEnableMicrophone: !!PREF_AUTO_ENABLE_MICROPHONE,
+    });
+    return controller;
+  } catch (err) {
+    console.error(err);
+    setStatus(`${TEXT_LIVEKIT_CONNECT_FAILED}: ${err?.message || 'unknown error'}`, 'error');
+    throw err;
+  }
 }
 
 async function callPeer(targetSid) {
@@ -2302,6 +2406,10 @@ function startRtcDiagnosticsLoop() {
 function cleanupMeetingSession() {
   if (hasLeftMeeting) return;
   hasLeftMeeting = true;
+  if (livekitController) {
+    try { livekitController.disconnect(); } catch (_) {}
+    livekitController = null;
+  }
   try {
     if (activeRecorder && activeRecorder.state !== 'inactive') activeRecorder.stop();
   } catch (_) {}
@@ -2337,7 +2445,7 @@ socket.on('connect', () => {
   ensureCard('local', getDisplayName('local'), true);
   queueRenderLayout();
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
-  if ((PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream) {
+  if (!IS_LIVEKIT_MODE && (PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE) && !rawCameraStream && !localStream) {
     runMediaTask('initial-request-media', async () => {
       const stream = await requestMedia(currentFacingMode, false);
       if (!stream && isMobileDevice()) {
@@ -2375,7 +2483,9 @@ socket.on('join_ok', async (data) => {
   } else {
     updateShareUiState();
   }
-  if (isSharingScreen) {
+  if (IS_LIVEKIT_MODE) {
+    await ensureLiveKitConnected();
+  } else if (isSharingScreen) {
     await syncScreenShareState(true);
   }
   if (pendingReloadRecoveryHint && !isSharingScreen) {
@@ -2388,8 +2498,10 @@ socket.on('join_ok', async (data) => {
       setStatus({{ ('页面刷新后已尝试恢复摄像头/麦克风；浏览器限制导致共享屏幕需手动重新开启。' if lang == 'zh' else 'Camera/microphone were recovered after refresh. Screen share must be started again due to browser limitations.')|tojson }});
     }
   }
-  await reconcilePeerConnections(existingParticipants);
-  scheduleRenegotiationSweep('join_ok', 1000);
+  if (!IS_LIVEKIT_MODE) {
+    await reconcilePeerConnections(existingParticipants);
+    scheduleRenegotiationSweep('join_ok', 1000);
+  }
   refreshRtcDiagnostics().catch(() => {});
   if (data && data.host_present === false && IS_HOST) {
     setStatus(TEXT_HOST_RETURNED_ROOM);
@@ -2401,14 +2513,14 @@ socket.on('join_ok', async (data) => {
 socket.on('participant_joined', async (data) => {
   addRemoteParticipant(data.sid, data.name, !!data.is_host);
   participantCountEl.textContent = data.participant_count;
-  await reconcilePeerConnections([data]);
+  if (!IS_LIVEKIT_MODE) await reconcilePeerConnections([data]);
   refreshRtcDiagnostics().catch(() => {});
 });
 
 socket.on('participant_left', (data) => {
   participantCountEl.textContent = data.participant_count;
   if (currentGridPage > 0) currentGridPage = Math.max(0, currentGridPage - 1);
-  closePeer(data.sid, { preserveParticipant: true });
+  if (!IS_LIVEKIT_MODE) closePeer(data.sid, { preserveParticipant: true });
   removeRemoteVideo(data.sid);
   renderMentionPicker();
   refreshRtcDiagnostics().catch(() => {});
@@ -2420,8 +2532,10 @@ socket.on('participant_snapshot', async (data) => {
   const toConnect = syncParticipantRoster(list, { pruneMissing: true });
   participantCountEl.textContent = String(Math.max(1, count));
   renderMentionPicker();
-  await reconcilePeerConnections(toConnect);
-  scheduleRenegotiationSweep('participant_snapshot', 800);
+  if (!IS_LIVEKIT_MODE) {
+    await reconcilePeerConnections(toConnect);
+    scheduleRenegotiationSweep('participant_snapshot', 800);
+  }
   refreshRtcDiagnostics().catch(() => {});
 });
 
@@ -2487,6 +2601,7 @@ socket.on('host_action_error', (data) => {
 });
 
 socket.on('signal', async (data) => {
+  if (IS_LIVEKIT_MODE) return;
   const from = data.from;
   const pc = ensurePeer(from);
   const state = ensurePeerState(from);
@@ -2631,6 +2746,13 @@ toggleSpeakerBtn && (toggleSpeakerBtn.onclick = () => runMediaTask('toggle-speak
   setSpeakerEnabled(!speakerEnabled, { userGesture: true, persist: true, showStatus: true });
 }));
 document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic', async () => {
+  if (IS_LIVEKIT_MODE) {
+    const controller = await ensureLiveKitConnected();
+    if (!controller) return;
+    const enabled = await controller.setMicrophoneEnabled();
+    setStatus(enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
+    return;
+  }
   let rawTrack = rawCameraStream?.getAudioTracks?.()[0] || null;
   if (!rawTrack) {
     rawTrack = await ensureRequestedTrack('audio');
@@ -2645,6 +2767,15 @@ document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic
   setStatus(rawTrack.enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
 });
 document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-camera', async () => {
+  if (IS_LIVEKIT_MODE) {
+    const controller = await ensureLiveKitConnected();
+    if (!controller) return;
+    const enabled = await controller.setCameraEnabled();
+    const localCard = ensureCard('local', getDisplayName('local'), true);
+    updatePlaceholder(localCard, !!enabled);
+    setStatus(enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
+    return;
+  }
   let rawTrack = rawCameraStream?.getVideoTracks?.()[0] || localStream?.getVideoTracks?.()[0];
   const localCard = ensureCard('local', getDisplayName('local'), true);
   if (!rawTrack || rawTrack.readyState === 'ended') {
@@ -2662,6 +2793,19 @@ document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-
   setStatus(rawTrack.enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 });
 document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-screen', async () => {
+  if (IS_LIVEKIT_MODE) {
+    const controller = await ensureLiveKitConnected();
+    if (!controller) return;
+    const enabled = await controller.setScreenShareEnabled();
+    if (enabled) {
+      broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true });
+      setStatus(TEXT_SCREEN_SHARE_MODE);
+    } else {
+      broadcastUiEvent({ type: 'screen_share_stopped' });
+      setStatus(TEXT_SCREEN_SHARE_STOPPED);
+    }
+    return;
+  }
   if (!navigator.mediaDevices?.getDisplayMedia) {
     setStatus({{ ('当前设备/浏览器不支持共享屏幕' if lang == 'zh' else 'This device/browser does not support screen sharing')|tojson }}, 'warning');
     return;
@@ -2722,6 +2866,10 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
   }
 });
 document.getElementById('virtualBgBtn').onclick = () => runMediaTask('virtual-background-toggle', async () => {
+  if (IS_LIVEKIT_MODE) {
+    setStatus(TEXT_LIVEKIT_VBG_PENDING, 'warning');
+    return;
+  }
   if (isSharingScreen || currentSharerSid) {
     setStatus({{ ('共享屏幕期间不可使用虚拟背景' if lang == 'zh' else 'Virtual background is unavailable during screen sharing')|tojson }}, 'warning');
     return;
@@ -2786,6 +2934,9 @@ document.getElementById('saveProfileBtn').onclick = () => {
   window.USER_NAME = USER_NAME;
   localStorage.setItem('meeting_display_name', name);
   socket.emit('update_profile', { name });
+  if (IS_LIVEKIT_MODE && livekitController) {
+    livekitController.updateDisplayName(name).catch((err) => console.error(err));
+  }
   ensureCard('local', getDisplayName('local'), true);
   renderMentionPicker();
   setStatus(TEXT_PROFILE_UPDATED);

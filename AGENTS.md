@@ -63,6 +63,30 @@ Minimum review steps for every substantial code change:
 - Prefer one canonical update path per state domain; if the same state is updated in multiple handlers, refactor to a shared helper before adding more conditions.
 - After refactoring, re-read all related handlers end-to-end and verify they still agree on ordering, ownership, and cleanup.
 
+## Screen Share Notes
+Important open documentation references:
+- MDN Perfect Negotiation: use symmetric WebRTC negotiation patterns; do not mix ad-hoc host-only offer rules into browser P2P flows.
+- MDN `MediaStreamTrack.contentHint`: screen sharing should prefer `detail` (or `text` when supported) for slides/text; camera video should prefer `motion`.
+- Jitsi / mediasoup architecture docs: stable multi-party conferencing at distance is typically built on SFU routing, not browser mesh.
+
+Project-specific guidance:
+- This repository currently behaves like a mesh/P2P app, so long-distance performance is highly sensitive to RTT, packet loss, and TURN relay geography.
+- If two far-apart users are relayed through a distant TURN server, latency is infrastructure-limited; codec tweaks alone will not fully fix it.
+- For screen sharing, tune for one goal at a time: `detail` for text readability, `motion` for smoother cursor/video. Do not expect both at low bitrate.
+- Screen share bitrate/FPS must be lower on mobile and under weak networks; prioritize stability before sharpness.
+- When diagnosing poor remote screen-share FPS, check in this order: ICE path (direct vs relay), TURN region distance, RTT/loss stats, then sender bitrate/FPS constraints.
+- If product requirements include reliable long-distance multi-party screen sharing, plan an SFU migration; repeated mesh-side patches are a stopgap, not a final architecture.
+
+## SFU Migration Guard
+When migrating RTC from mesh to LiveKit SFU, do not mix half-migrated media control paths. Keep one owner per responsibility.
+
+Required review steps before each SFU change:
+- Confirm which layer owns each action: Flask/Socket.IO for auth, room roster, chat, host permissions; LiveKit for camera, microphone, screen share, remote track delivery.
+- Audit every button handler and lifecycle hook (`connect`, `join_ok`, `participant_snapshot`, leave/reload cleanup) so a LiveKit path cannot fall through into mesh renegotiation code.
+- Keep participant identity mapping explicit. If Socket.IO still drives UI roster, LiveKit participant identity must match the same per-user/session key used by the room UI.
+- Treat screen-share focus state separately from media transport. UI focus/banners may stay on Socket.IO events during migration, but media publication/subscription must come from LiveKit only.
+- After each migration step, read the full room bootstrap path end-to-end and verify there is no duplicate media initialization, duplicate cleanup, or mixed publish/unpublish ownership.
+
 ## Commit & Pull Request Guidelines
 Recent history favors concise, imperative commit subjects (for example: “Fix ...”, “Improve ...”, “Tune ...”).
 
