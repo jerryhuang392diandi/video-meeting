@@ -1335,12 +1335,14 @@ async function performSyncPeerMedia(targetSid = null) {
     ensurePeerState(sid);
     renegotiateTasks.push((async () => {
       let addedTrack = false;
+      let changedTrack = false;
       const results = await Promise.allSettled(tracks.map((track) => replaceSenderTrack(pc, track.kind, track, localStream, getSenderOptions(!!isSharingScreen))));
       results.forEach((result) => {
         if (result.status === 'fulfilled' && result.value?.added) addedTrack = true;
+        if (result.status === 'fulfilled' && result.value?.changed) changedTrack = true;
         if (result.status === 'rejected') console.error(result.reason);
       });
-      if (!addedTrack || pc.signalingState !== 'stable') return;
+      if ((!addedTrack && !changedTrack) || pc.signalingState !== 'stable') return;
       const state = ensurePeerState(sid);
       if (state.makingOffer || pc.signalingState !== 'stable') return;
       try {

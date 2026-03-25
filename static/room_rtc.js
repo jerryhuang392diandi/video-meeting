@@ -80,15 +80,17 @@
   async function replaceSenderTrack(pc, kind, track, stream = null, options = {}) {
     const sender = kind === 'video' ? getVideoSender(pc) : getAudioSender(pc);
     if (sender) {
+      const previousTrackId = sender.track?.id || null;
+      const nextTrackId = track?.id || null;
       await sender.replaceTrack(track || null);
       if (kind === 'video' && track) await applySenderOptimization(sender, options);
-      return { sender, added: false };
+      return { sender, added: false, changed: previousTrackId !== nextTrackId };
     }
-    if (!track) return { sender: null, added: false };
+    if (!track) return { sender: null, added: false, changed: false };
     const nextStream = stream || new MediaStream([track]);
     const nextSender = pc.addTrack(track, nextStream);
     if (kind === 'video') await applySenderOptimization(nextSender, options);
-    return { sender: nextSender, added: true };
+    return { sender: nextSender, added: true, changed: true };
   }
 
   function mergeIncomingTrackIntoStream(remoteMediaStreams, sid, event, onReady) {
