@@ -54,6 +54,15 @@ Required checklist:
 - Re-check server-side room state transitions (`join_room`, `participant_snapshot`, `active_sharer_*`) for stale-state conflicts after refresh/reconnect.
 - Run desktop↔mobile first-join tests in both directions, then refresh-and-rejoin tests, before finalizing.
 
+## Cross-Module Conflict Audit
+Before editing any non-trivial logic, inspect adjacent modules and shared state first, then check whether the change creates duplicated or conflicting flows elsewhere.
+
+Minimum review steps for every substantial code change:
+- Identify every entry point that can mutate the same state (for example: initial load, refresh recovery, snapshot sync, user-triggered action, background retry).
+- Trace which files own that state and which files consume it (`app.py`, `templates/_room_scripts.html`, `static/room_rtc.js`, UI helpers).
+- Prefer one canonical update path per state domain; if the same state is updated in multiple handlers, refactor to a shared helper before adding more conditions.
+- After refactoring, re-read all related handlers end-to-end and verify they still agree on ordering, ownership, and cleanup.
+
 ## Commit & Pull Request Guidelines
 Recent history favors concise, imperative commit subjects (for example: “Fix ...”, “Improve ...”, “Tune ...”).
 

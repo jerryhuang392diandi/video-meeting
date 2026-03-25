@@ -1451,14 +1451,54 @@ function ensurePeer(targetSid) {
   return pc;
 }
 
-function addRemoteParticipant(sid, name, isHost = false) {
-  participantMeta[sid] = { name: name || sid, isHost: !!isHost };
+function setParticipantMeta(sid, { name = null, isHost = false } = {}) {
+  if (!sid || sid === socket.id) return null;
+  const nextMeta = {
+    name: name || participantMeta[sid]?.name || sid,
+    isHost: !!isHost,
+  };
+  participantMeta[sid] = nextMeta;
   window.participantMeta = participantMeta;
-  const card = ensureCard(sid, participantMeta[sid].name, false);
+  return nextMeta;
+}
+
+function addRemoteParticipant(sid, name, isHost = false) {
+  const meta = setParticipantMeta(sid, { name, isHost });
+  if (!meta) return null;
+  const card = ensureCard(sid, meta.name, false);
   updatePlaceholder(card, false);
   currentGridPage = 0;
   queueRenderLayout();
   updateParticipantCount();
+  return card;
+}
+
+function syncParticipantRoster(participants = [], { pruneMissing = false } = {}) {
+  const keep = new Set();
+  const toConnect = [];
+  participants.forEach((participant) => {
+    const sid = participant?.sid;
+    if (!sid || sid === socket.id) return;
+    keep.add(sid);
+    const existed = !!participantMeta[sid];
+    if (!existed) {
+      addRemoteParticipant(sid, participant.name || sid, !!participant.is_host);
+      toConnect.push({ sid });
+      return;
+    }
+    setParticipantMeta(sid, { name: participant.name || sid, isHost: !!participant.is_host });
+    const labelEl = document.querySelector(`#card-${CSS.escape(sid)} .video-label`);
+    if (labelEl) labelEl.textContent = participantMeta[sid].name;
+    if (!peerConnections[sid]) toConnect.push({ sid });
+  });
+  if (pruneMissing) {
+    Object.keys(participantMeta).forEach((sid) => {
+      if (keep.has(sid)) return;
+      closePeer(sid, { preserveParticipant: true });
+      removeRemoteVideo(sid);
+    });
+  }
+  return toConnect;
 }
 
 function addRemoteVideo(sid, stream) {
@@ -2316,7 +2356,7 @@ socket.on('join_ok', async (data) => {
   chatMessages.innerHTML = '';
   const existingParticipants = Array.isArray(data?.participants) ? data.participants : [];
   const existingSidSet = new Set(existingParticipants.map((p) => p?.sid).filter(Boolean));
-  for (const p of existingParticipants) addRemoteParticipant(p.sid, p.name, !!p.is_host);
+  syncParticipantRoster(existingParticipants);
   (data.chat_history || []).forEach(item => appendChatMessage(item));
   focusParticipant('local');
   danmakuEnabled = !!data.danmaku_enabled;
@@ -2377,28 +2417,7 @@ socket.on('participant_left', (data) => {
 socket.on('participant_snapshot', async (data) => {
   const list = Array.isArray(data?.participants) ? data.participants : [];
   const count = Number(data?.participant_count || list.length || 0);
-  const keep = new Set();
-  const toConnect = [];
-  list.forEach((item) => {
-    if (!item?.sid || item.sid === socket.id) return;
-    keep.add(item.sid);
-    if (!participantMeta[item.sid]) {
-      addRemoteParticipant(item.sid, item.name || item.sid, !!item.is_host);
-      toConnect.push(item);
-    } else {
-      participantMeta[item.sid].name = item.name || item.sid;
-      participantMeta[item.sid].isHost = !!item.is_host;
-      const labelEl = document.querySelector(`#card-${CSS.escape(item.sid)} .video-label`);
-      if (labelEl) labelEl.textContent = item.name || item.sid;
-      if (!peerConnections[item.sid]) toConnect.push(item);
-    }
-  });
-  Object.keys(participantMeta).forEach((sid) => {
-    if (!keep.has(sid)) {
-      closePeer(sid, { preserveParticipant: true });
-      removeRemoteVideo(sid);
-    }
-  });
+  const toConnect = syncParticipantRoster(list, { pruneMissing: true });
   participantCountEl.textContent = String(Math.max(1, count));
   renderMentionPicker();
   await reconcilePeerConnections(toConnect);
