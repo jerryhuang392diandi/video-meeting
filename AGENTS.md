@@ -43,6 +43,7 @@ Minimum manual check after editing this area:
 - Both sides should receive `participant_snapshot` updates and keep remote cards visible.
 - If sharer refreshes while screen sharing, server must clear stale `active_sharer_*` state; client must not stay stuck in "self is sharer" layout.
 - After `join_ok` and `participant_snapshot`, ensure a renegotiation sweep still runs so late media readiness does not leave peers in "only self visible" state.
+- Joining with the same account on two devices must not evict the other active device; only truly stale same-user sids may be pruned.
 
 ## Commit & Pull Request Guidelines
 Recent history favors concise, imperative commit subjects (for example: “Fix ...”, “Improve ...”, “Tune ...”).

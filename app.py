@@ -1583,13 +1583,17 @@ def on_join_room(data):
 
     cancel_room_cleanup(room_id)
 
-    # Clean up stale connections from the same authenticated user in this room.
-    # This prevents the UI from showing the same account twice after refresh,
-    # reconnect races, or a browser tab that did not leave cleanly.
-    stale_sids = [
-        osid for osid, info in list(room.get("participants", {}).items())
-        if osid != sid and info.get("user_id") == current_user.id
-    ]
+    # Clean up only truly stale sockets for the same authenticated user.
+    # Keep other active sessions/tabs alive; only prune entries that are no
+    # longer tracked as active sockets.
+    active_sids_for_user = set(user_active_sids.get(current_user.id, set()))
+    stale_sids = []
+    for osid, info in list(room.get("participants", {}).items()):
+        if osid == sid or info.get("user_id") != current_user.id:
+            continue
+        if osid in active_sids_for_user and sid_to_user.get(osid):
+            continue
+        stale_sids.append(osid)
     for stale_sid in stale_sids:
         room.get("participants", {}).pop(stale_sid, None)
         sid_to_user.pop(stale_sid, None)

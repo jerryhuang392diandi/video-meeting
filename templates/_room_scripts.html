@@ -1515,17 +1515,23 @@ async function callPeer(targetSid) {
 
 function scheduleRenegotiationSweep(reason = 'unknown', delayMs = 1200) {
   setTimeout(() => {
-    const targets = Object.keys(participantMeta || {});
-    if (!targets.length) return;
-    Promise.allSettled(targets.map(async (sid) => {
-      const pc = peerConnections[sid] || null;
-      if (!pc || pc.connectionState === 'new' || pc.connectionState === 'connecting' || pc.connectionState === 'disconnected') {
-        await callPeer(sid);
-      }
-    })).then(() => {
-      scheduleSyncPeerMedia().catch((err) => console.error(err));
-    }).catch((err) => console.error(err));
+    const targets = Object.keys(participantMeta || {}).map((sid) => ({ sid }));
+    reconcilePeerConnections(targets).catch((err) => console.error(err));
   }, Math.max(0, delayMs));
+}
+
+async function reconcilePeerConnections(participants = []) {
+  const tasks = [];
+  participants.forEach((participant) => {
+    const sid = participant?.sid;
+    if (!sid || sid === socket.id) return;
+    const pc = peerConnections[sid] || null;
+    const shouldOffer = !pc || pc.connectionState === 'new' || pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed';
+    if (shouldOffer) tasks.push(callPeer(sid));
+  });
+  if (!tasks.length) return;
+  await Promise.allSettled(tasks);
+  await scheduleSyncPeerMedia().catch((err) => console.error(err));
 }
 
 function downloadBlob(blob, filename) {
@@ -2322,8 +2328,8 @@ socket.on('join_ok', async (data) => {
       setStatus({{ ('页面刷新后已尝试恢复摄像头/麦克风；浏览器限制导致共享屏幕需手动重新开启。' if lang == 'zh' else 'Camera/microphone were recovered after refresh. Screen share must be started again due to browser limitations.')|tojson }});
     }
   }
-  await Promise.allSettled(existingParticipants.filter((p) => p?.sid).map((p) => callPeer(p.sid)));
-  scheduleRenegotiationSweep('join_ok');
+  await reconcilePeerConnections(existingParticipants);
+  scheduleRenegotiationSweep('join_ok', 1000);
   refreshRtcDiagnostics().catch(() => {});
   if (data && data.host_present === false && IS_HOST) {
     setStatus(TEXT_HOST_RETURNED_ROOM);
@@ -2335,7 +2341,7 @@ socket.on('join_ok', async (data) => {
 socket.on('participant_joined', async (data) => {
   addRemoteParticipant(data.sid, data.name);
   participantCountEl.textContent = data.participant_count;
-  await callPeer(data.sid);
+  await reconcilePeerConnections([data]);
   refreshRtcDiagnostics().catch(() => {});
 });
 
@@ -2347,19 +2353,22 @@ socket.on('participant_left', (data) => {
   refreshRtcDiagnostics().catch(() => {});
 });
 
-socket.on('participant_snapshot', (data) => {
+socket.on('participant_snapshot', async (data) => {
   const list = Array.isArray(data?.participants) ? data.participants : [];
   const count = Number(data?.participant_count || list.length || 0);
   const keep = new Set();
+  const toConnect = [];
   list.forEach((item) => {
     if (!item?.sid || item.sid === socket.id) return;
     keep.add(item.sid);
     if (!participantMeta[item.sid]) {
       addRemoteParticipant(item.sid, item.name || item.sid);
+      toConnect.push(item);
     } else {
       participantMeta[item.sid].name = item.name || item.sid;
       const labelEl = document.querySelector(`#card-${CSS.escape(item.sid)} .video-label`);
       if (labelEl) labelEl.textContent = item.name || item.sid;
+      if (!peerConnections[item.sid]) toConnect.push(item);
     }
   });
   Object.keys(participantMeta).forEach((sid) => {
@@ -2367,6 +2376,7 @@ socket.on('participant_snapshot', (data) => {
   });
   participantCountEl.textContent = String(Math.max(1, count));
   renderMentionPicker();
+  await reconcilePeerConnections(toConnect);
   scheduleRenegotiationSweep('participant_snapshot', 800);
   refreshRtcDiagnostics().catch(() => {});
 });
