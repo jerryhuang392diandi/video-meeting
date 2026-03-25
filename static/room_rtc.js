@@ -27,7 +27,8 @@
     if (isScreenShare) {
       if (peerCount <= 2) return shareProfiles.small || shareProfiles.medium || shareProfiles.large || {};
       if (peerCount <= 4) return shareProfiles.medium || shareProfiles.small || shareProfiles.large || {};
-      return shareProfiles.large || shareProfiles.medium || shareProfiles.small || {};
+      if (peerCount <= 6) return shareProfiles.large || shareProfiles.medium || shareProfiles.small || {};
+      return shareProfiles.xlarge || shareProfiles.large || shareProfiles.medium || shareProfiles.small || {};
     }
     if (peerCount <= 2) return cameraProfiles.small || cameraProfiles.medium || cameraProfiles.large || {};
     if (peerCount <= 4) return cameraProfiles.medium || cameraProfiles.small || cameraProfiles.large || {};
@@ -41,17 +42,23 @@
     } catch (_) {}
   }
 
-  async function applySenderOptimization(sender, { isScreenShare = false, peerCount = 1, profiles = {} } = {}) {
+  async function applySenderOptimization(sender, { isScreenShare = false, peerCount = 1, profiles = {}, totalUplinkBudget = null } = {}) {
     if (!sender?.track || typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') return;
     const params = sender.getParameters() || {};
     const encodings = Array.isArray(params.encodings) && params.encodings.length ? params.encodings : [{}];
     const profile = getVideoSenderProfile({ isScreenShare, peerCount, profiles });
     applyTrackContentHint(sender.track, { isScreenShare });
     params.degradationPreference = profile.degradationPreference || (isScreenShare ? 'maintain-resolution' : 'balanced');
+    const profileBitrate = Number(profile.maxBitrate) || null;
+    const budgetBitrate = (Number.isFinite(totalUplinkBudget) && totalUplinkBudget > 0)
+      ? Math.max(250_000, Math.floor(totalUplinkBudget / Math.max(1, peerCount)))
+      : null;
+    const targetBitrate = profileBitrate && budgetBitrate ? Math.min(profileBitrate, budgetBitrate) : (profileBitrate || budgetBitrate || null);
     params.encodings = encodings.map((encoding) => ({
       ...encoding,
-      maxBitrate: profile.maxBitrate || encoding.maxBitrate,
+      maxBitrate: targetBitrate || encoding.maxBitrate,
       maxFramerate: profile.maxFramerate || encoding.maxFramerate,
+      scaleResolutionDownBy: profile.scaleResolutionDownBy || encoding.scaleResolutionDownBy,
       priority: profile.priority || encoding.priority,
       networkPriority: profile.networkPriority || encoding.networkPriority,
     }));
