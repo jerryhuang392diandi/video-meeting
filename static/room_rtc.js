@@ -43,22 +43,30 @@
 
   async function applySenderOptimization(sender, { isScreenShare = false, peerCount = 1, profiles = {} } = {}) {
     if (!sender?.track || typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') return;
-    try {
-      const params = sender.getParameters() || {};
-      const encodings = Array.isArray(params.encodings) && params.encodings.length ? params.encodings : [{}];
-      const profile = getVideoSenderProfile({ isScreenShare, peerCount, profiles });
-      applyTrackContentHint(sender.track, { isScreenShare });
-      params.degradationPreference = profile.degradationPreference || (isScreenShare ? 'maintain-resolution' : 'balanced');
-      params.encodings = encodings.map((encoding) => ({
-        ...encoding,
-        maxBitrate: profile.maxBitrate || encoding.maxBitrate,
-        maxFramerate: profile.maxFramerate || encoding.maxFramerate,
-        priority: profile.priority || encoding.priority,
-        networkPriority: profile.networkPriority || encoding.networkPriority,
-      }));
-      await sender.setParameters(params);
-    } catch (err) {
-      throw err;
+    const params = sender.getParameters() || {};
+    const encodings = Array.isArray(params.encodings) && params.encodings.length ? params.encodings : [{}];
+    const profile = getVideoSenderProfile({ isScreenShare, peerCount, profiles });
+    applyTrackContentHint(sender.track, { isScreenShare });
+    params.degradationPreference = profile.degradationPreference || (isScreenShare ? 'maintain-resolution' : 'balanced');
+    params.encodings = encodings.map((encoding) => ({
+      ...encoding,
+      maxBitrate: profile.maxBitrate || encoding.maxBitrate,
+      maxFramerate: profile.maxFramerate || encoding.maxFramerate,
+      priority: profile.priority || encoding.priority,
+      networkPriority: profile.networkPriority || encoding.networkPriority,
+    }));
+    await sender.setParameters(params);
+  }
+
+  function replaceTracksByKind(stream, track) {
+    if (!stream || !track) return;
+    stream.getTracks()
+      .filter((existing) => existing.kind === track.kind && existing.id !== track.id)
+      .forEach((existing) => {
+        try { stream.removeTrack(existing); } catch (_) {}
+      });
+    if (!stream.getTracks().some((existing) => existing.id === track.id)) {
+      stream.addTrack(track);
     }
   }
 
@@ -81,14 +89,7 @@
     const mergedStream = remoteMediaStreams[sid] || new MediaStream();
     remoteMediaStreams[sid] = mergedStream;
     incomingStream.getTracks().forEach((track) => {
-      mergedStream.getTracks()
-        .filter((existing) => existing.kind === track.kind && existing.id !== track.id)
-        .forEach((existing) => {
-          try { mergedStream.removeTrack(existing); } catch (_) {}
-        });
-      if (!mergedStream.getTracks().some((existing) => existing.id === track.id)) {
-        mergedStream.addTrack(track);
-      }
+      replaceTracksByKind(mergedStream, track);
       track.onended = () => {
         try { mergedStream.removeTrack(track); } catch (_) {}
         onReady?.(mergedStream);
