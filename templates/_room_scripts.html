@@ -95,9 +95,6 @@ window.socket = socket;
 
 let localStream = null;
 let rawCameraStream = null;
-let currentFacingMode = 'user';
-let peerConnections = {};
-let peerState = {};
 let remoteMediaStreams = {};
 let participantMeta = {};
 let focusedSid = 'local';
@@ -106,7 +103,17 @@ let currentSharerSid = null;
 let livekitController = null;
 let livekitLocalShareActive = false;
 
-const { normalizeParticipantSid, setStatus, stopStreamTracks, escapeHtml, copyText, fileToDataUrl, compressImageFile } = window.RoomPageUtils;
+const {
+  normalizeParticipantSid,
+  setStatus,
+  stopStreamTracks,
+  escapeHtml,
+  copyText,
+  fileToDataUrl,
+  compressImageFile,
+  setMediaTrackContentHint,
+  applyMediaStreamContentHints,
+} = window.RoomPageUtils;
 const { createRenderScheduler, createTaskQueue } = window.RoomPageUi;
 const { createRtcDiagnosticsController } = window.RoomPageDiagnostics;
 let currentGridPage = 0;
@@ -138,89 +145,8 @@ let activeVirtualBgToken = 0;
 let hasLeftMeeting = false;
 const MAX_VBG_WIDTH = 960;
 const MAX_VBG_HEIGHT = 540;
-const VBG_CAPTURE_FPS = 15;
-const CAMERA_TARGET_CONSTRAINTS = IS_MOBILE
-  ? { width: { ideal: 480, max: 640 }, height: { ideal: 270, max: 360 }, frameRate: { ideal: 12, max: 15 } }
-  : { width: { ideal: 640, max: 1280 }, height: { ideal: 360, max: 720 }, frameRate: { ideal: 15, max: 24 } };
-const SCREEN_SHARE_CONSTRAINTS = IS_MOBILE
-  ? { width: { ideal: 960, max: 1280 }, height: { ideal: 540, max: 720 }, frameRate: { ideal: 10, max: 12 } }
-  : { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 }, frameRate: { ideal: 24, max: 30 } };
-const SCREEN_SHARE_MAX_BITRATE = IS_MOBILE ? 1_100_000 : 2_200_000;
-const SCREEN_SHARE_HIGH_BITRATE = IS_MOBILE ? 1_600_000 : 3_000_000;
-const SCREEN_SHARE_TOTAL_UPLINK_BUDGET = IS_MOBILE ? 3_000_000 : 8_000_000;
-const CAMERA_TOTAL_UPLINK_BUDGET = IS_MOBILE ? 1_500_000 : 3_000_000;
-const CAMERA_MAX_BITRATE = IS_MOBILE ? 700_000 : 1_200_000;
-const CAMERA_LOW_BITRATE = IS_MOBILE ? 420_000 : 700_000;
+const VBG_CAPTURE_FPS = IS_MOBILE ? 20 : 24;
 const AUDIO_MIX_GAIN = 1.0;
-const VIDEO_SENDER_PROFILES = {
-  screenShare: {
-    small: { maxBitrate: SCREEN_SHARE_HIGH_BITRATE, maxFramerate: 24, degradationPreference: 'maintain-framerate', priority: 'high', networkPriority: 'high' },
-    medium: { maxBitrate: SCREEN_SHARE_MAX_BITRATE, maxFramerate: 20, degradationPreference: 'balanced', priority: 'high', networkPriority: 'high' },
-    large: { maxBitrate: 1_500_000, maxFramerate: 15, degradationPreference: 'balanced', priority: 'medium', networkPriority: 'medium' },
-    xlarge: { maxBitrate: 900_000, maxFramerate: 10, scaleResolutionDownBy: 1.5, degradationPreference: 'balanced', priority: 'low', networkPriority: 'low' },
-  },
-  camera: {
-    small: { maxBitrate: CAMERA_MAX_BITRATE, maxFramerate: 24, degradationPreference: 'balanced', priority: 'medium', networkPriority: 'medium' },
-    medium: { maxBitrate: 900_000, maxFramerate: 20, degradationPreference: 'balanced', priority: 'medium', networkPriority: 'medium' },
-    large: { maxBitrate: CAMERA_LOW_BITRATE, maxFramerate: 15, degradationPreference: 'maintain-framerate', priority: 'low', networkPriority: 'medium' },
-  },
-};
-
-function createLiveKitVideoPreset(width, height, maxBitrate, maxFramerate, priority = 'medium') {
-  const LK = window.LivekitClient;
-  if (LK?.VideoPreset) return new LK.VideoPreset(width, height, maxBitrate, maxFramerate, priority);
-  return {
-    resolution: { width, height },
-    encoding: { maxBitrate, maxFramerate, priority },
-  };
-}
-
-function buildLiveKitRoomOptions() {
-  const cameraPrimary = IS_MOBILE
-    ? createLiveKitVideoPreset(640, 360, 450_000, 15, 'medium')
-    : createLiveKitVideoPreset(960, 540, 1_100_000, 20, 'medium');
-  const cameraLayer = IS_MOBILE
-    ? createLiveKitVideoPreset(320, 180, 180_000, 12, 'low')
-    : createLiveKitVideoPreset(640, 360, 550_000, 15, 'low');
-  const screenPrimary = IS_MOBILE
-    ? createLiveKitVideoPreset(1280, 720, 1_600_000, 10, 'high')
-    : createLiveKitVideoPreset(1920, 1080, 3_800_000, 12, 'high');
-  const screenLayerMid = IS_MOBILE
-    ? createLiveKitVideoPreset(960, 540, 900_000, 8, 'medium')
-    : createLiveKitVideoPreset(1280, 720, 2_200_000, 10, 'medium');
-  const screenLayerLow = IS_MOBILE
-    ? createLiveKitVideoPreset(640, 360, 420_000, 6, 'low')
-    : createLiveKitVideoPreset(960, 540, 1_200_000, 8, 'low');
-  return {
-    adaptiveStream: true,
-    dynacast: true,
-    stopLocalTrackOnUnpublish: true,
-    videoCaptureDefaults: {
-      facingMode: currentFacingMode,
-      resolution: cameraPrimary.resolution,
-      frameRate: cameraPrimary.encoding.maxFramerate,
-    },
-    audioCaptureDefaults: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      channelCount: 1,
-      sampleRate: 48000,
-      latency: IS_MOBILE ? 0.08 : 0.04,
-    },
-    publishDefaults: {
-      videoCodec: 'vp8',
-      simulcast: true,
-      dtx: true,
-      red: true,
-      degradationPreference: 'balanced',
-      videoEncoding: cameraPrimary.encoding,
-      videoSimulcastLayers: [cameraLayer],
-      screenShareEncoding: screenPrimary.encoding,
-      screenShareSimulcastLayers: [screenLayerMid, screenLayerLow],
-    },
-  };
-}
 
 const localVideo = document.createElement('video');
 localVideo.id = 'localVideo';
@@ -502,16 +428,9 @@ let speakerEnabled = readSpeakerPreference();
 let screenShareAudioContext = null;
 let screenShareAudioDestination = null;
 let screenShareMixedAudioTrack = null;
-let syncPeerMediaPromise = null;
-let syncPeerMediaQueuedTargetSid = undefined;
 const videoPlaybackRetryTimers = new WeakMap();
 let mediaPlaybackActivated = false;
-let cameraRecoveryTimer = null;
-let cameraRecoveryInFlight = false;
-const monitoredRawVideoTracks = new WeakSet();
 let pendingReloadRecoveryHint = null;
-let screenShareAudioRefreshTimer = null;
-const boundScreenShareAudioTracks = new WeakSet();
 
 function activateMediaPlayback() {
   if (mediaPlaybackActivated || !speakerEnabled) return;
@@ -531,56 +450,6 @@ function setSpeakerEnabled(nextEnabled, { userGesture = false, persist = true, s
   if (showStatus) {
     setStatus(speakerEnabled ? TEXT_SPEAKER_ON : TEXT_SPEAKER_OFF);
   }
-}
-
-function clearCameraRecoveryTimer() {
-  if (!cameraRecoveryTimer) return;
-  clearTimeout(cameraRecoveryTimer);
-  cameraRecoveryTimer = null;
-}
-
-function scheduleCameraRecovery(reason = 'unknown', delayMs = 200) {
-  if (IS_LIVEKIT_MODE) return;
-  if (cameraRecoveryInFlight) return;
-  clearCameraRecoveryTimer();
-  cameraRecoveryTimer = setTimeout(() => {
-    runMediaTask(`recover-camera:${reason}`, async () => {
-      if (cameraRecoveryInFlight) return;
-      cameraRecoveryInFlight = true;
-      try {
-        setStatus(TEXT_CAMERA_RECOVERING, 'warning');
-        const stream = await requestMedia(currentFacingMode, true, ['video', 'audio']);
-        if (!stream?.getVideoTracks?.().length) return;
-        const recoveredTrack = stream.getVideoTracks()[0];
-        recoveredTrack.enabled = true;
-        if (virtualBgImageDataUrl && !isSharingScreen && !currentSharerSid) {
-          await activateVirtualBackground();
-        }
-        await scheduleSyncPeerMedia().catch((err) => console.error(err));
-        setStatus(TEXT_CAMERA_RECOVERED);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        cameraRecoveryInFlight = false;
-      }
-    });
-  }, Math.max(0, delayMs));
-}
-
-function monitorRawVideoTrack(track) {
-  if (!track || monitoredRawVideoTracks.has(track)) return;
-  monitoredRawVideoTracks.add(track);
-  track.addEventListener('ended', () => {
-    scheduleCameraRecovery('ended');
-  });
-  track.addEventListener('mute', () => {
-    if (!track.enabled || track.readyState !== 'live') return;
-    if (isMobileDevice()) return;
-    scheduleCameraRecovery('muted', 2500);
-  });
-  track.addEventListener('unmute', () => {
-    clearCameraRecoveryTimer();
-  });
 }
 
 window.addEventListener('touchstart', activateMediaPlayback, true);
@@ -1053,23 +922,19 @@ async function replaceLiveKitCameraTrackFromStream(stream) {
   if (!controller?.replaceCameraTrack) return false;
   const sourceTrack = stream?.getVideoTracks?.().find((track) => track && track.readyState === 'live');
   if (!sourceTrack) return false;
+  setMediaTrackContentHint(sourceTrack, 'motion');
   return await controller.replaceCameraTrack(sourceTrack.clone());
 }
 
 async function fallbackToRawCamera(message = null) {
   const rawSourceStream = getVirtualBackgroundSourceStream();
   disableVirtualBackgroundState();
-  if (IS_LIVEKIT_MODE) {
-    if (rawSourceStream) {
-      try {
-        await replaceLiveKitCameraTrackFromStream(rawSourceStream);
-      } catch (err) {
-        console.error(err);
-      }
+  if (rawSourceStream) {
+    try {
+      await replaceLiveKitCameraTrackFromStream(rawSourceStream);
+    } catch (err) {
+      console.error(err);
     }
-  } else if (rawCameraStream) {
-    rawPreviewVideo.srcObject = rawCameraStream;
-    useLocalOutputStream(rawCameraStream);
   }
   updateVirtualBackgroundButtonState();
   if (message) setStatus(message, 'warning');
@@ -1105,17 +970,6 @@ function cleanupScreenShareAudioMix({ stopContext = false } = {}) {
   screenShareAudioContext = null;
 }
 
-function getOutboundAudioTracks() {
-  if (isSharingScreen) {
-    const shareAudioTrack = (screenShareMixedAudioTrack && screenShareMixedAudioTrack.readyState === 'live' ? screenShareMixedAudioTrack : null)
-      || screenShareStream?.getAudioTracks?.()[0]
-      || rawCameraStream?.getAudioTracks?.()[0]
-      || null;
-    return shareAudioTrack ? [shareAudioTrack] : [];
-  }
-  return localStream?.getAudioTracks?.() || [];
-}
-
 async function buildScreenShareAudioTrack(screenStream) {
   cleanupScreenShareAudioMix({ stopContext: true });
   const screenAudioTracks = screenStream?.getAudioTracks?.() || [];
@@ -1123,15 +977,18 @@ async function buildScreenShareAudioTrack(screenStream) {
   if (!screenAudioTracks.length && !micAudioTracks.length) return null;
   if (!screenAudioTracks.length) {
     screenShareMixedAudioTrack = micAudioTracks[0] || null;
+    setMediaTrackContentHint(screenShareMixedAudioTrack, 'speech');
     return screenShareMixedAudioTrack;
   }
   if (!micAudioTracks.length) {
     screenShareMixedAudioTrack = screenAudioTracks[0] || null;
+    setMediaTrackContentHint(screenShareMixedAudioTrack, 'speech');
     return screenShareMixedAudioTrack;
   }
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   if (!AudioCtx || typeof window.MediaStreamAudioDestinationNode === 'undefined') {
     screenShareMixedAudioTrack = screenAudioTracks[0] || micAudioTracks[0] || null;
+    setMediaTrackContentHint(screenShareMixedAudioTrack, 'speech');
     return screenShareMixedAudioTrack;
   }
   const ctx = new AudioCtx();
@@ -1154,65 +1011,8 @@ async function buildScreenShareAudioTrack(screenStream) {
   screenShareAudioContext = ctx;
   screenShareAudioDestination = destination;
   screenShareMixedAudioTrack = destination.stream.getAudioTracks()[0] || null;
+  setMediaTrackContentHint(screenShareMixedAudioTrack, 'speech');
   return screenShareMixedAudioTrack;
-}
-
-function getPreferredScreenShareAudioTrack() {
-  const mixedTrack = screenShareMixedAudioTrack;
-  if (mixedTrack && mixedTrack.readyState === 'live') return mixedTrack;
-  const shareTrack = screenShareStream?.getAudioTracks?.().find((track) => track && track.readyState === 'live');
-  if (shareTrack) return shareTrack;
-  const micTrack = rawCameraStream?.getAudioTracks?.().find((track) => track && track.readyState === 'live');
-  if (micTrack) return micTrack;
-  return null;
-}
-
-function bindScreenShareAudioTrackLifecycle(screenStream) {
-  const tracks = screenStream?.getAudioTracks?.() || [];
-  tracks.forEach((track) => {
-    if (!track || boundScreenShareAudioTracks.has(track)) return;
-    boundScreenShareAudioTracks.add(track);
-    const scheduleRefresh = () => {
-      if (screenShareAudioRefreshTimer) clearTimeout(screenShareAudioRefreshTimer);
-      screenShareAudioRefreshTimer = setTimeout(() => {
-        screenShareAudioRefreshTimer = null;
-        refreshScreenShareAudioSenders().catch((err) => console.error(err));
-      }, 180);
-    };
-    track.addEventListener('ended', scheduleRefresh);
-    track.addEventListener('mute', scheduleRefresh);
-    track.addEventListener('unmute', scheduleRefresh);
-  });
-}
-
-async function refreshScreenShareAudioSenders() {
-  if (!isSharingScreen || !screenShareStream) return;
-  await buildScreenShareAudioTrack(screenShareStream);
-  const preferredAudioTrack = getPreferredScreenShareAudioTrack();
-  let addedAudioTrack = false;
-  await Promise.allSettled(Object.values(peerConnections).map(async (pc) => {
-    const { added } = await replaceSenderTrack(
-      pc,
-      'audio',
-      preferredAudioTrack,
-      preferredAudioTrack ? new MediaStream([preferredAudioTrack]) : null,
-      getSenderOptions(false)
-    );
-    if (added) addedAudioTrack = true;
-  }));
-  if (addedAudioTrack) {
-    await scheduleSyncPeerMedia().catch((err) => console.error(err));
-  }
-}
-
-function useLocalOutputStream(stream) {
-  localStream = stream;
-  if (localVideo.srcObject !== stream) localVideo.srcObject = stream;
-  queueVideoPlayback(localVideo, [0, 120]);
-  const localCard = ensureCard('local', getDisplayName('local'), true);
-  updatePlaceholder(localCard, !!stream?.getVideoTracks?.()[0]?.enabled);
-  scheduleSyncPeerMedia().catch(err => console.error(err));
-  queueRenderLayout();
 }
 
 function getScaledSize(width, height) {
@@ -1251,6 +1051,7 @@ async function ensureProcessedCanvasStream() {
   }
   if (!processingCanvas.width || !processingCanvas.height) throw new Error('Processed canvas is empty');
   processedCanvasStream = processingCanvas.captureStream(VBG_CAPTURE_FPS);
+  applyMediaStreamContentHints(processedCanvasStream, { videoHint: 'motion' });
   return processedCanvasStream;
 }
 
@@ -1267,29 +1068,6 @@ async function transcodeRecordingBlob(blob, filename = 'meeting-recording.webm')
     throw new Error(message);
   }
   return await response.blob();
-}
-
-function getActivePeerCount() {
-  return Math.max(1, Object.keys(peerConnections).length || Object.keys(participantMeta).length || 1);
-}
-
-function getSenderOptions(isScreenShare = false) {
-  return {
-    isScreenShare,
-    peerCount: getActivePeerCount(),
-    profiles: VIDEO_SENDER_PROFILES,
-    totalUplinkBudget: isScreenShare ? SCREEN_SHARE_TOTAL_UPLINK_BUDGET : CAMERA_TOTAL_UPLINK_BUDGET,
-  };
-}
-
-async function optimizePeerSenders(targetSid = null, { isScreenShare = false } = {}) {
-  const entries = targetSid
-    ? (peerConnections[targetSid] ? [[targetSid, peerConnections[targetSid]]] : [])
-    : Object.entries(peerConnections);
-  await Promise.allSettled(entries.map(async ([, pc]) => {
-    const videoSender = getVideoSender(pc);
-    await applySenderOptimization(videoSender, getSenderOptions(isScreenShare));
-  }));
 }
 
 function setParticipantMeta(sid, { name = null, isHost = false } = {}) {
@@ -1399,6 +1177,10 @@ function updateLiveKitShareFocus(sid, isActive) {
 function setLocalPreviewForLiveKit(stream, { hasVideo = false, hasAudio = false, isScreenShare = false } = {}) {
   localStream = stream || null;
   if (localVideo.srcObject !== (stream || null)) localVideo.srcObject = stream || null;
+  applyMediaStreamContentHints(stream, {
+    videoHint: isScreenShare ? 'text' : 'motion',
+    audioHint: 'speech',
+  });
   queueVideoPlayback(localVideo, [0, 120]);
   const localCard = ensureCard('local', getDisplayName('local'), true);
   updatePlaceholder(localCard, !!hasVideo);
@@ -1455,7 +1237,7 @@ function ensureLiveKitController() {
     tokenEndpoint: LIVEKIT_TOKEN_ENDPOINT,
     roomId: ROOM_ID,
     roomPassword: ROOM_PASSWORD,
-    roomOptions: buildLiveKitRoomOptions(),
+    roomOptions: window.RoomPageLiveKit.buildRoomOptions?.() || {},
     isHost: IS_HOST === true || IS_HOST === 'true',
     getParticipantSid: () => socket.id,
     getDisplayName: () => USER_NAME,
@@ -1645,13 +1427,24 @@ async function startSegmentationLoop() {
   if (virtualBgLoopActive) return;
   virtualBgLoopActive = true;
 
+  const scheduleNext = () => {
+    if (!virtualBgEnabled) return;
+    if (typeof rawPreviewVideo.requestVideoFrameCallback === 'function') {
+      rawPreviewVideo.requestVideoFrameCallback(() => {
+        if (virtualBgEnabled) loop();
+      });
+      return;
+    }
+    setTimeout(loop, Math.round(1000 / VBG_CAPTURE_FPS));
+  };
+
   const loop = async () => {
     if (!virtualBgEnabled) {
       virtualBgLoopActive = false;
       return;
     }
     if (segmentationSending || !rawPreviewVideo.srcObject) {
-      requestAnimationFrame(loop);
+      scheduleNext();
       return;
     }
     try {
@@ -1661,11 +1454,11 @@ async function startSegmentationLoop() {
       console.error(err);
     } finally {
       segmentationSending = false;
-      requestAnimationFrame(loop);
+      scheduleNext();
     }
   };
 
-  requestAnimationFrame(loop);
+  scheduleNext();
 }
 
 async function activateVirtualBackground() {
@@ -1739,7 +1532,6 @@ async function activateVirtualBackground() {
       cleanupProcessedVideoStream();
       processedVideoStream = nextOutputStream;
       activeVirtualBgToken = activationToken;
-      useLocalOutputStream(processedVideoStream);
     }
     updateVirtualBackgroundButtonState();
     setStatus(TEXT_VIRTUAL_BG_READY);

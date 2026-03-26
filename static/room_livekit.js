@@ -1,5 +1,7 @@
 (function (global) {
   const lk = global.LivekitClient;
+  const mediaUtils = global.RoomPageUtils || {};
+  const setMediaTrackContentHint = mediaUtils.setMediaTrackContentHint || function () {};
   const SOURCE_FIELD_MAP = new Map([
     [lk?.Track?.Source?.Camera, 'cameraVideo'],
     [lk?.Track?.Source?.ScreenShare, 'screenVideo'],
@@ -14,6 +16,58 @@
       microphone: null,
       screenAudio: null,
       stream: null,
+    };
+  }
+
+  function isMobileViewport() {
+    return !!(global.matchMedia && global.matchMedia('(max-width: 768px)').matches)
+      || /Android|iPhone|iPad|iPod/i.test(global.navigator?.userAgent || '');
+  }
+
+  function buildRoomOptions({ facingMode = 'user' } = {}) {
+    const mobile = isMobileViewport();
+    return {
+      adaptiveStream: true,
+      dynacast: true,
+      stopLocalTrackOnUnpublish: true,
+      videoCaptureDefaults: {
+        facingMode,
+        resolution: mobile ? { width: 640, height: 360 } : { width: 1280, height: 720 },
+        frameRate: mobile ? 24 : 30,
+      },
+      audioCaptureDefaults: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+        sampleRate: 48000,
+        latency: mobile ? 0.08 : 0.04,
+      },
+      publishDefaults: {
+        videoCodec: 'vp8',
+        simulcast: true,
+        dtx: true,
+        red: true,
+        degradationPreference: 'maintain-framerate',
+        videoEncoding: mobile
+          ? { maxBitrate: 700_000, maxFramerate: 24, priority: 'medium' }
+          : { maxBitrate: 1_800_000, maxFramerate: 30, priority: 'medium' },
+        videoSimulcastLayers: mobile
+          ? [{ resolution: { width: 320, height: 180 }, encoding: { maxBitrate: 180_000, maxFramerate: 20, priority: 'low' } }]
+          : [{ resolution: { width: 640, height: 360 }, encoding: { maxBitrate: 700_000, maxFramerate: 20, priority: 'low' } }],
+        screenShareEncoding: mobile
+          ? { maxBitrate: 2_400_000, maxFramerate: 20, priority: 'high' }
+          : { maxBitrate: 5_500_000, maxFramerate: 24, priority: 'high' },
+        screenShareSimulcastLayers: mobile
+          ? [
+              { resolution: { width: 960, height: 540 }, encoding: { maxBitrate: 1_200_000, maxFramerate: 20, priority: 'medium' } },
+              { resolution: { width: 640, height: 360 }, encoding: { maxBitrate: 600_000, maxFramerate: 10, priority: 'low' } },
+            ]
+          : [
+              { resolution: { width: 1280, height: 720 }, encoding: { maxBitrate: 2_800_000, maxFramerate: 20, priority: 'medium' } },
+              { resolution: { width: 960, height: 540 }, encoding: { maxBitrate: 1_400_000, maxFramerate: 12, priority: 'low' } },
+            ],
+      },
     };
   }
 
@@ -71,6 +125,25 @@
     function setTrackField(target, source, mediaTrack) {
       const fieldName = SOURCE_FIELD_MAP.get(source);
       if (fieldName) target[fieldName] = mediaTrack || null;
+    }
+
+    function applyTrackContentHint(publication) {
+      const mediaTrack = trackToMediaStreamTrack(publication?.track);
+      if (!mediaTrack) return;
+      switch (publication?.source) {
+        case lk.Track.Source.Camera:
+          setMediaTrackContentHint(mediaTrack, 'motion');
+          break;
+        case lk.Track.Source.ScreenShare:
+          setMediaTrackContentHint(mediaTrack, 'text');
+          break;
+        case lk.Track.Source.Microphone:
+        case lk.Track.Source.ScreenShareAudio:
+          setMediaTrackContentHint(mediaTrack, 'speech');
+          break;
+        default:
+          break;
+      }
     }
 
     function buildStream(target) {
@@ -171,6 +244,7 @@
           onScreenShareState(identity, false);
         })
         .on(lk.RoomEvent.LocalTrackPublished, (publication) => {
+          applyTrackContentHint(publication);
           const mediaTrack = trackToMediaStreamTrack(publication?.track);
           setTrackField(localState, publication?.source, mediaTrack);
           syncLocalStateFromPublications();
@@ -298,6 +372,7 @@
       const localTrack = publication?.track;
       if (!localTrack || typeof localTrack.replaceTrack !== 'function') return false;
       if (!mediaTrack) return false;
+      setMediaTrackContentHint(mediaTrack, 'motion');
       await localTrack.replaceTrack(mediaTrack);
       syncLocalStateFromPublications();
       syncLocalPreview();
@@ -312,7 +387,18 @@
         : !(publication?.isMuted === false && publication?.track);
       await activeRoom.localParticipant.setScreenShareEnabled(
         enabled,
-        enabled ? { audio: true } : undefined,
+        enabled ? {
+          audio: true,
+          contentHint: 'text',
+          resolution: window.matchMedia('(max-width: 768px)').matches
+            ? { width: 1280, height: 720 }
+            : { width: 1920, height: 1080 },
+        } : undefined,
+        enabled ? {
+          degradationPreference: 'maintain-resolution',
+          simulcast: true,
+          videoCodec: 'vp8',
+        } : undefined,
       );
       syncLocalStateFromPublications();
       syncLocalPreview();
@@ -414,5 +500,6 @@
 
   global.RoomPageLiveKit = {
     createController,
+    buildRoomOptions,
   };
 })(window);

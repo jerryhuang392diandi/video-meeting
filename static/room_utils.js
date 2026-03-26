@@ -106,6 +106,18 @@
     }
   }
 
+  function setMediaTrackContentHint(track, hint) {
+    if (!track || typeof hint !== 'string' || !('contentHint' in track)) return;
+    try {
+      track.contentHint = hint;
+    } catch (_) {}
+  }
+
+  function applyMediaStreamContentHints(stream, { videoHint = null, audioHint = null } = {}) {
+    stream?.getVideoTracks?.().forEach((track) => setMediaTrackContentHint(track, videoHint));
+    stream?.getAudioTracks?.().forEach((track) => setMediaTrackContentHint(track, audioHint));
+  }
+
   global.RoomPageUtils = {
     normalizeParticipantSid,
     setStatus,
@@ -114,5 +126,7 @@
     copyText,
     fileToDataUrl,
     compressImageFile,
+    setMediaTrackContentHint,
+    applyMediaStreamContentHints,
   };
 })(window);
