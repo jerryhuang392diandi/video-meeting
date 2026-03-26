@@ -24,16 +24,41 @@
       || /Android|iPhone|iPad|iPod/i.test(global.navigator?.userAgent || '');
   }
 
+  function createVideoPreset(width, height, maxBitrate, maxFramerate, priority = 'medium') {
+    if (lk?.VideoPreset) {
+      return new lk.VideoPreset(width, height, maxBitrate, maxFramerate, priority);
+    }
+    return {
+      resolution: { width, height },
+      encoding: { maxBitrate, maxFramerate, priority },
+    };
+  }
+
   function buildRoomOptions({ facingMode = 'user' } = {}) {
     const mobile = isMobileViewport();
+    const cameraPrimary = mobile
+      ? createVideoPreset(640, 360, 700_000, 24, 'medium')
+      : createVideoPreset(1280, 720, 1_800_000, 30, 'medium');
+    const cameraLayer = mobile
+      ? createVideoPreset(320, 180, 180_000, 20, 'low')
+      : createVideoPreset(640, 360, 700_000, 20, 'low');
+    const screenPrimary = mobile
+      ? createVideoPreset(1280, 720, 2_400_000, 20, 'high')
+      : createVideoPreset(1920, 1080, 5_500_000, 24, 'high');
+    const screenLayerMid = mobile
+      ? createVideoPreset(960, 540, 1_200_000, 20, 'medium')
+      : createVideoPreset(1280, 720, 2_800_000, 20, 'medium');
+    const screenLayerLow = mobile
+      ? createVideoPreset(640, 360, 600_000, 10, 'low')
+      : createVideoPreset(960, 540, 1_400_000, 12, 'low');
     return {
       adaptiveStream: true,
       dynacast: true,
       stopLocalTrackOnUnpublish: true,
       videoCaptureDefaults: {
         facingMode,
-        resolution: mobile ? { width: 640, height: 360 } : { width: 1280, height: 720 },
-        frameRate: mobile ? 24 : 30,
+        resolution: cameraPrimary.resolution,
+        frameRate: cameraPrimary.encoding.maxFramerate,
       },
       audioCaptureDefaults: {
         echoCancellation: true,
@@ -49,24 +74,10 @@
         dtx: true,
         red: true,
         degradationPreference: 'maintain-framerate',
-        videoEncoding: mobile
-          ? { maxBitrate: 700_000, maxFramerate: 24, priority: 'medium' }
-          : { maxBitrate: 1_800_000, maxFramerate: 30, priority: 'medium' },
-        videoSimulcastLayers: mobile
-          ? [{ resolution: { width: 320, height: 180 }, encoding: { maxBitrate: 180_000, maxFramerate: 20, priority: 'low' } }]
-          : [{ resolution: { width: 640, height: 360 }, encoding: { maxBitrate: 700_000, maxFramerate: 20, priority: 'low' } }],
-        screenShareEncoding: mobile
-          ? { maxBitrate: 2_400_000, maxFramerate: 20, priority: 'high' }
-          : { maxBitrate: 5_500_000, maxFramerate: 24, priority: 'high' },
-        screenShareSimulcastLayers: mobile
-          ? [
-              { resolution: { width: 960, height: 540 }, encoding: { maxBitrate: 1_200_000, maxFramerate: 20, priority: 'medium' } },
-              { resolution: { width: 640, height: 360 }, encoding: { maxBitrate: 600_000, maxFramerate: 10, priority: 'low' } },
-            ]
-          : [
-              { resolution: { width: 1280, height: 720 }, encoding: { maxBitrate: 2_800_000, maxFramerate: 20, priority: 'medium' } },
-              { resolution: { width: 960, height: 540 }, encoding: { maxBitrate: 1_400_000, maxFramerate: 12, priority: 'low' } },
-            ],
+        videoEncoding: cameraPrimary.encoding,
+        videoSimulcastLayers: [cameraLayer],
+        screenShareEncoding: screenPrimary.encoding,
+        screenShareSimulcastLayers: [screenLayerMid, screenLayerLow],
       },
     };
   }
