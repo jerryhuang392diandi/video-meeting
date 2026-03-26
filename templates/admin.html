@@ -25,7 +25,6 @@
       <div class="metric-card metric-chart-card"><div class="metric-ring" id="cpuRing" style="--pct: {{ system_stats.cpu_percent }};"><span>CPU</span><strong id="cpuMetric">{{ system_stats.cpu_percent }}%</strong></div><div class="metric-bar"><i id="cpuBar" style="width: {{ system_stats.cpu_percent }}%;"></i></div></div>
       <div class="metric-card metric-chart-card"><div class="metric-ring" id="memoryRing" style="--pct: {{ system_stats.memory_percent }};"><span>{{ t('memory') }}</span><strong id="memoryMetric">{{ system_stats.memory_percent }}%</strong></div><div class="metric-bar"><i id="memoryBar" style="width: {{ system_stats.memory_percent }}%;"></i></div></div>
       <div class="metric-card metric-chart-card"><div class="metric-ring" id="diskRing" style="--pct: {{ system_stats.disk_percent }};"><span>{{ t('disk_usage') }}</span><strong id="diskMetric">{{ system_stats.disk_percent }}%</strong></div><div class="metric-bar"><i id="diskBar" style="width: {{ system_stats.disk_percent }}%;"></i></div><small id="diskDetail">{{ system_stats.disk_used_text }} / {{ system_stats.disk_total_text }}</small></div>
-      <div class="metric-card"><span>{{ t('server_traffic_total') }}</span><strong id="trafficMetric">{{ system_stats.traffic_total_text }}</strong><small id="ifaceDetail">iface: {{ system_stats.iface }}</small></div>
       <div class="metric-card"><span>{{ t('active_rooms') }}</span><strong id="roomMetric">{{ system_stats.active_room_count }}</strong></div>
       <div class="metric-card"><span>{{ t('active_sockets') }}</span><strong id="socketMetric">{{ system_stats.active_socket_count }}</strong></div>
     </div>
@@ -52,20 +51,7 @@
 <section class="panel panel-glow">
   <div class="section-head">
     <h2>{{ t('users') }}</h2>
-    <span class="section-tag">{{ t('traffic_management') }}</span>
   </div>
-  <div class="row-compact wrap-actions" style="justify-content: space-between; align-items: center; margin-bottom: 12px;">
-    <div class="muted">{{ t('traffic_server_observed') }}</div>
-    <div class="muted">{{ t('selected_count') }}: <span id="selectedUserCount">0</span></div>
-  </div>
-  <form method="post" action="{{ url_for('admin_bulk_reset_user_traffic') }}" id="bulkResetTrafficForm">
-    <div class="row-compact wrap-actions" style="margin-bottom: 12px;">
-      <label class="chip" style="cursor:pointer;">
-        <input type="checkbox" id="selectAllUsers" style="margin-right: 6px;">{{ t('select_all') }}
-      </label>
-      <button class="ghost-btn" type="submit">{{ t('batch_reset_traffic') }}</button>
-    </div>
-  </form>
   {% for u in users %}
   <div class="list-item stacked admin-user-card">
     <div class="row-compact" style="justify-content: space-between; align-items: flex-start; width: 100%; gap: 12px;">
@@ -73,12 +59,7 @@
         <div class="item-title">{{ u.username }}</div>
         <div class="muted">ID {{ u.id }} · {{ t('admin_role') }}: {{ t('yes') if u.is_admin else t('no') }} · {{ t('status') }}: {{ t('enabled') if u.is_active_user else t('disabled') }}</div>
         <div class="muted">{{ t('register_date') }}: <span class="local-datetime" data-utc="{{ utc_iso(u.created_at) }}">{{ u.created_at }}</span></div>
-        <div class="muted">{{ t('monthly_quota') }}: {{ traffic_summaries[u.id].monthly_quota_text }} · {{ t('used_traffic') }}: {{ traffic_summaries[u.id].used_traffic_text }} · {{ t('remaining_traffic') }}: {{ traffic_summaries[u.id].remaining_traffic_text }}</div>
-        <div class="muted">{{ t('traffic_reset_at') }}: {{ traffic_summaries[u.id].reset_at_text }} · {{ t('traffic_reset_keep_date') }}</div>
       </div>
-      <label class="chip admin-bulk-check" style="cursor:pointer;">
-        <input type="checkbox" name="user_ids" value="{{ u.id }}" class="user-checkbox" form="bulkResetTrafficForm" style="margin-right: 6px;">{{ t('select') }}
-      </label>
     </div>
     <div class="admin-actions-grid">
       {% if not u.is_admin %}
@@ -88,15 +69,6 @@
         <form method="post" action="{{ url_for('admin_delete_user', user_id=u.id) }}" class="admin-delete-user-form" data-username="{{ u.username }}"><button class="ghost-btn danger" type="submit">{{ t('delete_user') }}</button></form>
       </div>
       {% endif %}
-      <div class="row-compact wrap-actions">
-        <form method="post" action="{{ url_for('admin_set_user_quota', user_id=u.id) }}" class="row-compact">
-          <input type="number" name="monthly_quota_gb" min="0" step="0.5" value="{{ '%.2f'|format((u.monthly_quota_mb or 0) / 1024) }}" style="max-width: 110px;" />
-          <button class="ghost-btn" type="submit">{{ t('set_quota') }}</button>
-        </form>
-        <form method="post" action="{{ url_for('admin_reset_user_traffic', user_id=u.id) }}">
-          <button class="ghost-btn" type="submit">{{ t('reset_traffic') }}</button>
-        </form>
-      </div>
       {% if not u.is_admin %}
       <form method="post" action="{{ url_for('admin_reset_user_password', user_id=u.id) }}" class="row-compact admin-reset-form">
         <input type="text" name="new_password" minlength="4" maxlength="32" placeholder="{{ t('new_password_admin') }}" />
@@ -219,7 +191,7 @@
 {% endblock %}
 
 <style>
-.metric-chart-card{display:flex;flex-direction:column;gap:10px;align-items:center;justify-content:center;min-height:180px}.metric-ring{--pct:0;position:relative;width:118px;height:118px;border-radius:999px;display:grid;place-items:center;background:conic-gradient(rgba(98,196,255,.95) calc(var(--pct) * 1%), rgba(255,255,255,.08) 0)}.metric-ring::after{content:"";position:absolute;inset:10px;border-radius:999px;background:rgba(7,18,45,.96);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}.metric-ring span,.metric-ring strong{position:relative;z-index:1;display:block;text-align:center}.metric-ring span{font-size:12px;color:#9fb2d1}.metric-ring strong{font-size:22px;margin-top:2px}#ifaceDetail{text-transform:none}.admin-user-card{gap:18px}.admin-actions-grid{display:grid;gap:10px;width:100%}.admin-reset-form input{min-width:180px}.admin-alert-panel .status-grid strong{font-size:20px}
+.metric-chart-card{display:flex;flex-direction:column;gap:10px;align-items:center;justify-content:center;min-height:180px}.metric-ring{--pct:0;position:relative;width:118px;height:118px;border-radius:999px;display:grid;place-items:center;background:conic-gradient(rgba(98,196,255,.95) calc(var(--pct) * 1%), rgba(255,255,255,.08) 0)}.metric-ring::after{content:"";position:absolute;inset:10px;border-radius:999px;background:rgba(7,18,45,.96);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}.metric-ring span,.metric-ring strong{position:relative;z-index:1;display:block;text-align:center}.metric-ring span{font-size:12px;color:#9fb2d1}.metric-ring strong{font-size:22px;margin-top:2px}.admin-user-card{gap:18px}.admin-actions-grid{display:grid;gap:10px;width:100%}.admin-reset-form input{min-width:180px}.admin-alert-panel .status-grid strong{font-size:20px}
 </style>
 
 {% block scripts %}
@@ -270,14 +242,6 @@
     }
 
     bindBulkSelection({
-      selectAllId: 'selectAllUsers',
-      checkboxSelector: '.user-checkbox',
-      countNodeId: 'selectedUserCount',
-      formId: 'bulkResetTrafficForm',
-      emptyMessage: {{ t('no_user_selected')|tojson }},
-    });
-
-    bindBulkSelection({
       selectAllId: 'selectAllActiveMeetings',
       checkboxSelector: '.active-meeting-checkbox',
       countNodeId: 'selectedActiveMeetingCount',
@@ -325,7 +289,6 @@
           ['cpuMetric', `${data.cpu_percent}%`],
           ['memoryMetric', `${data.memory_percent}%`],
           ['diskMetric', `${data.disk_percent}%`],
-          ['trafficMetric', data.traffic_total_text],
           ['roomMetric', String(data.active_room_count)],
           ['socketMetric', String(data.active_socket_count)],
           ['activeRoomCountMini', String(data.active_room_count)],
@@ -338,7 +301,6 @@
         const diskBar = document.getElementById('diskBar'); if (diskBar) diskBar.style.width = `${data.disk_percent}%`;
         const diskRing = document.getElementById('diskRing'); if (diskRing) diskRing.style.setProperty('--pct', data.disk_percent);
         const diskDetail = document.getElementById('diskDetail'); if (diskDetail) diskDetail.textContent = `${data.disk_used_text} / ${data.disk_total_text}`;
-        const ifaceDetail = document.getElementById('ifaceDetail'); if (ifaceDetail) ifaceDetail.textContent = `iface: ${data.iface}`;
       } catch (_) {}
     }
 

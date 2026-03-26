@@ -52,17 +52,6 @@
       </div>
     </div>
 
-    <div class="mini-panel">
-      <div class="muted">{{ t('traffic_usage') }} · {{ t('traffic_server_observed') }}</div>
-      <div class="status-grid">
-        <div><span>{{ t('monthly_quota') }}</span><strong id="trafficQuotaTotal">{{ traffic.monthly_quota_text }}</strong></div>
-        <div><span>{{ t('used_traffic') }}</span><strong id="trafficQuotaUsed">{{ traffic.used_traffic_text }}</strong></div>
-        <div><span>{{ t('remaining_traffic') }}</span><strong id="trafficQuotaRemaining">{{ traffic.remaining_traffic_text }}</strong></div>
-        <div><span>{{ t('reset_cycle') }}</span><strong id="trafficQuotaReset">{{ traffic.reset_at_text }}</strong></div>
-      </div>
-      <div class="muted" id="trafficQuotaNote">{{ traffic.tracking_note_text }}</div>
-    </div>
-
     <div class="mini-panel diagnostics-panel" id="rtcDiagnosticsPanel">
       <div class="row-compact diagnostics-head">
         <div>

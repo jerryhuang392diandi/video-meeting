@@ -647,7 +647,6 @@ body.has-simulated-fullscreen {
   grid-template-columns: 1fr;
   gap: 20px;
 }
-.traffic-row { margin-top: 20px; }
 .guide-layout {
   display: grid;
   gap: 18px;

@@ -175,9 +175,6 @@ class User(UserMixin, db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     is_active_user = db.Column(db.Boolean, default=True)
     session_version = db.Column(db.Integer, default=0)
-    monthly_quota_mb = db.Column(db.Float, default=3072.0)
-    used_traffic_mb = db.Column(db.Float, default=0.0)
-    traffic_cycle_start_at = db.Column(db.DateTime, nullable=True)
     display_name = db.Column(db.String(32), nullable=True)
     region = db.Column(db.String(64), nullable=True, default="Asia/Tokyo")
     preferred_locale = db.Column(db.String(16), nullable=True, default="auto")
@@ -292,12 +289,6 @@ def ensure_user_columns():
         cur.execute("ALTER TABLE users ADD COLUMN is_active_user BOOLEAN DEFAULT 1")
     if "session_version" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN session_version INTEGER DEFAULT 0")
-    if "monthly_quota_mb" not in cols:
-        cur.execute("ALTER TABLE users ADD COLUMN monthly_quota_mb FLOAT DEFAULT 3072")
-    if "used_traffic_mb" not in cols:
-        cur.execute("ALTER TABLE users ADD COLUMN used_traffic_mb FLOAT DEFAULT 0")
-    if "traffic_cycle_start_at" not in cols:
-        cur.execute("ALTER TABLE users ADD COLUMN traffic_cycle_start_at DATETIME")
     if "display_name" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN display_name VARCHAR(32)")
     if "region" not in cols:
@@ -365,77 +356,11 @@ def get_base_url():
     return get_public_origin()
 
 
-TRAFFIC_RESET_DAYS = 30
-_TRAFFIC_MONITOR = {"iface": None, "last_total_bytes": None, "last_ts": None}
-
-
-def traffic_accounting_reason():
-    if get_rtc_mode() == "livekit":
-        return "livekit_sfu"
-    disabled = (os.environ.get("DISABLE_TRAFFIC_ACCOUNTING") or "").strip().lower()
-    if disabled in {"1", "true", "yes", "on"}:
-        return "disabled"
-    return None
-
-
-def traffic_accounting_enabled():
-    return traffic_accounting_reason() is None
-
-
-def cycle_anchor_for_user(user):
-    anchor = getattr(user, "traffic_cycle_start_at", None)
-    if anchor:
-        return anchor
-    anchor = getattr(user, "created_at", None) or datetime.utcnow()
-    user.traffic_cycle_start_at = anchor
-    return anchor
-
-
-def refresh_user_traffic_cycle(user, now=None):
-    now = now or datetime.utcnow()
-    anchor = cycle_anchor_for_user(user)
-    changed = False
-    while anchor + timedelta(days=TRAFFIC_RESET_DAYS) <= now:
-        anchor = anchor + timedelta(days=TRAFFIC_RESET_DAYS)
-        user.used_traffic_mb = 0.0
-        changed = True
-    if user.traffic_cycle_start_at != anchor:
-        user.traffic_cycle_start_at = anchor
-        changed = True
-    if user.monthly_quota_mb is None:
-        user.monthly_quota_mb = 3072.0
-        changed = True
-    if user.used_traffic_mb is None:
-        user.used_traffic_mb = 0.0
-        changed = True
-    return changed
-
-
-def user_remaining_quota_mb(user):
-    refresh_user_traffic_cycle(user)
-    return max(0.0, float(user.monthly_quota_mb or 0.0) - float(user.used_traffic_mb or 0.0))
-
-
-def user_quota_exceeded(user):
-    if not traffic_accounting_enabled():
-        return False
-    return user_remaining_quota_mb(user) <= 0.0001
-
-
 def format_mb(mb_value):
     value = float(mb_value or 0.0)
     if value >= 1024:
         return f"{value / 1024:.2f} GB"
     return f"{value:.0f} MB"
-
-
-def traffic_tracking_note_text():
-    reason = traffic_accounting_reason()
-    if reason == "livekit_sfu":
-        return t("traffic_tracking_disabled_sfu")
-    if reason == "disabled":
-        return t("traffic_tracking_disabled")
-    return ""
 
 
 def bool_from_form(value, default=False):
@@ -592,8 +517,6 @@ def visible_chat_history_for_user(room, user_id, sid, is_room_host=False):
 
 
 def get_system_metrics():
-    sync_network_traffic()
-    iface = _TRAFFIC_MONITOR.get("iface") or detect_traffic_interface()
     cpu_percent = 0.0
     memory_percent = 0.0
     if psutil:
@@ -612,158 +535,14 @@ def get_system_metrics():
         disk_percent = (disk.used / disk.total * 100.0) if disk.total else 0.0
     except Exception:
         disk_total = disk_used = disk_percent = 0.0
-    traffic_total_mb = 0.0
-    try:
-        if psutil and iface:
-            counters = psutil.net_io_counters(pernic=True).get(iface)
-            if counters:
-                traffic_total_mb = (float(counters.bytes_sent) + float(counters.bytes_recv)) / (1024 * 1024)
-    except Exception:
-        traffic_total_mb = 0.0
     return {
         "cpu_percent": round(cpu_percent, 1),
         "memory_percent": round(memory_percent, 1),
         "disk_percent": round(disk_percent, 1),
         "disk_used_text": format_mb(disk_used),
         "disk_total_text": format_mb(disk_total),
-        "traffic_total_text": format_mb(traffic_total_mb),
-        "traffic_total_mb": round(traffic_total_mb, 2),
-        "iface": iface or "unknown",
         "active_room_count": len(rooms),
         "active_socket_count": len(sid_to_user),
-    }
-
-
-def detect_traffic_interface():
-    forced = (os.environ.get("TURN_TRAFFIC_INTERFACE") or os.environ.get("TRAFFIC_NET_IFACE") or "").strip()
-    if forced:
-        return forced
-    try:
-        with open("/proc/net/route", "r", encoding="utf-8") as fh:
-            next(fh, None)
-            for line in fh:
-                parts = line.strip().split()
-                if len(parts) >= 4 and parts[1] == "00000000":
-                    return parts[0]
-    except OSError:
-        pass
-    if psutil:
-        try:
-            stats = psutil.net_if_stats()
-            counters = psutil.net_io_counters(pernic=True)
-            preferred = [
-                name for name, meta in stats.items()
-                if meta.isup and name in counters and not name.lower().startswith(("lo", "loopback"))
-            ]
-            if preferred:
-                preferred.sort(key=lambda name: (counters[name].bytes_sent + counters[name].bytes_recv), reverse=True)
-                return preferred[0]
-        except Exception:
-            return None
-    return None
-
-
-def read_interface_total_bytes(interface_name):
-    if not interface_name:
-        return None
-    base = Path(f"/sys/class/net/{interface_name}/statistics")
-    try:
-        rx = int((base / "rx_bytes").read_text().strip())
-        tx = int((base / "tx_bytes").read_text().strip())
-        return rx + tx
-    except OSError:
-        if psutil:
-            try:
-                counters = psutil.net_io_counters(pernic=True).get(interface_name)
-                if counters:
-                    return int(counters.bytes_recv) + int(counters.bytes_sent)
-            except Exception:
-                return None
-        return None
-
-
-def sync_network_traffic(now_ts=None):
-    if not traffic_accounting_enabled():
-        return
-    now_ts = now_ts or time.time()
-    if not _TRAFFIC_MONITOR.get("iface"):
-        _TRAFFIC_MONITOR["iface"] = detect_traffic_interface()
-    iface = _TRAFFIC_MONITOR.get("iface")
-    total_bytes = read_interface_total_bytes(iface)
-    if total_bytes is None:
-        return
-    last_total = _TRAFFIC_MONITOR.get("last_total_bytes")
-    _TRAFFIC_MONITOR["last_total_bytes"] = total_bytes
-    _TRAFFIC_MONITOR["last_ts"] = now_ts
-    if last_total is None or total_bytes < last_total:
-        return
-    delta_bytes = total_bytes - last_total
-    if delta_bytes <= 0:
-        return
-
-    active_user_ids = []
-    seen = set()
-    for room in rooms.values():
-        for info in room.get("participants", {}).values():
-            user_id = info.get("user_id")
-            if user_id and user_id not in seen:
-                seen.add(user_id)
-                active_user_ids.append(user_id)
-
-    if not active_user_ids:
-        return
-
-    share_mb = delta_bytes / (1024 * 1024) / max(1, len(active_user_ids))
-    if share_mb <= 0:
-        return
-
-    users = User.query.filter(User.id.in_(active_user_ids)).all()
-    changed = False
-    exceeded_ids = []
-    for user in users:
-        refresh_user_traffic_cycle(user)
-        user.used_traffic_mb = float(user.used_traffic_mb or 0.0) + share_mb
-        changed = True
-        if user_quota_exceeded(user):
-            exceeded_ids.append(user.id)
-    if changed:
-        db.session.commit()
-    for user_id in exceeded_ids:
-        disconnect_user_sockets(user_id, message=TRANSLATIONS["zh"].get("traffic_limit_reached", "Traffic quota exceeded"))
-
-
-def sync_user_traffic(user_id=None):
-    if not traffic_accounting_enabled():
-        return
-    sync_network_traffic()
-    if user_id:
-        user = db.session.get(User, user_id)
-        if user and refresh_user_traffic_cycle(user):
-            db.session.commit()
-
-
-def traffic_summary_dict(user):
-    refresh_user_traffic_cycle(user)
-    remaining = user_remaining_quota_mb(user)
-    tracking_enabled = traffic_accounting_enabled()
-    note_text = traffic_tracking_note_text()
-    anchor = cycle_anchor_for_user(user)
-    reset_at = anchor + timedelta(days=TRAFFIC_RESET_DAYS)
-    used_text = format_mb(user.used_traffic_mb) if tracking_enabled else t("traffic_not_tracked")
-    remaining_text = format_mb(remaining) if tracking_enabled else t("traffic_not_tracked")
-    return {
-        "monthly_quota_mb": round(float(user.monthly_quota_mb or 0.0), 2),
-        "used_traffic_mb": round(float(user.used_traffic_mb or 0.0), 2),
-        "remaining_traffic_mb": round(float(remaining), 2) if tracking_enabled else None,
-        "monthly_quota_text": format_mb(user.monthly_quota_mb),
-        "used_traffic_text": used_text,
-        "remaining_traffic_text": remaining_text,
-        "reset_at_text": reset_at.strftime("%Y-%m-%d %H:%M UTC"),
-        "reset_cycle_days": TRAFFIC_RESET_DAYS,
-        "traffic_interface": _TRAFFIC_MONITOR.get("iface") or detect_traffic_interface() or "unknown",
-        "tracking_enabled": tracking_enabled,
-        "tracking_note_text": note_text,
-        "tracking_reason": traffic_accounting_reason() or "active",
     }
 
 
@@ -808,7 +587,6 @@ def cancel_room_expiry(room_id):
 def end_meeting_by_room_id(room_id, message_key=None):
     with app.app_context():
         room = rooms.get(room_id)
-        sync_network_traffic()
         meeting = Meeting.query.filter_by(room_id=room_id).first()
         if not meeting:
             cancel_room_expiry(room_id)
@@ -873,7 +651,6 @@ def ensure_runtime_room(meeting):
         "empty_since": None,
         "expiry_timer": None,
         "lang": session.get("lang", "zh"),
-        "traffic_last_sync": time.time(),
         "danmaku_enabled": True,
         "active_sharer_sid": None,
         "active_sharer_user_id": None,
@@ -1124,9 +901,8 @@ def set_language(lang):
 def index():
     if not current_user.is_authenticated:
         return redirect(url_for("login"))
-    sync_user_traffic(current_user.id)
     db.session.refresh(current_user)
-    return render_template("index.html", traffic=traffic_summary_dict(current_user), preferred_display_name=preferred_display_name(current_user))
+    return render_template("index.html", preferred_display_name=preferred_display_name(current_user))
 
 
 @app.route("/account", methods=["GET", "POST"])
@@ -1241,7 +1017,7 @@ def register():
     if User.query.filter_by(username=username).first():
         return render_template("register.html", error=t("username_exists"))
 
-    user = User(username=username, display_name=username, is_active_user=True, session_version=0, monthly_quota_mb=3072.0, used_traffic_mb=0.0, traffic_cycle_start_at=datetime.utcnow())
+    user = User(username=username, display_name=username, is_active_user=True, session_version=0)
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
@@ -1288,10 +1064,7 @@ def logout():
 @app.post("/api/create_room")
 @login_required
 def api_create_room():
-    sync_user_traffic(current_user.id)
     db.session.refresh(current_user)
-    if user_quota_exceeded(current_user):
-        return jsonify({"success": False, "message": t("traffic_limit_reached")}), 403
     data = request.get_json(silent=True) or {}
     host_name = (data.get("host_name") or current_user.username).strip()[:32] or current_user.username
     room_id = generate_room_id()
@@ -1319,7 +1092,6 @@ def api_create_room():
         "empty_since": None,
         "expiry_timer": None,
         "lang": session.get("lang", "zh"),
-        "traffic_last_sync": time.time(),
         "danmaku_enabled": True,
         "active_sharer_sid": None,
         "active_sharer_user_id": None,
@@ -1335,10 +1107,7 @@ def api_create_room():
 @app.post("/api/join_room")
 @login_required
 def api_join_room():
-    sync_user_traffic(current_user.id)
     db.session.refresh(current_user)
-    if user_quota_exceeded(current_user):
-        return jsonify({"success": False, "message": t("traffic_limit_reached")}), 403
     data = request.get_json(silent=True) or {}
     room_id = (data.get("room_id") or "").strip()
     password = normalize_password(data.get("password") or "")
@@ -1373,7 +1142,6 @@ def room_page(room_id):
     invite_url = f"{get_base_url()}{url_for('room_page', room_id=room_id)}?pwd={quote(room_password)}"
     is_host = current_user.is_authenticated and current_user.id == meeting.host_user_id
     rtc_mode = get_rtc_mode()
-    sync_user_traffic(current_user.id)
     db.session.refresh(current_user)
     return render_template(
         "room.html",
@@ -1381,7 +1149,6 @@ def room_page(room_id):
         room_password=room_password,
         invite_url=invite_url,
         is_host=is_host,
-        traffic=traffic_summary_dict(current_user),
         turn_ice_servers=build_turn_ice_servers(),
         rtc_mode=rtc_mode,
         livekit_enabled=livekit_enabled(),
@@ -1393,16 +1160,6 @@ def room_page(room_id):
         auto_enable_microphone=bool(getattr(current_user, "auto_enable_microphone", True)),
         auto_enable_speaker=bool(getattr(current_user, "auto_enable_speaker", True)),
     )
-
-
-@app.get("/api/traffic_summary")
-@login_required
-def api_traffic_summary():
-    sync_user_traffic(current_user.id)
-    db.session.refresh(current_user)
-    if user_quota_exceeded(current_user):
-        disconnect_user_sockets(current_user.id, message=t("traffic_limit_reached"))
-    return jsonify({"success": True, **traffic_summary_dict(current_user)})
 
 
 @app.post("/api/livekit/token")
@@ -1591,13 +1348,9 @@ def api_admin_alerts():
 @admin_required
 def admin_dashboard():
     debug_log('ADMIN_DASHBOARD_ENTER', rooms={rid: {'participants': list(info.get('participants', {}).keys()), 'host_user_id': info.get('host_user_id'), 'host_present': info.get('host_present')} for rid, info in rooms.items()}, user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids}, sid_to_user=dict(sid_to_user))
-    sync_network_traffic()
     for meeting in Meeting.query.filter_by(status="active").all():
         ensure_meeting_not_expired(meeting)
     users = User.query.order_by(User.created_at.desc()).all()
-    for user in users:
-        refresh_user_traffic_cycle(user)
-    db.session.commit()
     meetings = Meeting.query.order_by(Meeting.created_at.desc(), Meeting.id.desc()).all()
     active_meetings = [m for m in meetings if m.status == "active"]
     history_meetings = [m for m in meetings if m.status != "active"]
@@ -1613,56 +1366,9 @@ def admin_dashboard():
         active_meetings=active_meetings,
         history_meetings=history_meetings,
         online_rooms=online_rooms,
-        traffic_summaries={u.id: traffic_summary_dict(u) for u in users},
         reset_requests=reset_requests,
         system_stats=get_system_metrics(),
     )
-
-
-@app.post("/admin/user/<int:user_id>/quota")
-@login_required
-@admin_required
-def admin_set_user_quota(user_id):
-    user = User.query.get_or_404(user_id)
-    try:
-        quota_gb = float((request.form.get("monthly_quota_gb") or "0").strip())
-    except ValueError:
-        return redirect(url_for("admin_dashboard"))
-    quota_gb = max(0.0, quota_gb)
-    sync_user_traffic(user.id)
-    user.monthly_quota_mb = round(quota_gb * 1024.0, 2)
-    db.session.commit()
-    if user_quota_exceeded(user):
-        disconnect_user_sockets(user.id, message=t("traffic_limit_reached"))
-    return redirect(url_for("admin_dashboard"))
-
-
-@app.post("/admin/user/<int:user_id>/reset-traffic")
-@login_required
-@admin_required
-def admin_reset_user_traffic(user_id):
-    user = User.query.get_or_404(user_id)
-    sync_user_traffic(user.id)
-    user.used_traffic_mb = 0.0
-    db.session.commit()
-    return redirect(url_for("admin_dashboard"))
-
-
-@app.post("/admin/users/bulk-reset-traffic")
-@login_required
-@admin_required
-def admin_bulk_reset_user_traffic():
-    user_ids = parse_int_list(request.form.getlist("user_ids"))
-    if not user_ids:
-        return redirect(url_for("admin_dashboard"))
-
-    sync_network_traffic()
-    users = User.query.filter(User.id.in_(user_ids)).all()
-    for user in users:
-        refresh_user_traffic_cycle(user)
-        user.used_traffic_mb = 0.0
-    db.session.commit()
-    return redirect(url_for("admin_dashboard"))
 
 
 @app.post("/admin/user/<int:user_id>/kick")
@@ -1888,13 +1594,7 @@ def on_join_room(data):
         debug_log('SOCKET_JOIN_ROOM_SESSION_INVALID', sid=sid, room_id=room_id, fresh_user_id=getattr(fresh_user, "id", None), fresh_session_version=getattr(fresh_user, "session_version", None), browser_session_version=session.get("session_version"))
         emit("force_logout", {"message": t("kicked")})
         return
-    sync_network_traffic()
     db.session.refresh(fresh_user)
-    if user_quota_exceeded(fresh_user):
-        debug_log('SOCKET_JOIN_ROOM_TRAFFIC_DENY', sid=sid, room_id=room_id, user_id=fresh_user.id)
-        emit("join_error", {"message": t("traffic_limit_reached")})
-        return
-
     cancel_room_cleanup(room_id)
 
     # Clean up only truly stale sockets for the same authenticated user.
@@ -2437,7 +2137,6 @@ def api_translate_to_english():
 
 @socketio.on("meeting_chat_send")
 def on_meeting_chat_send(data):
-    sync_network_traffic()
     sid = request.sid
     info = sid_to_user.get(sid)
     if not info:
@@ -2575,7 +2274,6 @@ def on_signal(data):
 
 @socketio.on("room_ui_event")
 def on_room_ui_event(data):
-    sync_network_traffic()
     sid = request.sid
     info = sid_to_user.get(sid)
     if not info:
@@ -2648,8 +2346,6 @@ def on_leave_room(*_args):
     room_id = info["room_id"]
     unbind_user_socket(info.get("user_id"), sid)
     room = rooms.get(room_id)
-    if room and sid in room.get("participants", {}):
-        sync_network_traffic()
     if room and explicit_leave and info.get("user_id") == room.get("host_user_id") and len(room.get("participants", {})) > 1:
         sid_to_user[sid] = info
         bind_user_socket(info.get("user_id"), sid)

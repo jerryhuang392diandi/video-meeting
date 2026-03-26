@@ -60,7 +60,6 @@ const TEXT_LEAVE_CONFIRM = {{ ('确定要离开当前会议吗？' if lang == 'z
 const TEXT_YOU_LEFT_MEETING = {{ t('you_left_meeting')|tojson }};
 const TEXT_HOST_LEFT_ROOM = {{ t('host_left_room')|tojson }};
 const TEXT_HOST_RETURNED_ROOM = {{ t('host_returned_room')|tojson }};
-const TEXT_TRAFFIC_LIMIT_REACHED = {{ t('traffic_limit_reached')|tojson }};
 const IS_HOST = {{ 'true' if is_host else 'false' }};
 const TEXT_DANMAKU_ON = {{ ('弹幕已开启' if lang == 'zh' else 'Danmaku enabled')|tojson }};
 const TEXT_DANMAKU_OFF = {{ ('弹幕已关闭' if lang == 'zh' else 'Danmaku disabled')|tojson }};
@@ -403,13 +402,10 @@ function updateShareUiState() {
 function updateVirtualBackgroundButtonState() {
   if (!virtualBgBtn) return;
   const disabledByShare = !!isSharingScreen || !!currentSharerSid;
-  const disabledByMobile = isMobileDevice();
-  virtualBgBtn.disabled = disabledByShare || disabledByMobile;
+  virtualBgBtn.disabled = disabledByShare;
   virtualBgBtn.classList.toggle('active', !!virtualBgEnabled);
   if (disabledByShare) {
     virtualBgBtn.title = {{ ('共享屏幕期间不可使用虚拟背景' if lang == 'zh' else 'Virtual background is unavailable during screen sharing')|tojson }};
-  } else if (disabledByMobile) {
-    virtualBgBtn.title = {{ ('移动端为保证稳定性，暂不启用虚拟背景。' if lang == 'zh' else 'Virtual background is disabled on mobile to improve stability.')|tojson }};
   } else if (virtualBgEnabled) {
     virtualBgBtn.title = TEXT_VIRTUAL_BG_OFF;
   } else if (virtualBgImageDataUrl) {
@@ -1678,10 +1674,6 @@ async function activateVirtualBackground() {
     setStatus(TEXT_VIRTUAL_BG_NEEDS_CAMERA, 'warning');
     return false;
   }
-  if (isMobileDevice()) {
-    fallbackToRawCamera({{ ('移动端为保证稳定性，暂不启用虚拟背景。' if lang == 'zh' else 'Virtual background is disabled on mobile to improve stability.')|tojson }});
-    return false;
-  }
   const activationToken = ++virtualBgActivationToken;
   let hadWorkingVbg = !!virtualBgEnabled;
   const previousBgImageEl = virtualBgImageEl;
@@ -2618,27 +2610,4 @@ updateVirtualBackgroundButtonState();
 queueRenderLayout();
 startRtcDiagnosticsLoop();
 
-async function refreshTrafficPanel() {
-  try {
-    const res = await fetch('/api/traffic_summary');
-    if (!res.ok) return;
-    const data = await res.json();
-    const total = document.getElementById('trafficQuotaTotal');
-    const used = document.getElementById('trafficQuotaUsed');
-    const remaining = document.getElementById('trafficQuotaRemaining');
-    const reset = document.getElementById('trafficQuotaReset');
-    if (total) total.textContent = data.monthly_quota_text;
-    if (used) used.textContent = data.used_traffic_text;
-    if (remaining) remaining.textContent = data.remaining_traffic_text;
-    if (reset) reset.textContent = data.reset_at_text;
-    const note = document.getElementById('trafficQuotaNote');
-    if (note) note.textContent = data.tracking_note_text || '';
-    if (data.tracking_enabled !== false && typeof data.remaining_traffic_mb === 'number' && data.remaining_traffic_mb <= 0) {
-      leaveMeetingAndExit(TEXT_TRAFFIC_LIMIT_REACHED);
-    }
-  } catch (_) {}
-}
-
-refreshTrafficPanel();
-setInterval(refreshTrafficPanel, 20000);
 </script>
