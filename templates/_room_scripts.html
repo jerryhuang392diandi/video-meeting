@@ -49,6 +49,7 @@ const TEXT_VIRTUAL_BG_LOADING = {{ ('正在加载虚拟背景模型...' if lang 
 const TEXT_VIRTUAL_BG_READY = {{ ('虚拟背景已启用' if lang == 'zh' else 'Virtual background enabled')|tojson }};
 const TEXT_VIRTUAL_BG_FAILED = {{ ('虚拟背景启动失败' if lang == 'zh' else 'Failed to enable virtual background')|tojson }};
 const TEXT_VIRTUAL_BG_OFF = {{ ('虚拟背景已关闭' if lang == 'zh' else 'Virtual background disabled')|tojson }};
+const TEXT_VIRTUAL_BG_NEEDS_CAMERA = {{ ('请先开启摄像头，再启用虚拟背景。' if lang == 'zh' else 'Turn on the camera first, then enable virtual background.')|tojson }};
 const TEXT_RECORD_CONVERTING = {{ ('正在转换为可拖动的 MP4，请稍候...' if lang == 'zh' else 'Converting to a seekable MP4, please wait...')|tojson }};
 const TEXT_RECORD_MP4_FAILED = {{ ('MP4 转换失败，已回退保存为 WebM' if lang == 'zh' else 'MP4 conversion failed, saved as WebM instead')|tojson }};
 const TEXT_RECORD_MP4_SERVER_ERROR = {{ ('服务器 MP4 转换失败' if lang == 'zh' else 'Server-side MP4 conversion failed')|tojson }};
@@ -165,6 +166,62 @@ const VIDEO_SENDER_PROFILES = {
     large: { maxBitrate: CAMERA_LOW_BITRATE, maxFramerate: 15, degradationPreference: 'maintain-framerate', priority: 'low', networkPriority: 'medium' },
   },
 };
+
+function createLiveKitVideoPreset(width, height, maxBitrate, maxFramerate, priority = 'medium') {
+  const LK = window.LivekitClient;
+  if (LK?.VideoPreset) return new LK.VideoPreset(width, height, maxBitrate, maxFramerate, priority);
+  return {
+    resolution: { width, height },
+    encoding: { maxBitrate, maxFramerate, priority },
+  };
+}
+
+function buildLiveKitRoomOptions() {
+  const cameraPrimary = IS_MOBILE
+    ? createLiveKitVideoPreset(640, 360, 450_000, 15, 'medium')
+    : createLiveKitVideoPreset(960, 540, 1_100_000, 20, 'medium');
+  const cameraLayer = IS_MOBILE
+    ? createLiveKitVideoPreset(320, 180, 180_000, 12, 'low')
+    : createLiveKitVideoPreset(640, 360, 550_000, 15, 'low');
+  const screenPrimary = IS_MOBILE
+    ? createLiveKitVideoPreset(1280, 720, 1_600_000, 10, 'high')
+    : createLiveKitVideoPreset(1920, 1080, 3_800_000, 12, 'high');
+  const screenLayerMid = IS_MOBILE
+    ? createLiveKitVideoPreset(960, 540, 900_000, 8, 'medium')
+    : createLiveKitVideoPreset(1280, 720, 2_200_000, 10, 'medium');
+  const screenLayerLow = IS_MOBILE
+    ? createLiveKitVideoPreset(640, 360, 420_000, 6, 'low')
+    : createLiveKitVideoPreset(960, 540, 1_200_000, 8, 'low');
+  return {
+    adaptiveStream: true,
+    dynacast: true,
+    stopLocalTrackOnUnpublish: true,
+    videoCaptureDefaults: {
+      facingMode: currentFacingMode,
+      resolution: cameraPrimary.resolution,
+      frameRate: cameraPrimary.encoding.maxFramerate,
+    },
+    audioCaptureDefaults: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      channelCount: 1,
+      sampleRate: 48000,
+      latency: IS_MOBILE ? 0.08 : 0.04,
+    },
+    publishDefaults: {
+      videoCodec: 'vp8',
+      simulcast: true,
+      dtx: true,
+      red: true,
+      degradationPreference: 'balanced',
+      videoEncoding: cameraPrimary.encoding,
+      videoSimulcastLayers: [cameraLayer],
+      screenShareEncoding: screenPrimary.encoding,
+      screenShareSimulcastLayers: [screenLayerMid, screenLayerLow],
+    },
+  };
+}
 
 const localVideo = document.createElement('video');
 localVideo.id = 'localVideo';
@@ -340,10 +397,25 @@ function updateShareUiState() {
       ? {{ ('当前设备/浏览器不支持共享屏幕' if lang == 'zh' else 'This device/browser does not support screen sharing')|tojson }}
       : (occupiedByOther ? {{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }} : '');
   }
-  if (virtualBgBtn) {
-    const disabledByShare = !!isSharingScreen || !!currentSharerSid;
-    virtualBgBtn.disabled = disabledByShare;
-    virtualBgBtn.title = disabledByShare ? {{ ('共享屏幕期间不可使用虚拟背景' if lang == 'zh' else 'Virtual background is unavailable during screen sharing')|tojson }} : '';
+  updateVirtualBackgroundButtonState();
+}
+
+function updateVirtualBackgroundButtonState() {
+  if (!virtualBgBtn) return;
+  const disabledByShare = !!isSharingScreen || !!currentSharerSid;
+  const disabledByMobile = isMobileDevice();
+  virtualBgBtn.disabled = disabledByShare || disabledByMobile;
+  virtualBgBtn.classList.toggle('active', !!virtualBgEnabled);
+  if (disabledByShare) {
+    virtualBgBtn.title = {{ ('共享屏幕期间不可使用虚拟背景' if lang == 'zh' else 'Virtual background is unavailable during screen sharing')|tojson }};
+  } else if (disabledByMobile) {
+    virtualBgBtn.title = {{ ('移动端为保证稳定性，暂不启用虚拟背景。' if lang == 'zh' else 'Virtual background is disabled on mobile to improve stability.')|tojson }};
+  } else if (virtualBgEnabled) {
+    virtualBgBtn.title = TEXT_VIRTUAL_BG_OFF;
+  } else if (virtualBgImageDataUrl) {
+    virtualBgBtn.title = TEXT_VIRTUAL_BG_PICK;
+  } else {
+    virtualBgBtn.title = TEXT_VIRTUAL_BG_PICK;
   }
 }
 
@@ -971,17 +1043,58 @@ function disableVirtualBackgroundState({ stopCanvas = false } = {}) {
   cleanupProcessedVideoStream({ stopCanvas });
 }
 
-function fallbackToRawCamera(message = null) {
-  if (!rawCameraStream) return;
+function getVirtualBackgroundSourceStream() {
+  if (rawCameraStream?.getVideoTracks?.().length) return rawCameraStream;
+  if (IS_LIVEKIT_MODE && !isSharingScreen && localStream?.getVideoTracks?.().length) {
+    return localStream;
+  }
+  return null;
+}
+
+async function replaceLiveKitCameraTrackFromStream(stream) {
+  if (!IS_LIVEKIT_MODE) return false;
+  const controller = await ensureLiveKitConnected();
+  if (!controller?.replaceCameraTrack) return false;
+  const sourceTrack = stream?.getVideoTracks?.().find((track) => track && track.readyState === 'live');
+  if (!sourceTrack) return false;
+  return await controller.replaceCameraTrack(sourceTrack.clone());
+}
+
+async function fallbackToRawCamera(message = null) {
+  const rawSourceStream = getVirtualBackgroundSourceStream();
   disableVirtualBackgroundState();
-  rawPreviewVideo.srcObject = rawCameraStream;
-  useLocalOutputStream(rawCameraStream);
+  if (IS_LIVEKIT_MODE) {
+    if (rawSourceStream) {
+      try {
+        await replaceLiveKitCameraTrackFromStream(rawSourceStream);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  } else if (rawCameraStream) {
+    rawPreviewVideo.srcObject = rawCameraStream;
+    useLocalOutputStream(rawCameraStream);
+  }
+  updateVirtualBackgroundButtonState();
   if (message) setStatus(message, 'warning');
 }
 
-function deactivateVirtualBackground(message = null) {
-  virtualBgImageDataUrl = null;
-  fallbackToRawCamera(message || TEXT_VIRTUAL_BG_OFF);
+async function deactivateVirtualBackground(message = null, { clearImage = false } = {}) {
+  if (clearImage) {
+    virtualBgImageDataUrl = null;
+  }
+  await fallbackToRawCamera(message || TEXT_VIRTUAL_BG_OFF);
+}
+
+async function prepareVirtualBackgroundImage(file) {
+  if (!file || !file.type || !file.type.startsWith('image/')) {
+    throw new Error(TEXT_IMAGE_NOT_SUPPORTED);
+  }
+  try {
+    const compressed = await compressImageFile(file);
+    if (compressed?.dataUrl) return compressed.dataUrl;
+  } catch (_) {}
+  return await fileToDataUrl(file);
 }
 
 function cleanupScreenShareAudioMix({ stopContext = false } = {}) {
@@ -1295,6 +1408,9 @@ function setLocalPreviewForLiveKit(stream, { hasVideo = false, hasAudio = false,
   updatePlaceholder(localCard, !!hasVideo);
   localCard.classList.toggle('audio-only', !!hasAudio && !hasVideo);
   isSharingScreen = !!isScreenShare;
+  if (hasVideo && !isScreenShare && !virtualBgEnabled) {
+    rawCameraStream = stream || null;
+  }
   updateLiveKitShareFocus('local', !!isScreenShare);
 }
 
@@ -1343,6 +1459,7 @@ function ensureLiveKitController() {
     tokenEndpoint: LIVEKIT_TOKEN_ENDPOINT,
     roomId: ROOM_ID,
     roomPassword: ROOM_PASSWORD,
+    roomOptions: buildLiveKitRoomOptions(),
     isHost: IS_HOST === true || IS_HOST === 'true',
     getParticipantSid: () => socket.id,
     getDisplayName: () => USER_NAME,
@@ -1556,14 +1673,19 @@ async function startSegmentationLoop() {
 }
 
 async function activateVirtualBackground() {
-  if (!rawCameraStream || !virtualBgImageDataUrl) return false;
+  const sourceStream = getVirtualBackgroundSourceStream();
+  if (!sourceStream || !virtualBgImageDataUrl) {
+    setStatus(TEXT_VIRTUAL_BG_NEEDS_CAMERA, 'warning');
+    return false;
+  }
   if (isMobileDevice()) {
     fallbackToRawCamera({{ ('移动端为保证稳定性，暂不启用虚拟背景。' if lang == 'zh' else 'Virtual background is disabled on mobile to improve stability.')|tojson }});
     return false;
   }
   const activationToken = ++virtualBgActivationToken;
-  let hadWorkingVbg = !!processedVideoStream && localStream === processedVideoStream;
+  let hadWorkingVbg = !!virtualBgEnabled;
   const previousBgImageEl = virtualBgImageEl;
+  const previousBgImageDataUrl = virtualBgImageDataUrl;
   setStatus(TEXT_VIRTUAL_BG_LOADING, 'warning');
 
   try {
@@ -1581,7 +1703,8 @@ async function activateVirtualBackground() {
       bgImage.src = virtualBgImageDataUrl;
     });
 
-    rawPreviewVideo.srcObject = rawCameraStream;
+    rawCameraStream = sourceStream;
+    rawPreviewVideo.srcObject = sourceStream;
     await rawPreviewVideo.play().catch(() => {});
     await waitForVideoReady(rawPreviewVideo, 2500);
 
@@ -1589,6 +1712,7 @@ async function activateVirtualBackground() {
 
     virtualBgImageEl = bgImage;
     virtualBgEnabled = true;
+    updateVirtualBackgroundButtonState();
     await startSegmentationLoop();
 
     const deadline = Date.now() + 3000;
@@ -1604,27 +1728,40 @@ async function activateVirtualBackground() {
 
     const nextOutputStream = new MediaStream();
     nextOutputStream.addTrack(processedTrack.clone());
-    rawCameraStream.getAudioTracks().forEach(track => nextOutputStream.addTrack(track));
+    sourceStream.getAudioTracks().forEach(track => nextOutputStream.addTrack(track));
 
     if (activationToken !== virtualBgActivationToken) {
       stopStreamTracks(nextOutputStream);
       return false;
     }
 
-    cleanupProcessedVideoStream();
-    processedVideoStream = nextOutputStream;
-    activeVirtualBgToken = activationToken;
-    useLocalOutputStream(processedVideoStream);
+    if (IS_LIVEKIT_MODE) {
+      const replaced = await replaceLiveKitCameraTrackFromStream(nextOutputStream);
+      if (!replaced) {
+        throw new Error('LiveKit camera replacement unavailable');
+      }
+      cleanupProcessedVideoStream();
+      processedVideoStream = nextOutputStream;
+      activeVirtualBgToken = activationToken;
+    } else {
+      cleanupProcessedVideoStream();
+      processedVideoStream = nextOutputStream;
+      activeVirtualBgToken = activationToken;
+      useLocalOutputStream(processedVideoStream);
+    }
+    updateVirtualBackgroundButtonState();
     setStatus(TEXT_VIRTUAL_BG_READY);
     return true;
   } catch (err) {
     console.error(err);
     if (hadWorkingVbg && processedVideoStream) {
       virtualBgImageEl = previousBgImageEl;
+      virtualBgImageDataUrl = previousBgImageDataUrl;
       virtualBgEnabled = true;
+      updateVirtualBackgroundButtonState();
       setStatus(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'), 'warning');
     } else {
-      fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'));
+      await fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'));
     }
     return false;
   }
@@ -2061,6 +2198,12 @@ function cleanupMeetingSession() {
   if (hasLeftMeeting) return;
   hasLeftMeeting = true;
   livekitLocalShareActive = false;
+  try {
+    disableVirtualBackgroundState({ stopCanvas: true });
+  } catch (_) {}
+  virtualBgImageDataUrl = null;
+  rawPreviewVideo.srcObject = null;
+  updateVirtualBackgroundButtonState();
   if (livekitController) {
     try { livekitController.disconnect(); } catch (_) {}
     livekitController = null;
@@ -2092,6 +2235,8 @@ socket.on('connect', () => {
   ensureCard('local', getDisplayName('local'), true);
   queueRenderLayout();
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
+  ensureLiveKitController()?.prepareConnection?.(LIVEKIT_URL);
+  ensureLiveKitConnected().catch(() => {});
 });
 
 socket.on('join_ok', async (data) => {
@@ -2328,6 +2473,13 @@ document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-
   const enabled = await controller.setCameraEnabled();
   const localCard = ensureCard('local', getDisplayName('local'), true);
   updatePlaceholder(localCard, !!enabled);
+  if (!enabled && virtualBgEnabled) {
+    disableVirtualBackgroundState();
+    updateVirtualBackgroundButtonState();
+  } else if (enabled && virtualBgImageDataUrl && !virtualBgEnabled && !isSharingScreen && !currentSharerSid) {
+    await activateVirtualBackground();
+    return;
+  }
   setStatus(enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 });
 document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-screen', async () => {
@@ -2341,11 +2493,34 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
   }
 });
 document.getElementById('virtualBgBtn').onclick = () => runMediaTask('virtual-background-toggle', async () => {
-  setStatus(TEXT_LIVEKIT_VBG_PENDING, 'warning');
+  if (virtualBgEnabled) {
+    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF);
+    return;
+  }
+  if (virtualBgImageDataUrl) {
+    await activateVirtualBackground();
+    return;
+  }
+  if (!virtualBgInput || virtualBgInput.disabled) {
+    setStatus(TEXT_VIRTUAL_BG_NEEDS_CAMERA, 'warning');
+    return;
+  }
+  virtualBgInput.value = '';
+  virtualBgInput.click();
+  setStatus(TEXT_VIRTUAL_BG_PICK, 'warning');
 });
 virtualBgInput.onchange = (event) => runMediaTask('virtual-background-image', async () => {
+  const file = event.target.files?.[0];
   event.target.value = '';
-  setStatus(TEXT_LIVEKIT_VBG_PENDING, 'warning');
+  if (!file) return;
+  try {
+    virtualBgImageDataUrl = await prepareVirtualBackgroundImage(file);
+    updateVirtualBackgroundButtonState();
+    await activateVirtualBackground();
+  } catch (err) {
+    console.error(err);
+    setStatus(err?.message || TEXT_IMAGE_NOT_SUPPORTED, 'error');
+  }
 });
 recordingBtn.onclick = () => toggleScreenRecording();
 document.getElementById('leaveMeetingBtn').onclick = () => {
@@ -2439,6 +2614,7 @@ pendingReloadRecoveryHint = readReloadRecoveryHint();
 setSpeakerEnabled(speakerEnabled, { userGesture: false, persist: false, showStatus: false });
 refreshRtcStatsBtn?.addEventListener('click', () => { refreshRtcDiagnostics().catch(() => {}); });
 ensureCard('local', getDisplayName('local'), true);
+updateVirtualBackgroundButtonState();
 queueRenderLayout();
 startRtcDiagnosticsLoop();
 

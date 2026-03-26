@@ -254,7 +254,7 @@ function handleScannedQrText(text) {
       window.location.href = `/room/${roomMatch[1]}${pwd ? `?pwd=${encodeURIComponent(pwd)}` : ''}`;
       return;
     }
-    const shortRoomMatch = raw.match(/(?:room_id|room|会议号|房间号)[:：\s]+([A-Za-z0-9_-]{4,16})/i);
+    const shortRoomMatch = raw.match(/(?:room_id|room|\u4F1A\u8BAE\u53F7|\u623F\u95F4\u53F7)[:：\s]+([A-Za-z0-9_-]{4,16})/i);
     if (shortRoomMatch) {
       document.getElementById('joinRoomId').value = shortRoomMatch[1];
       return;

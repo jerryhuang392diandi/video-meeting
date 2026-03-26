@@ -312,6 +312,7 @@
   })();
   (function () {
     const liveNotice = document.getElementById('adminLiveNotice');
+    const TEXT_PENDING_RESET_NOTICE = {{ t('pending_reset_notice')|tojson }};
     let lastPending = Number(document.getElementById('pendingResetCount')?.textContent || 0);
 
     async function refreshSystemStats() {
@@ -354,9 +355,7 @@
         if (onlineNode) onlineNode.textContent = String(data.online_user_count || 0);
         if (roomMini) roomMini.textContent = String(data.active_room_count || 0);
         if (liveNotice && Number(data.pending_reset_count || 0) > lastPending) {
-          liveNotice.textContent = document.documentElement.lang === 'zh'
-            ? `有新的找回密码申请待处理：${data.pending_reset_count}`
-            : `New password reset requests are waiting: ${data.pending_reset_count}`;
+          liveNotice.textContent = `${TEXT_PENDING_RESET_NOTICE}${data.pending_reset_count}`;
           liveNotice.classList.add('warning');
         }
         lastPending = Number(data.pending_reset_count || 0);

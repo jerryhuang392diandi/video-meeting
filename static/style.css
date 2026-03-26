@@ -231,6 +231,11 @@ button:hover, .anchor-btn:hover, .chip:hover { transform: translateY(-1px); }
   color: var(--text);
   border: 1px solid var(--line);
 }
+.ghost-btn.active {
+  background: rgba(130,177,255,.18);
+  border-color: rgba(130,177,255,.36);
+  box-shadow: 0 0 0 1px rgba(130,177,255,.08) inset;
+}
 .ghost-btn.danger { color: var(--danger); }
 .notice {
   margin-top: 14px;

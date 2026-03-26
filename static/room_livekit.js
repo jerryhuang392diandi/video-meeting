@@ -36,12 +36,30 @@
       onScreenShareState,
       onLocalScreenShareState,
       setStatus,
+      roomOptions,
     } = options;
 
     let room = null;
     let connected = false;
+    let connectPromise = null;
     let localState = createRemoteState();
     const remoteStates = new Map();
+
+    function resolveRoomOptions() {
+      return {
+        adaptiveStream: true,
+        dynacast: true,
+        stopLocalTrackOnUnpublish: true,
+        ...(roomOptions || {}),
+      };
+    }
+
+    function createRoomInstance() {
+      if (room) return room;
+      room = new lk.Room(resolveRoomOptions());
+      bindRoomEvents();
+      return room;
+    }
 
     function getRemoteState(identity) {
       if (!remoteStates.has(identity)) {
@@ -224,26 +242,30 @@
 
     async function connect({ autoEnableCamera = false, autoEnableMicrophone = false } = {}) {
       if (connected && room) return room;
-      const tokenPayload = await fetchToken();
-      room = new lk.Room({
-        adaptiveStream: true,
-        dynacast: true,
-        stopLocalTrackOnUnpublish: true,
+      if (connectPromise) return connectPromise;
+      connectPromise = (async () => {
+        const tokenPayload = await fetchToken();
+        const activeRoom = createRoomInstance();
+        if (typeof activeRoom.prepareConnection === 'function') {
+          try {
+            await activeRoom.prepareConnection(url || tokenPayload.url, tokenPayload.token);
+          } catch (_) {}
+        }
+        await activeRoom.connect(url || tokenPayload.url, tokenPayload.token, {
+          autoSubscribe: true,
+        });
+        connected = true;
+        await Promise.allSettled([
+          autoEnableMicrophone ? activeRoom.localParticipant.setMicrophoneEnabled(true) : Promise.resolve(),
+          autoEnableCamera ? activeRoom.localParticipant.setCameraEnabled(true) : Promise.resolve(),
+        ]);
+        syncLocalStateFromPublications();
+        syncLocalPreview();
+        return activeRoom;
+      })().finally(() => {
+        connectPromise = null;
       });
-      bindRoomEvents();
-      await room.connect(url || tokenPayload.url, tokenPayload.token, {
-        autoSubscribe: true,
-      });
-      connected = true;
-      if (autoEnableMicrophone) {
-        await room.localParticipant.setMicrophoneEnabled(true);
-      }
-      if (autoEnableCamera) {
-        await room.localParticipant.setCameraEnabled(true);
-      }
-      syncLocalStateFromPublications();
-      syncLocalPreview();
-      return room;
+      return connectPromise;
     }
 
     async function setMicrophoneEnabled(nextEnabled) {
@@ -268,6 +290,18 @@
       syncLocalStateFromPublications();
       syncLocalPreview();
       return enabled;
+    }
+
+    async function replaceCameraTrack(mediaTrack) {
+      const activeRoom = requireRoom();
+      const publication = activeRoom.localParticipant.getTrackPublication(lk.Track.Source.Camera);
+      const localTrack = publication?.track;
+      if (!localTrack || typeof localTrack.replaceTrack !== 'function') return false;
+      if (!mediaTrack) return false;
+      await localTrack.replaceTrack(mediaTrack);
+      syncLocalStateFromPublications();
+      syncLocalPreview();
+      return true;
     }
 
     async function setScreenShareEnabled(nextEnabled) {
@@ -296,9 +330,18 @@
           room.disconnect();
         } catch (_) {}
       }
+      room = null;
       connected = false;
       localState = createRemoteState();
       remoteStates.clear();
+    }
+
+    async function prepareConnection(targetUrl = url) {
+      const activeRoom = createRoomInstance();
+      if (typeof activeRoom.prepareConnection !== 'function' || !targetUrl) return;
+      try {
+        await activeRoom.prepareConnection(targetUrl);
+      } catch (_) {}
     }
 
     function getLocalMediaState() {
@@ -358,10 +401,12 @@
       connect,
       disconnect,
       isConnected: () => connected,
+      prepareConnection,
       getLocalMediaState,
       getDiagnosticsEntries,
       setMicrophoneEnabled,
       setCameraEnabled,
+      replaceCameraTrack,
       setScreenShareEnabled,
       updateDisplayName,
     };

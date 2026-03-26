@@ -8,7 +8,7 @@ Features:
 - explicit media permission button
 - camera switch button
 - screen share button
-- virtual background placeholder button
+- virtual background image replacement for the local camera feed
 
 Run locally:
 

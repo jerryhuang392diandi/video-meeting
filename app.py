@@ -10,7 +10,7 @@ import tempfile
 import threading
 import time
 import uuid
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 import json
@@ -61,14 +61,60 @@ app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_hex(16))
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", f"sqlite:///{DB_PATH}")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["PREFERRED_URL_SCHEME"] = (os.environ.get("PUBLIC_SCHEME") or "https").strip().lower() if (os.environ.get("PUBLIC_SCHEME") or "").strip().lower() in {"http", "https"} else "https"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax") if os.environ.get("SESSION_COOKIE_SAMESITE", "Lax") in {"Lax", "Strict", "None"} else "Lax"
+app.config["SESSION_COOKIE_SECURE"] = ((os.environ.get("SESSION_COOKIE_SECURE") or "").strip().lower() in {"1", "true", "yes", "on"}) if (os.environ.get("SESSION_COOKIE_SECURE") or "").strip() else app.config["PREFERRED_URL_SCHEME"] == "https"
+app.config["REMEMBER_COOKIE_HTTPONLY"] = True
+app.config["REMEMBER_COOKIE_SAMESITE"] = os.environ.get("REMEMBER_COOKIE_SAMESITE", "Lax") if os.environ.get("REMEMBER_COOKIE_SAMESITE", "Lax") in {"Lax", "Strict", "None"} else "Lax"
+app.config["REMEMBER_COOKIE_SECURE"] = ((os.environ.get("REMEMBER_COOKIE_SECURE") or "").strip().lower() in {"1", "true", "yes", "on"}) if (os.environ.get("REMEMBER_COOKIE_SECURE") or "").strip() else app.config["PREFERRED_URL_SCHEME"] == "https"
 
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", max_http_buffer_size=50_000_000)
+socketio = SocketIO(app, cors_allowed_origins=None, async_mode="threading", max_http_buffer_size=50_000_000)
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
 
 DEBUG_ROOM = os.environ.get("DEBUG_ROOM") == "1"
+
+
+def sanitize_host_port(value: str | None) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    if "://" in raw:
+        parsed = urlsplit(raw)
+        raw = parsed.netloc or parsed.path
+    raw = raw.strip().strip("/")
+    if not re.fullmatch(r"[A-Za-z0-9.-]+(?::\d{1,5})?", raw):
+        return ""
+    return raw
+
+
+def get_public_origin() -> str:
+    scheme = (os.environ.get("PUBLIC_SCHEME") or "https").strip().lower()
+    if scheme not in {"http", "https"}:
+        scheme = "https"
+    host = sanitize_host_port(os.environ.get("PUBLIC_HOST")) or sanitize_host_port(request.host)
+    if not host:
+        return request.url_root.rstrip("/")
+    return f"{scheme}://{host}"
+
+
+def is_valid_room_id(room_id: str) -> bool:
+    return bool(re.fullmatch(r"\d{6}", (room_id or "").strip()))
+
+
+def persist_bootstrap_secret(filename: str, value: str):
+    path = os.path.join(INSTANCE_DIR, filename)
+    if os.path.exists(path):
+        return
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(value.strip() + "\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
 
 
 def livekit_server_url() -> str:
@@ -275,18 +321,28 @@ def ensure_user_columns():
 
 def ensure_admin():
     admin_username = (os.environ.get("ADMIN_USERNAME") or "root").strip() or "root"
-    admin_password = (os.environ.get("ADMIN_PASSWORD") or "Huang040726").strip() or "Huang040726"
+    admin_password = (os.environ.get("ADMIN_PASSWORD") or "").strip()
     user = User.query.filter_by(username=admin_username).first()
+    generated_password = None
     if not user:
         user = User(username=admin_username, is_admin=True, is_active_user=True, session_version=0)
+        if not admin_password:
+            generated_password = secrets.token_urlsafe(18)
+            admin_password = generated_password
         user.set_password(admin_password)
         db.session.add(user)
     else:
         user.is_admin = True
         user.is_active_user = True
         if not user.password_hash:
+            if not admin_password:
+                generated_password = secrets.token_urlsafe(18)
+                admin_password = generated_password
             user.set_password(admin_password)
     db.session.commit()
+    if generated_password:
+        persist_bootstrap_secret("admin_password.txt", generated_password)
+        app.logger.warning("ADMIN_PASSWORD was not set; generated an initial admin password and wrote it to instance/admin_password.txt")
 
 
 def normalize_password(pwd: str) -> str:
@@ -306,9 +362,7 @@ def generate_password(length=6):
 
 
 def get_base_url():
-    scheme = (os.environ.get("PUBLIC_SCHEME") or request.headers.get("X-Forwarded-Proto") or "https").strip()
-    host = (os.environ.get("PUBLIC_HOST") or request.host or "").strip()
-    return f"{scheme}://{host}"
+    return get_public_origin()
 
 
 TRAFFIC_RESET_DAYS = 30
@@ -714,22 +768,23 @@ def traffic_summary_dict(user):
 
 
 def build_turn_ice_servers():
-    public_host = (os.environ.get("TURN_PUBLIC_HOST") or os.environ.get("PUBLIC_HOST") or request.host.split(":")[0]).strip()
+    public_host = sanitize_host_port(os.environ.get("TURN_PUBLIC_HOST")) or sanitize_host_port(os.environ.get("PUBLIC_HOST")) or sanitize_host_port(request.host.split(":")[0]) or "localhost"
     urls_raw = (os.environ.get("TURN_URLS") or "").strip()
     username = (os.environ.get("TURN_USERNAME") or "").strip()
     credential = (os.environ.get("TURN_PASSWORD") or "").strip()
     if urls_raw and username and credential:
         urls = [item.strip() for item in urls_raw.split(",") if item.strip()]
     else:
-        urls = [f"turn:{public_host}:3478?transport=udp", f"turn:{public_host}:3478?transport=tcp"]
-        username = username or (os.environ.get("TURN_USERNAME") or "turnuser").strip() or "turnuser"
-        credential = credential or (os.environ.get("TURN_PASSWORD") or "turnpassword123").strip() or "turnpassword123"
+        urls = []
     stun_urls_raw = (os.environ.get("STUN_URLS") or f"stun:{public_host}:3478").strip()
     stun_urls = [item.strip() for item in stun_urls_raw.split(",") if item.strip()]
     ice_servers = []
     if stun_urls:
         ice_servers.append({"urls": stun_urls})
-    ice_servers.append({"urls": urls, "username": username, "credential": credential})
+    if urls:
+        ice_servers.append({"urls": urls, "username": username, "credential": credential})
+    elif urls_raw:
+        app.logger.warning("TURN_URLS was set without TURN_USERNAME/TURN_PASSWORD; TURN relay entries were skipped")
     return ice_servers
 
 
@@ -1287,6 +1342,8 @@ def api_join_room():
     data = request.get_json(silent=True) or {}
     room_id = (data.get("room_id") or "").strip()
     password = normalize_password(data.get("password") or "")
+    if not is_valid_room_id(room_id):
+        return jsonify({"success": False, "message": t("meeting_not_found")}), 404
 
     meeting = Meeting.query.filter_by(room_id=room_id).first()
     if not ensure_meeting_not_expired(meeting):
@@ -1307,6 +1364,8 @@ def room_page(room_id):
             error_title="503",
             error_message="LiveKit is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.",
         ), 503
+    if not is_valid_room_id(room_id):
+        abort(404)
     meeting = Meeting.query.filter_by(room_id=room_id).first()
     if not ensure_meeting_not_expired(meeting):
         abort(404)
@@ -1360,12 +1419,18 @@ def api_livekit_token():
 
     if not room_id or not participant_sid:
         return jsonify({"success": False, "message": "room_id and participant_sid are required"}), 400
+    if not is_valid_room_id(room_id):
+        return jsonify({"success": False, "message": t("meeting_not_found")}), 404
 
     meeting = Meeting.query.filter_by(room_id=room_id).first()
     if not ensure_meeting_not_expired(meeting):
         return jsonify({"success": False, "message": t("meeting_not_found")}), 404
     if normalize_password(meeting.room_password) != password:
         return jsonify({"success": False, "message": t("wrong_password")}), 403
+
+    socket_info = sid_to_user.get(participant_sid)
+    if not socket_info or socket_info.get("room_id") != room_id or socket_info.get("user_id") != current_user.id:
+        return jsonify({"success": False, "message": "Invalid participant session"}), 403
 
     is_host = current_user.id == meeting.host_user_id
     metadata = json.dumps(
@@ -1481,7 +1546,8 @@ def api_remux_recording():
             pass
     else:
         shutil.rmtree(workdir, ignore_errors=True)
-        return jsonify({"success": False, "message": " | ".join(errors[-3:]) or "ffmpeg failed"}), 500
+        app.logger.warning("recording remux failed: %s", " | ".join(errors[-3:]) or "ffmpeg failed")
+        return jsonify({"success": False, "message": "ffmpeg failed"}), 500
 
     data = Path(output_path).read_bytes()
 
@@ -1789,6 +1855,9 @@ def on_join_room(data):
     room_id = (data.get("room_id") or "").strip()
     password = normalize_password(data.get("password") or "")
     user_name = (data.get("user_name") or preferred_display_name(current_user)).strip()[:32] or preferred_display_name(current_user)
+    if not is_valid_room_id(room_id):
+        emit("join_error", {"message": t("meeting_not_found")})
+        return
 
     meeting = Meeting.query.filter_by(room_id=room_id).first()
     if not ensure_meeting_not_expired(meeting):
@@ -2190,6 +2259,8 @@ def _api_chat_upload_impl(upload_mode: str = "any"):
     try:
         room_id = str(request.form.get("room_id") or "").strip()
         permission = _normalize_upload_permission(request.form.get("permission"))
+        if not is_valid_room_id(room_id):
+            return jsonify({"ok": False, "error": "room_not_found"}), 404
         room = rooms.get(room_id)
         if not room:
             return jsonify({"ok": False, "error": "room_not_found"}), 404
@@ -2253,7 +2324,7 @@ def _api_chat_upload_impl(upload_mode: str = "any"):
         return jsonify({"ok": True, "attachment": attachment})
     except Exception as exc:
         app.logger.exception("chat upload failed")
-        return jsonify({"ok": False, "error": "upload_internal_error", "detail": str(exc)}), 500
+        return jsonify({"ok": False, "error": "upload_internal_error"}), 500
 
 @app.post("/api/chat_upload")
 @login_required
@@ -2345,7 +2416,8 @@ def api_translate_message():
         translated, detected = _translate_via_google(text, target_lang)
         return jsonify({"ok": True, "translation": translated, "target": target_lang, "detected": detected})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 502
+        app.logger.warning("translation failed: %s", exc)
+        return jsonify({"ok": False, "error": "translation_failed"}), 502
 
 
 @app.post("/api/translate_to_english")
@@ -2359,7 +2431,8 @@ def api_translate_to_english():
         translated, detected = _translate_via_google(text, "en")
         return jsonify({"ok": True, "translation": translated, "target": "en", "detected": detected})
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 502
+        app.logger.warning("translation to english failed: %s", exc)
+        return jsonify({"ok": False, "error": "translation_failed"}), 502
 
 
 @socketio.on("meeting_chat_send")
