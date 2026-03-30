@@ -618,7 +618,7 @@ function ensureCard(sid, displayName = null, isLocal = false) {
     <div class="video-toolbar">
       <button class="card-btn" data-action="fullscreen">{{ ('全屏' if lang == 'zh' else 'Fullscreen') }}</button>
     </div>
-    <button class="video-play-overlay hidden" type="button">${TEXT_IOS_PLAY_SCREEN}</button>
+    <div class="video-play-overlay hidden" role="button" tabindex="0">${TEXT_IOS_PLAY_SCREEN}</div>
     <div class="video-placeholder">${TEXT_NO_VIDEO}</div>
     <div class="video-label-stack">
       <div class="video-label">${displayName || getDisplayName(sid)}</div>
@@ -657,11 +657,20 @@ function ensureCard(sid, displayName = null, isLocal = false) {
     }
   });
 
-  card.querySelector('.video-play-overlay')?.addEventListener('click', async () => {
+  const overlayPrompt = card.querySelector('.video-play-overlay');
+  const handleOverlayPrompt = async () => {
     setSpeakerEnabled(true, { userGesture: true, persist: true, showStatus: false });
     delete videoEl.dataset.autoMuted;
     const ok = await safePlayVideo(videoEl, { allowMutedFallback: false });
     if (!ok) setStatus(TEXT_IOS_PLAY_SCREEN, 'warning');
+  };
+  overlayPrompt?.addEventListener('click', () => {
+    handleOverlayPrompt().catch(() => {});
+  });
+  overlayPrompt?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    handleOverlayPrompt().catch(() => {});
   });
 
   return card;
@@ -2213,6 +2222,7 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
   const mediaState = controller.getLocalMediaState?.() || {};
   let includeAudio = lastScreenShareIncludeAudio;
   if (!mediaState.screenShareEnabled) {
+    setSpeakerEnabled(true, { userGesture: true, persist: true, showStatus: false });
     includeAudio = !!window.confirm(TEXT_SCREEN_SHARE_AUDIO_PROMPT);
     lastScreenShareIncludeAudio = includeAudio;
     setStatus(includeAudio ? TEXT_SCREEN_SHARE_AUDIO_ON : TEXT_SCREEN_SHARE_AUDIO_OFF);
