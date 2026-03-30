@@ -37,9 +37,12 @@ const TEXT_CAMERA_RECOVERING = {{ ('检测到摄像头中断，正在自动重�
 const TEXT_CAMERA_RECOVERED = {{ ('摄像头已自动恢复' if lang == 'zh' else 'Camera was recovered automatically')|tojson }};
 const TEXT_SCREEN_SHARE_MODE = {{ ('共享屏幕模式已开启' if lang == 'zh' else 'Screen share mode enabled')|tojson }};
 const TEXT_SCREEN_SHARE_STOPPED = {{ ('共享屏幕模式已结束' if lang == 'zh' else 'Screen share mode ended')|tojson }};
-const TEXT_SCREEN_SHARE_AUDIO_PROMPT = {{ ('共享屏幕时是否同时发送“共享内容本身的声音”？\n确定：发送\n取消：不发送（只保留麦克风）' if lang == 'zh' else 'When sharing screen, also send the shared content audio?\nOK: send it\nCancel: do not send (microphone only)')|tojson }};
+const TEXT_SCREEN_SHARE_AUDIO_PROMPT = {{ ('共享屏幕时是否同时发送“共享内容本身的声音”？\n确定：发送\n取消：不发送（仅麦克风）' if lang == 'zh' else 'When sharing screen, also send the shared content audio?\nOK: send it\nCancel: do not send (microphone only)')|tojson }};
+const TEXT_SCREEN_SHARE_AUDIO_MIXED_PROMPT = {{ ('是否“同时保留麦克风”与“共享内容声音”？\n确定：两者都发送（推荐，类似腾讯会议）\n取消：仅发送共享内容声音（麦克风临时静音）' if lang == 'zh' else 'Keep both microphone and shared content audio?\nOK: send both (recommended, Tencent Meeting style)\nCancel: send shared content audio only (microphone temporarily muted)')|tojson }};
 const TEXT_SCREEN_SHARE_AUDIO_ON = {{ ('共享屏幕将携带系统/标签页音频（如浏览器支持）' if lang == 'zh' else 'Screen share will include system/tab audio when supported')|tojson }};
 const TEXT_SCREEN_SHARE_AUDIO_OFF = {{ ('共享屏幕将不发送系统/标签页音频，仅保留麦克风' if lang == 'zh' else 'Screen share will not include system/tab audio; microphone only')|tojson }};
+const TEXT_SCREEN_SHARE_AUDIO_CONTENT_ONLY = {{ ('将仅发送共享内容声音，麦克风会临时静音（停止共享后自动恢复）' if lang == 'zh' else 'Only shared content audio will be sent. Microphone is temporarily muted and restored after sharing stops')|tojson }};
+const TEXT_SCREEN_SHARE_AUDIO_UNAVAILABLE = {{ ('当前浏览器/共享源未提供共享音频。请优先选择“浏览器标签页”并勾选“共享标签页音频/共享系统音频”。' if lang == 'zh' else 'This browser or selected source did not provide screen-share audio. Prefer sharing a browser tab and enable tab/system audio in the picker.')|tojson }};
 const TEXT_SCREEN_SHARE_BANNER_SELF = {{ ('正在共享屏幕，其他参会者已临时隐藏' if lang == 'zh' else 'You are sharing your screen. Other participants are temporarily hidden')|tojson }};
 const TEXT_SCREEN_SHARE_BANNER_OTHER = {{ ('{name} 正在共享屏幕，其他参会者已临时隐藏' if lang == 'zh' else '{name} is sharing the screen. Other participants are temporarily hidden')|tojson }};
 const TEXT_NO_VIDEO = {{ ('未开启摄像头' if lang == 'zh' else 'Camera off')|tojson }};
@@ -430,8 +433,34 @@ const videoPlaybackRetryTimers = new WeakMap();
 let mediaPlaybackActivated = false;
 let pendingReloadRecoveryHint = null;
 let lastScreenShareIncludeAudio = true;
+let lastScreenShareKeepMicWhenAudio = true;
 let speakerStateBeforeShare = null;
 let speakerForcedByShareRule = false;
+let micStateBeforeContentOnlyShare = null;
+let micMutedByContentOnlyShare = false;
+
+function chooseScreenShareAudioMode() {
+  const includeAudio = !!window.confirm(TEXT_SCREEN_SHARE_AUDIO_PROMPT);
+  if (!includeAudio) {
+    return { includeAudio: false, keepMic: true };
+  }
+  const keepMic = !!window.confirm(TEXT_SCREEN_SHARE_AUDIO_MIXED_PROMPT);
+  return {
+    includeAudio: true,
+    keepMic,
+  };
+}
+
+async function verifySharedAudioAvailability(controller) {
+  if (!controller?.isConnected?.()) return;
+  await new Promise((resolve) => window.setTimeout(resolve, 1200));
+  if (!controller?.isConnected?.()) return;
+  const mediaState = controller.getLocalMediaState?.() || {};
+  if (!mediaState.screenShareEnabled) return;
+  if (mediaState.screenAudioEnabled) return;
+  if (!lastScreenShareIncludeAudio) return;
+  setStatus(TEXT_SCREEN_SHARE_AUDIO_UNAVAILABLE, 'warning');
+}
 
 function updateSpeakerButtonState() {
   if (!toggleSpeakerBtn) return;
@@ -1160,6 +1189,13 @@ function handleLocalLiveKitScreenShareState(isActive) {
     return;
   }
   broadcastUiEvent({ type: 'screen_share_stopped' });
+  if (micMutedByContentOnlyShare && micStateBeforeContentOnlyShare === true) {
+    ensureLiveKitConnected()
+      .then((controller) => controller?.setMicrophoneEnabled?.(true))
+      .catch(() => {});
+  }
+  micStateBeforeContentOnlyShare = null;
+  micMutedByContentOnlyShare = false;
   setStatus(TEXT_SCREEN_SHARE_STOPPED);
 }
 
@@ -2233,19 +2269,41 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
   if (!controller) return;
   const mediaState = controller.getLocalMediaState?.() || {};
   let includeAudio = lastScreenShareIncludeAudio;
+  let keepMicWhenAudio = lastScreenShareKeepMicWhenAudio;
   if (!mediaState.screenShareEnabled) {
     if (speakerStateBeforeShare === null) speakerStateBeforeShare = speakerEnabled;
     setSpeakerEnabled(true, { userGesture: true, persist: true, showStatus: false });
     speakerForcedByShareRule = !speakerStateBeforeShare;
-    includeAudio = !!window.confirm(TEXT_SCREEN_SHARE_AUDIO_PROMPT);
+    const audioMode = chooseScreenShareAudioMode();
+    includeAudio = !!audioMode.includeAudio;
+    keepMicWhenAudio = !!audioMode.keepMic;
     lastScreenShareIncludeAudio = includeAudio;
-    setStatus(includeAudio ? TEXT_SCREEN_SHARE_AUDIO_ON : TEXT_SCREEN_SHARE_AUDIO_OFF);
+    lastScreenShareKeepMicWhenAudio = keepMicWhenAudio;
+    micStateBeforeContentOnlyShare = !!mediaState.microphoneEnabled;
+    micMutedByContentOnlyShare = false;
+    if (includeAudio && !keepMicWhenAudio) {
+      if (mediaState.microphoneEnabled) {
+        await controller.setMicrophoneEnabled(false);
+        micMutedByContentOnlyShare = true;
+      }
+      setStatus(TEXT_SCREEN_SHARE_AUDIO_CONTENT_ONLY);
+    } else {
+      setStatus(includeAudio ? TEXT_SCREEN_SHARE_AUDIO_ON : TEXT_SCREEN_SHARE_AUDIO_OFF);
+    }
   }
   try {
     await controller.setScreenShareEnabled(undefined, {
       includeAudio: mediaState.screenShareEnabled ? undefined : includeAudio,
     });
+    if (!mediaState.screenShareEnabled && includeAudio) {
+      verifySharedAudioAvailability(controller).catch(() => {});
+    }
   } catch (err) {
+    if (!mediaState.screenShareEnabled && micMutedByContentOnlyShare && micStateBeforeContentOnlyShare === true) {
+      await controller.setMicrophoneEnabled(true).catch(() => {});
+    }
+    micStateBeforeContentOnlyShare = null;
+    micMutedByContentOnlyShare = false;
     setStatus(err?.message || TEXT_LIVEKIT_CONNECT_FAILED, 'error');
     throw err;
   }
