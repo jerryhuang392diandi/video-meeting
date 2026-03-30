@@ -926,9 +926,9 @@ async function replaceLiveKitCameraTrackFromStream(stream) {
   return await controller.replaceCameraTrack(sourceTrack.clone());
 }
 
-async function fallbackToRawCamera(message = null) {
+async function fallbackToRawCamera(message = null, { stopCanvas = false } = {}) {
   const rawSourceStream = getVirtualBackgroundSourceStream();
-  disableVirtualBackgroundState();
+  disableVirtualBackgroundState({ stopCanvas });
   if (rawSourceStream) {
     try {
       await replaceLiveKitCameraTrackFromStream(rawSourceStream);
@@ -940,11 +940,11 @@ async function fallbackToRawCamera(message = null) {
   if (message) setStatus(message, 'warning');
 }
 
-async function deactivateVirtualBackground(message = null, { clearImage = false } = {}) {
+async function deactivateVirtualBackground(message = null, { clearImage = false, stopCanvas = false } = {}) {
   if (clearImage) {
     virtualBgImageDataUrl = null;
   }
-  await fallbackToRawCamera(message || TEXT_VIRTUAL_BG_OFF);
+  await fallbackToRawCamera(message || TEXT_VIRTUAL_BG_OFF, { stopCanvas });
 }
 
 async function prepareVirtualBackgroundImage(file) {
@@ -2258,11 +2258,7 @@ document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-
   const localCard = ensureCard('local', getDisplayName('local'), true);
   updatePlaceholder(localCard, !!enabled);
   if (!enabled && virtualBgEnabled) {
-    disableVirtualBackgroundState();
-    updateVirtualBackgroundButtonState();
-  } else if (enabled && virtualBgImageDataUrl && !virtualBgEnabled && !isSharingScreen && !currentSharerSid) {
-    await activateVirtualBackground();
-    return;
+    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { clearImage: true, stopCanvas: true });
   }
   setStatus(enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 });
@@ -2278,11 +2274,7 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
 });
 document.getElementById('virtualBgBtn').onclick = () => runMediaTask('virtual-background-toggle', async () => {
   if (virtualBgEnabled) {
-    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF);
-    return;
-  }
-  if (virtualBgImageDataUrl) {
-    await activateVirtualBackground();
+    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { clearImage: true });
     return;
   }
   if (!virtualBgInput || virtualBgInput.disabled) {
