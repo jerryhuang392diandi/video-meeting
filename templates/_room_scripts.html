@@ -243,10 +243,8 @@ function isMobileDevice() {
 let nativeFullscreenVideoEl = null;
 
 function updateVideoPlaybackPrompt(videoEl, blocked = false) {
-  const card = videoEl?.closest?.('.video-card');
-  const promptBtn = card?.querySelector?.('.video-play-overlay');
-  if (!promptBtn) return;
-  promptBtn.classList.toggle('hidden', !blocked);
+  if (!blocked) return;
+  setStatus(TEXT_IOS_PLAY_SCREEN, 'warning');
 }
 
 async function safePlayVideo(videoEl, { allowMutedFallback = true } = {}) {
@@ -432,6 +430,8 @@ const videoPlaybackRetryTimers = new WeakMap();
 let mediaPlaybackActivated = false;
 let pendingReloadRecoveryHint = null;
 let lastScreenShareIncludeAudio = true;
+let speakerStateBeforeShare = null;
+let speakerForcedByShareRule = false;
 
 function updateSpeakerButtonState() {
   if (!toggleSpeakerBtn) return;
@@ -458,6 +458,23 @@ function setSpeakerEnabled(nextEnabled, { userGesture = false, persist = true, s
   if (showStatus) {
     setStatus(speakerEnabled ? TEXT_SPEAKER_ON : TEXT_SPEAKER_OFF);
   }
+}
+
+function syncScreenShareSpeakerRule({ userGesture = false } = {}) {
+  const hasActiveShare = !!currentSharerSid || !!isSharingScreen || !!livekitLocalShareActive;
+  if (hasActiveShare) {
+    if (speakerStateBeforeShare === null) speakerStateBeforeShare = speakerEnabled;
+    if (!speakerEnabled) {
+      speakerForcedByShareRule = true;
+      setSpeakerEnabled(true, { userGesture, persist: true, showStatus: false });
+    }
+    return;
+  }
+  if (speakerForcedByShareRule && speakerStateBeforeShare === false) {
+    setSpeakerEnabled(false, { userGesture: false, persist: true, showStatus: false });
+  }
+  speakerForcedByShareRule = false;
+  speakerStateBeforeShare = null;
 }
 
 window.addEventListener('touchstart', activateMediaPlayback, true);
@@ -618,7 +635,6 @@ function ensureCard(sid, displayName = null, isLocal = false) {
     <div class="video-toolbar">
       <button class="card-btn" data-action="fullscreen">{{ ('全屏' if lang == 'zh' else 'Fullscreen') }}</button>
     </div>
-    <button class="video-play-overlay hidden" type="button">${TEXT_IOS_PLAY_SCREEN}</button>
     <div class="video-placeholder">${TEXT_NO_VIDEO}</div>
     <div class="video-label-stack">
       <div class="video-label">${displayName || getDisplayName(sid)}</div>
@@ -655,13 +671,6 @@ function ensureCard(sid, displayName = null, isLocal = false) {
     } catch (err) {
       console.error(err);
     }
-  });
-
-  card.querySelector('.video-play-overlay')?.addEventListener('click', async () => {
-    setSpeakerEnabled(true, { userGesture: true, persist: true, showStatus: false });
-    delete videoEl.dataset.autoMuted;
-    const ok = await safePlayVideo(videoEl, { allowMutedFallback: false });
-    if (!ok) setStatus(TEXT_IOS_PLAY_SCREEN, 'warning');
   });
 
   return card;
@@ -1083,6 +1092,7 @@ function clearRemoteMedia(sid) {
     currentSharerSid = null;
     hiddenSidebar = false;
   }
+  syncScreenShareSpeakerRule({ userGesture: false });
   updateShareUiState();
   queueRenderLayout();
 }
@@ -1098,6 +1108,7 @@ function removeRemoteVideo(sid) {
     hiddenSidebar = false;
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
   }
+  syncScreenShareSpeakerRule({ userGesture: false });
   updateShareUiState();
   const totalCards = document.querySelectorAll('.video-card').length;
   const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
@@ -1116,6 +1127,7 @@ function updateLiveKitShareFocus(sid, isActive) {
     focusedSid = 'local';
     hiddenSidebar = false;
   }
+  syncScreenShareSpeakerRule({ userGesture: false });
   updateShareUiState();
   queueRenderLayout();
 }
@@ -1988,8 +2000,10 @@ socket.on('join_ok', async (data) => {
   if (currentSharerSid) {
     focusedSid = currentSharerSid;
     hiddenSidebar = true;
+    syncScreenShareSpeakerRule({ userGesture: false });
     queueRenderLayout();
   } else {
+    syncScreenShareSpeakerRule({ userGesture: false });
     updateShareUiState();
   }
   await ensureLiveKitConnected();
@@ -2097,15 +2111,18 @@ socket.on('room_ui_event', (data) => {
     currentSharerSid = sharerSid;
     focusedSid = sharerSid;
     focusParticipant(sharerSid, { hideSidebar: true, screenShare: true });
+    syncScreenShareSpeakerRule({ userGesture: false });
     setStatus(TEXT_SCREEN_SHARE_MODE);
   } else if (data.type === 'screen_share_stopped') {
     currentSharerSid = null;
     hiddenSidebar = false;
     focusedSid = 'local';
+    syncScreenShareSpeakerRule({ userGesture: false });
     queueRenderLayout();
     setStatus(TEXT_SCREEN_SHARE_STOPPED);
   } else if (data.type === 'screen_share_denied') {
     currentSharerSid = normalizeParticipantSid(data.activeSharerSid || currentSharerSid);
+    syncScreenShareSpeakerRule({ userGesture: false });
     updateShareUiState();
     setStatus(data.message || {{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }}, 'warning');
   } else if (data.type === 'danmaku_toggled') {
@@ -2189,6 +2206,10 @@ videoHomePageBtn?.addEventListener('click', () => {
 
 toggleSpeakerBtn && (toggleSpeakerBtn.onclick = () => runMediaTask('toggle-speaker', async () => {
   setSpeakerEnabled(!speakerEnabled, { userGesture: true, persist: true, showStatus: true });
+  if (currentSharerSid || isSharingScreen || livekitLocalShareActive) {
+    speakerForcedByShareRule = false;
+    speakerStateBeforeShare = speakerEnabled;
+  }
 }));
 document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic', async () => {
   const controller = await ensureLiveKitConnected();
@@ -2213,6 +2234,9 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
   const mediaState = controller.getLocalMediaState?.() || {};
   let includeAudio = lastScreenShareIncludeAudio;
   if (!mediaState.screenShareEnabled) {
+    if (speakerStateBeforeShare === null) speakerStateBeforeShare = speakerEnabled;
+    setSpeakerEnabled(true, { userGesture: true, persist: true, showStatus: false });
+    speakerForcedByShareRule = !speakerStateBeforeShare;
     includeAudio = !!window.confirm(TEXT_SCREEN_SHARE_AUDIO_PROMPT);
     lastScreenShareIncludeAudio = includeAudio;
     setStatus(includeAudio ? TEXT_SCREEN_SHARE_AUDIO_ON : TEXT_SCREEN_SHARE_AUDIO_OFF);
