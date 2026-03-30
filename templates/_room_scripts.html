@@ -29,12 +29,17 @@ const TEXT_MIC_ON = {{ t('mic_on')|tojson }};
 const TEXT_MIC_OFF = {{ t('mic_off')|tojson }};
 const TEXT_SPEAKER_ON = {{ ('扬声器已开启' if lang == 'zh' else 'Speaker enabled')|tojson }};
 const TEXT_SPEAKER_OFF = {{ ('扬声器已静音' if lang == 'zh' else 'Speaker muted')|tojson }};
+const TEXT_SPEAKER_BUTTON_ON = {{ ('扬声器开启' if lang == 'zh' else 'Speaker on')|tojson }};
+const TEXT_SPEAKER_BUTTON_OFF = {{ ('扬声器静音' if lang == 'zh' else 'Speaker muted')|tojson }};
 const TEXT_CAMERA_ON = {{ t('camera_on')|tojson }};
 const TEXT_CAMERA_OFF = {{ t('camera_off')|tojson }};
 const TEXT_CAMERA_RECOVERING = {{ ('检测到摄像头中断，正在自动重连…' if lang == 'zh' else 'Camera interruption detected, reconnecting automatically...')|tojson }};
 const TEXT_CAMERA_RECOVERED = {{ ('摄像头已自动恢复' if lang == 'zh' else 'Camera was recovered automatically')|tojson }};
 const TEXT_SCREEN_SHARE_MODE = {{ ('共享屏幕模式已开启' if lang == 'zh' else 'Screen share mode enabled')|tojson }};
 const TEXT_SCREEN_SHARE_STOPPED = {{ ('共享屏幕模式已结束' if lang == 'zh' else 'Screen share mode ended')|tojson }};
+const TEXT_SCREEN_SHARE_AUDIO_PROMPT = {{ ('共享屏幕时是否同时发送“共享内容本身的声音”？\n确定：发送\n取消：不发送（只保留麦克风）' if lang == 'zh' else 'When sharing screen, also send the shared content audio?\nOK: send it\nCancel: do not send (microphone only)')|tojson }};
+const TEXT_SCREEN_SHARE_AUDIO_ON = {{ ('共享屏幕将携带系统/标签页音频（如浏览器支持）' if lang == 'zh' else 'Screen share will include system/tab audio when supported')|tojson }};
+const TEXT_SCREEN_SHARE_AUDIO_OFF = {{ ('共享屏幕将不发送系统/标签页音频，仅保留麦克风' if lang == 'zh' else 'Screen share will not include system/tab audio; microphone only')|tojson }};
 const TEXT_SCREEN_SHARE_BANNER_SELF = {{ ('正在共享屏幕，其他参会者已临时隐藏' if lang == 'zh' else 'You are sharing your screen. Other participants are temporarily hidden')|tojson }};
 const TEXT_SCREEN_SHARE_BANNER_OTHER = {{ ('{name} 正在共享屏幕，其他参会者已临时隐藏' if lang == 'zh' else '{name} is sharing the screen. Other participants are temporarily hidden')|tojson }};
 const TEXT_NO_VIDEO = {{ ('未开启摄像头' if lang == 'zh' else 'Camera off')|tojson }};
@@ -146,8 +151,6 @@ let hasLeftMeeting = false;
 const MAX_VBG_WIDTH = 960;
 const MAX_VBG_HEIGHT = 540;
 const VBG_CAPTURE_FPS = IS_MOBILE ? 20 : 24;
-const AUDIO_MIX_GAIN = 1.0;
-
 const localVideo = document.createElement('video');
 localVideo.id = 'localVideo';
 localVideo.autoplay = true;
@@ -425,12 +428,16 @@ function readReloadRecoveryHint() {
 
 migrateLegacySpeakerPreference();
 let speakerEnabled = readSpeakerPreference();
-let screenShareAudioContext = null;
-let screenShareAudioDestination = null;
-let screenShareMixedAudioTrack = null;
 const videoPlaybackRetryTimers = new WeakMap();
 let mediaPlaybackActivated = false;
 let pendingReloadRecoveryHint = null;
+let lastScreenShareIncludeAudio = true;
+
+function updateSpeakerButtonState() {
+  if (!toggleSpeakerBtn) return;
+  toggleSpeakerBtn.textContent = speakerEnabled ? TEXT_SPEAKER_BUTTON_ON : TEXT_SPEAKER_BUTTON_OFF;
+  toggleSpeakerBtn.dataset.enabled = speakerEnabled ? '1' : '0';
+}
 
 function activateMediaPlayback() {
   if (mediaPlaybackActivated || !speakerEnabled) return;
@@ -447,6 +454,7 @@ function setSpeakerEnabled(nextEnabled, { userGesture = false, persist = true, s
     mediaPlaybackActivated = true;
   }
   applySpeakerState({ userGesture: speakerEnabled && (userGesture || mediaPlaybackActivated) });
+  updateSpeakerButtonState();
   if (showStatus) {
     setStatus(speakerEnabled ? TEXT_SPEAKER_ON : TEXT_SPEAKER_OFF);
   }
@@ -650,11 +658,8 @@ function ensureCard(sid, displayName = null, isLocal = false) {
   });
 
   card.querySelector('.video-play-overlay')?.addEventListener('click', async () => {
-    if (videoEl.dataset.autoMuted === '1') {
-      videoEl.muted = false;
-      videoEl.defaultMuted = false;
-      delete videoEl.dataset.autoMuted;
-    }
+    setSpeakerEnabled(true, { userGesture: true, persist: true, showStatus: false });
+    delete videoEl.dataset.autoMuted;
     const ok = await safePlayVideo(videoEl, { allowMutedFallback: false });
     if (!ok) setStatus(TEXT_IOS_PLAY_SCREEN, 'warning');
   });
@@ -688,9 +693,7 @@ function applySpeakerState({ userGesture = false } = {}) {
       }
     }
   });
-  if (toggleSpeakerBtn) toggleSpeakerBtn.textContent = speakerEnabled
-    ? {{ ('扬声器开启' if lang == 'zh' else 'Speaker on')|tojson }}
-    : {{ ('扬声器静音' if lang == 'zh' else 'Speaker muted')|tojson }};
+  updateSpeakerButtonState();
 }
 
 function syncScreenShareCardState() {
@@ -956,63 +959,6 @@ async function prepareVirtualBackgroundImage(file) {
     if (compressed?.dataUrl) return compressed.dataUrl;
   } catch (_) {}
   return await fileToDataUrl(file);
-}
-
-function cleanupScreenShareAudioMix({ stopContext = false } = {}) {
-  if (screenShareMixedAudioTrack && screenShareAudioDestination) {
-    try { screenShareMixedAudioTrack.stop(); } catch (_) {}
-  }
-  screenShareMixedAudioTrack = null;
-  screenShareAudioDestination = null;
-  if (stopContext && screenShareAudioContext) {
-    try { screenShareAudioContext.close(); } catch (_) {}
-  }
-  screenShareAudioContext = null;
-}
-
-async function buildScreenShareAudioTrack(screenStream) {
-  cleanupScreenShareAudioMix({ stopContext: true });
-  const screenAudioTracks = screenStream?.getAudioTracks?.() || [];
-  const micAudioTracks = rawCameraStream?.getAudioTracks?.() || localStream?.getAudioTracks?.() || [];
-  if (!screenAudioTracks.length && !micAudioTracks.length) return null;
-  if (!screenAudioTracks.length) {
-    screenShareMixedAudioTrack = micAudioTracks[0] || null;
-    setMediaTrackContentHint(screenShareMixedAudioTrack, 'speech');
-    return screenShareMixedAudioTrack;
-  }
-  if (!micAudioTracks.length) {
-    screenShareMixedAudioTrack = screenAudioTracks[0] || null;
-    setMediaTrackContentHint(screenShareMixedAudioTrack, 'speech');
-    return screenShareMixedAudioTrack;
-  }
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx || typeof window.MediaStreamAudioDestinationNode === 'undefined') {
-    screenShareMixedAudioTrack = screenAudioTracks[0] || micAudioTracks[0] || null;
-    setMediaTrackContentHint(screenShareMixedAudioTrack, 'speech');
-    return screenShareMixedAudioTrack;
-  }
-  const ctx = new AudioCtx();
-  const destination = ctx.createMediaStreamDestination();
-  const connectTrackGroup = (tracks, gainValue = AUDIO_MIX_GAIN) => {
-    if (!tracks?.length) return;
-    const stream = new MediaStream();
-    tracks.forEach((track) => stream.addTrack(track));
-    const source = ctx.createMediaStreamSource(stream);
-    const gain = ctx.createGain();
-    gain.gain.value = gainValue;
-    source.connect(gain);
-    gain.connect(destination);
-  };
-  connectTrackGroup(screenAudioTracks, AUDIO_MIX_GAIN);
-  connectTrackGroup(micAudioTracks, AUDIO_MIX_GAIN);
-  if (ctx.state === 'suspended') {
-    try { await ctx.resume(); } catch (_) {}
-  }
-  screenShareAudioContext = ctx;
-  screenShareAudioDestination = destination;
-  screenShareMixedAudioTrack = destination.stream.getAudioTracks()[0] || null;
-  setMediaTrackContentHint(screenShareMixedAudioTrack, 'speech');
-  return screenShareMixedAudioTrack;
 }
 
 function getScaledSize(width, height) {
@@ -1999,7 +1945,6 @@ function cleanupMeetingSession() {
   recorderStream = null;
   try { stopStreamTracks(localStream); } catch (_) {}
   try { stopStreamTracks(processedCanvasStream); } catch (_) {}
-  cleanupScreenShareAudioMix({ stopContext: true });
   remoteMediaStreams = {};
   rtcDiagnostics.reset();
   rtcDiagnostics.stop();
@@ -2265,8 +2210,17 @@ document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-
 document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-screen', async () => {
   const controller = await ensureLiveKitConnected();
   if (!controller) return;
+  const mediaState = controller.getLocalMediaState?.() || {};
+  let includeAudio = lastScreenShareIncludeAudio;
+  if (!mediaState.screenShareEnabled) {
+    includeAudio = !!window.confirm(TEXT_SCREEN_SHARE_AUDIO_PROMPT);
+    lastScreenShareIncludeAudio = includeAudio;
+    setStatus(includeAudio ? TEXT_SCREEN_SHARE_AUDIO_ON : TEXT_SCREEN_SHARE_AUDIO_OFF);
+  }
   try {
-    await controller.setScreenShareEnabled();
+    await controller.setScreenShareEnabled(undefined, {
+      includeAudio: mediaState.screenShareEnabled ? undefined : includeAudio,
+    });
   } catch (err) {
     setStatus(err?.message || TEXT_LIVEKIT_CONNECT_FAILED, 'error');
     throw err;

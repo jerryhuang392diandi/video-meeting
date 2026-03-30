@@ -390,16 +390,17 @@
       return true;
     }
 
-    async function setScreenShareEnabled(nextEnabled) {
+    async function setScreenShareEnabled(nextEnabled, { includeAudio } = {}) {
       const activeRoom = requireRoom();
       const publication = activeRoom.localParticipant.getTrackPublication(lk.Track.Source.ScreenShare);
       const enabled = typeof nextEnabled === 'boolean'
         ? nextEnabled
         : !(publication?.isMuted === false && publication?.track);
+      const shareAudio = typeof includeAudio === 'boolean' ? includeAudio : true;
       await activeRoom.localParticipant.setScreenShareEnabled(
         enabled,
         enabled ? {
-          audio: true,
+          audio: shareAudio,
           contentHint: 'text',
           resolution: window.matchMedia('(max-width: 768px)').matches
             ? { width: 1280, height: 720 }
