@@ -56,18 +56,39 @@ DB_PATH = os.path.join(INSTANCE_DIR, "app.db")
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 os.makedirs(INSTANCE_DIR, exist_ok=True)
 
+def env_text(name: str, default: str = "") -> str:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return str(value).strip()
+
+
+def env_choice(name: str, *, allowed: set[str], default: str, lower: bool = False) -> str:
+    value = env_text(name, default)
+    if lower:
+        value = value.lower()
+    return value if value in allowed else default
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    raw = env_text(name, "")
+    if not raw:
+        return default
+    return raw.lower() in {"1", "true", "yes", "on"}
+
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_hex(16))
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", f"sqlite:///{DB_PATH}")
+app.config["SECRET_KEY"] = env_text("SECRET_KEY") or secrets.token_hex(16)
+app.config["SQLALCHEMY_DATABASE_URI"] = env_text("DATABASE_URL") or f"sqlite:///{DB_PATH}"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["PREFERRED_URL_SCHEME"] = (os.environ.get("PUBLIC_SCHEME") or "https").strip().lower() if (os.environ.get("PUBLIC_SCHEME") or "").strip().lower() in {"http", "https"} else "https"
+app.config["PREFERRED_URL_SCHEME"] = env_choice("PUBLIC_SCHEME", allowed={"http", "https"}, default="https", lower=True)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax") if os.environ.get("SESSION_COOKIE_SAMESITE", "Lax") in {"Lax", "Strict", "None"} else "Lax"
-app.config["SESSION_COOKIE_SECURE"] = ((os.environ.get("SESSION_COOKIE_SECURE") or "").strip().lower() in {"1", "true", "yes", "on"}) if (os.environ.get("SESSION_COOKIE_SECURE") or "").strip() else app.config["PREFERRED_URL_SCHEME"] == "https"
+app.config["SESSION_COOKIE_SAMESITE"] = env_choice("SESSION_COOKIE_SAMESITE", allowed={"Lax", "Strict", "None"}, default="Lax")
+app.config["SESSION_COOKIE_SECURE"] = env_bool("SESSION_COOKIE_SECURE", default=app.config["PREFERRED_URL_SCHEME"] == "https")
 app.config["REMEMBER_COOKIE_HTTPONLY"] = True
-app.config["REMEMBER_COOKIE_SAMESITE"] = os.environ.get("REMEMBER_COOKIE_SAMESITE", "Lax") if os.environ.get("REMEMBER_COOKIE_SAMESITE", "Lax") in {"Lax", "Strict", "None"} else "Lax"
-app.config["REMEMBER_COOKIE_SECURE"] = ((os.environ.get("REMEMBER_COOKIE_SECURE") or "").strip().lower() in {"1", "true", "yes", "on"}) if (os.environ.get("REMEMBER_COOKIE_SECURE") or "").strip() else app.config["PREFERRED_URL_SCHEME"] == "https"
+app.config["REMEMBER_COOKIE_SAMESITE"] = env_choice("REMEMBER_COOKIE_SAMESITE", allowed={"Lax", "Strict", "None"}, default="Lax")
+app.config["REMEMBER_COOKIE_SECURE"] = env_bool("REMEMBER_COOKIE_SECURE", default=app.config["PREFERRED_URL_SCHEME"] == "https")
 
 socketio = SocketIO(app, cors_allowed_origins=None, async_mode="threading", max_http_buffer_size=50_000_000)
 db = SQLAlchemy(app)
@@ -75,7 +96,7 @@ login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
 
-DEBUG_ROOM = os.environ.get("DEBUG_ROOM") == "1"
+DEBUG_ROOM = env_bool("DEBUG_ROOM")
 
 
 def sanitize_host_port(value: str | None) -> str:
@@ -92,10 +113,8 @@ def sanitize_host_port(value: str | None) -> str:
 
 
 def get_public_origin() -> str:
-    scheme = (os.environ.get("PUBLIC_SCHEME") or "https").strip().lower()
-    if scheme not in {"http", "https"}:
-        scheme = "https"
-    host = sanitize_host_port(os.environ.get("PUBLIC_HOST")) or sanitize_host_port(request.host)
+    scheme = env_choice("PUBLIC_SCHEME", allowed={"http", "https"}, default="https", lower=True)
+    host = sanitize_host_port(env_text("PUBLIC_HOST")) or sanitize_host_port(request.host)
     if not host:
         return request.url_root.rstrip("/")
     return f"{scheme}://{host}"
@@ -118,15 +137,15 @@ def persist_bootstrap_secret(filename: str, value: str):
 
 
 def livekit_server_url() -> str:
-    return (os.environ.get("LIVEKIT_URL") or "").strip()
+    return env_text("LIVEKIT_URL")
 
 
 def livekit_api_key() -> str:
-    return (os.environ.get("LIVEKIT_API_KEY") or "").strip()
+    return env_text("LIVEKIT_API_KEY")
 
 
 def livekit_api_secret() -> str:
-    return (os.environ.get("LIVEKIT_API_SECRET") or "").strip()
+    return env_text("LIVEKIT_API_SECRET")
 
 
 def livekit_enabled() -> bool:
@@ -311,8 +330,8 @@ def ensure_user_columns():
 
 
 def ensure_admin():
-    admin_username = (os.environ.get("ADMIN_USERNAME") or "root").strip() or "root"
-    admin_password = (os.environ.get("ADMIN_PASSWORD") or "").strip()
+    admin_username = env_text("ADMIN_USERNAME", "root") or "root"
+    admin_password = env_text("ADMIN_PASSWORD")
     user = User.query.filter_by(username=admin_username).first()
     generated_password = None
     if not user:
@@ -366,7 +385,7 @@ def format_mb(mb_value):
 def bool_from_form(value, default=False):
     if value is None:
         return default
-    return str(value).strip().lower() in {"1", "true", "on", "yes"}
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def parse_int_list(values):
@@ -547,15 +566,15 @@ def get_system_metrics():
 
 
 def build_turn_ice_servers():
-    public_host = sanitize_host_port(os.environ.get("TURN_PUBLIC_HOST")) or sanitize_host_port(os.environ.get("PUBLIC_HOST")) or sanitize_host_port(request.host.split(":")[0]) or "localhost"
-    urls_raw = (os.environ.get("TURN_URLS") or "").strip()
-    username = (os.environ.get("TURN_USERNAME") or "").strip()
-    credential = (os.environ.get("TURN_PASSWORD") or "").strip()
+    public_host = sanitize_host_port(env_text("TURN_PUBLIC_HOST")) or sanitize_host_port(env_text("PUBLIC_HOST")) or sanitize_host_port(request.host.split(":")[0]) or "localhost"
+    urls_raw = env_text("TURN_URLS")
+    username = env_text("TURN_USERNAME")
+    credential = env_text("TURN_PASSWORD")
     if urls_raw and username and credential:
         urls = [item.strip() for item in urls_raw.split(",") if item.strip()]
     else:
         urls = []
-    stun_urls_raw = (os.environ.get("STUN_URLS") or f"stun:{public_host}:3478").strip()
+    stun_urls_raw = env_text("STUN_URLS", f"stun:{public_host}:3478")
     stun_urls = [item.strip() for item in stun_urls_raw.split(",") if item.strip()]
     ice_servers = []
     if stun_urls:
