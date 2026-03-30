@@ -635,30 +635,47 @@ def ensure_meeting_not_expired(meeting):
     return True
 
 
-def ensure_runtime_room(meeting):
-    room = rooms.get(meeting.room_id)
-    if room:
-        return room
-    room = rooms[meeting.room_id] = {
-        "password": meeting.room_password,
-        "host_name": meeting.host_name,
+def build_runtime_room_state(*, password, host_name, created_at_ts, meeting_id, host_user_id, lang):
+    return {
+        "password": password,
+        "host_name": host_name,
         "participants": {},
-        "created_at": meeting.created_at.timestamp(),
-        "meeting_db_id": meeting.id,
-        "host_user_id": meeting.host_user_id,
+        "created_at": created_at_ts,
+        "meeting_db_id": meeting_id,
+        "host_user_id": host_user_id,
         "host_present": False,
         "cleanup_timer": None,
         "empty_since": None,
         "expiry_timer": None,
-        "lang": session.get("lang", "zh"),
+        "lang": lang,
         "danmaku_enabled": True,
         "active_sharer_sid": None,
         "active_sharer_user_id": None,
         "chat_history": [],
         "chat_clear_markers": {},
     }
-    schedule_room_expiry(meeting.room_id, meeting.created_at.timestamp())
-    return room
+
+
+def init_runtime_room(room_id, room_state, created_at_ts):
+    rooms[room_id] = room_state
+    schedule_room_expiry(room_id, created_at_ts)
+    return room_state
+
+
+def ensure_runtime_room(meeting):
+    room = rooms.get(meeting.room_id)
+    if room:
+        return room
+    created_at_ts = meeting.created_at.timestamp()
+    room_state = build_runtime_room_state(
+        password=meeting.room_password,
+        host_name=meeting.host_name,
+        created_at_ts=created_at_ts,
+        meeting_id=meeting.id,
+        host_user_id=meeting.host_user_id,
+        lang=session.get("lang", "zh"),
+    )
+    return init_runtime_room(meeting.room_id, room_state, created_at_ts)
 
 
 def build_history_meetings_for_user(user_id):
@@ -1080,25 +1097,16 @@ def api_create_room():
     db.session.add(meeting)
     db.session.commit()
 
-    rooms[room_id] = {
-        "password": password,
-        "host_name": host_name,
-        "participants": {},
-        "created_at": time.time(),
-        "meeting_db_id": meeting.id,
-        "host_user_id": meeting.host_user_id,
-        "host_present": False,
-        "cleanup_timer": None,
-        "empty_since": None,
-        "expiry_timer": None,
-        "lang": session.get("lang", "zh"),
-        "danmaku_enabled": True,
-        "active_sharer_sid": None,
-        "active_sharer_user_id": None,
-        "chat_history": [],
-        "chat_clear_markers": {},
-    }
-    schedule_room_expiry(room_id, meeting.created_at.timestamp())
+    created_at_ts = meeting.created_at.timestamp()
+    room_state = build_runtime_room_state(
+        password=password,
+        host_name=host_name,
+        created_at_ts=created_at_ts,
+        meeting_id=meeting.id,
+        host_user_id=meeting.host_user_id,
+        lang=session.get("lang", "zh"),
+    )
+    init_runtime_room(room_id, room_state, created_at_ts)
 
     join_url = f"{get_base_url()}/room/{room_id}?pwd={password}"
     return jsonify({"success": True, "room_id": room_id, "password": password, "join_url": join_url})
