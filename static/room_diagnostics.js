@@ -8,28 +8,34 @@
     intervalMs = 4000,
   }) {
     let timer = null;
-    let statsCache = {};
+    let statsCacheBySid = new Map();
 
-    function calcKbpsWithCache(cacheKey, byteValue, timestamp, byteField) {
-      const cached = statsCache[cacheKey] || {};
+    function calcKbpsWithCache(sid, reportId, direction, byteValue, timestamp, byteField) {
+      let sidCache = statsCacheBySid.get(sid);
+      if (!sidCache) {
+        sidCache = new Map();
+        statsCacheBySid.set(sid, sidCache);
+      }
+      const metricKey = `${direction}:${reportId}`;
+      const cached = sidCache.get(metricKey) || {};
       let kbps = null;
       if (Number.isFinite(byteValue) && Number.isFinite(cached[byteField]) && Number.isFinite(timestamp) && Number.isFinite(cached.lastTimestamp) && timestamp > cached.lastTimestamp) {
         kbps = Math.round(((byteValue - cached[byteField]) * 8) / (timestamp - cached.lastTimestamp));
       }
-      statsCache[cacheKey] = { ...cached, [byteField]: byteValue, lastTimestamp: timestamp };
+      cached[byteField] = byteValue;
+      cached.lastTimestamp = timestamp;
+      sidCache.set(metricKey, cached);
       return kbps;
     }
 
     function updateOutboundVideoMetrics(report, sid, metrics) {
-      const cacheKey = `${sid}:out:${report.id}`;
-      const kbps = calcKbpsWithCache(cacheKey, report.bytesSent, report.timestamp, 'lastBytesSent');
+      const kbps = calcKbpsWithCache(sid, report.id, 'out', report.bytesSent, report.timestamp, 'lastBytesSent');
       if (Number.isFinite(kbps)) metrics.outboundVideoKbps = kbps;
       if (Number.isFinite(report.framesPerSecond)) metrics.fps = Math.round(report.framesPerSecond);
     }
 
     function updateInboundVideoMetrics(report, sid, metrics) {
-      const cacheKey = `${sid}:in:${report.id}`;
-      const kbps = calcKbpsWithCache(cacheKey, report.bytesReceived, report.timestamp, 'lastBytesReceived');
+      const kbps = calcKbpsWithCache(sid, report.id, 'in', report.bytesReceived, report.timestamp, 'lastBytesReceived');
       if (Number.isFinite(kbps)) metrics.inboundVideoKbps = kbps;
       if (Number.isFinite(report.framesDecoded)) metrics.framesDecoded = report.framesDecoded;
       metrics.packetsLost += Number(report.packetsLost || 0);
@@ -113,12 +119,10 @@
       },
       refresh,
       pruneSid(sid) {
-        Object.keys(statsCache).forEach((key) => {
-          if (key.startsWith(`${sid}:`)) delete statsCache[key];
-        });
+        statsCacheBySid.delete(sid);
       },
       reset() {
-        statsCache = {};
+        statsCacheBySid = new Map();
       },
     };
   }
