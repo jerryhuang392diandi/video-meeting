@@ -432,12 +432,16 @@ let speakerEnabled = readSpeakerPreference();
 const videoPlaybackRetryTimers = new WeakMap();
 let mediaPlaybackActivated = false;
 let pendingReloadRecoveryHint = null;
-let lastScreenShareIncludeAudio = true;
-let lastScreenShareKeepMicWhenAudio = true;
+const screenShareAudioPrefs = {
+  includeAudio: true,
+  keepMicWhenAudio: true,
+};
 let speakerStateBeforeShare = null;
 let speakerForcedByShareRule = false;
-let micStateBeforeContentOnlyShare = null;
-let micMutedByContentOnlyShare = false;
+const contentOnlyShareMicState = {
+  wasMicEnabled: null,
+  micTemporarilyMuted: false,
+};
 
 function chooseScreenShareAudioMode() {
   const includeAudio = !!window.confirm(TEXT_SCREEN_SHARE_AUDIO_PROMPT);
@@ -451,6 +455,30 @@ function chooseScreenShareAudioMode() {
   };
 }
 
+function resetContentOnlyShareMicState() {
+  contentOnlyShareMicState.wasMicEnabled = null;
+  contentOnlyShareMicState.micTemporarilyMuted = false;
+}
+
+async function applyScreenShareMicPolicy(controller, mediaState, { includeAudio, keepMic }) {
+  contentOnlyShareMicState.wasMicEnabled = !!mediaState?.microphoneEnabled;
+  contentOnlyShareMicState.micTemporarilyMuted = false;
+  if (!(includeAudio && !keepMic)) return;
+  if (!mediaState?.microphoneEnabled) return;
+  await controller.setMicrophoneEnabled(false);
+  contentOnlyShareMicState.micTemporarilyMuted = true;
+}
+
+async function restoreMicrophoneAfterContentOnlyShare(controller = null) {
+  if (!contentOnlyShareMicState.micTemporarilyMuted || contentOnlyShareMicState.wasMicEnabled !== true) {
+    resetContentOnlyShareMicState();
+    return;
+  }
+  const activeController = controller || await ensureLiveKitConnected();
+  await activeController?.setMicrophoneEnabled?.(true);
+  resetContentOnlyShareMicState();
+}
+
 async function verifySharedAudioAvailability(controller) {
   if (!controller?.isConnected?.()) return;
   await new Promise((resolve) => window.setTimeout(resolve, 1200));
@@ -458,7 +486,7 @@ async function verifySharedAudioAvailability(controller) {
   const mediaState = controller.getLocalMediaState?.() || {};
   if (!mediaState.screenShareEnabled) return;
   if (mediaState.screenAudioEnabled) return;
-  if (!lastScreenShareIncludeAudio) return;
+  if (!screenShareAudioPrefs.includeAudio) return;
   setStatus(TEXT_SCREEN_SHARE_AUDIO_UNAVAILABLE, 'warning');
 }
 
@@ -1189,13 +1217,7 @@ function handleLocalLiveKitScreenShareState(isActive) {
     return;
   }
   broadcastUiEvent({ type: 'screen_share_stopped' });
-  if (micMutedByContentOnlyShare && micStateBeforeContentOnlyShare === true) {
-    ensureLiveKitConnected()
-      .then((controller) => controller?.setMicrophoneEnabled?.(true))
-      .catch(() => {});
-  }
-  micStateBeforeContentOnlyShare = null;
-  micMutedByContentOnlyShare = false;
+  restoreMicrophoneAfterContentOnlyShare().catch(() => {});
   setStatus(TEXT_SCREEN_SHARE_STOPPED);
 }
 
@@ -2268,8 +2290,8 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
   const controller = await ensureLiveKitConnected();
   if (!controller) return;
   const mediaState = controller.getLocalMediaState?.() || {};
-  let includeAudio = lastScreenShareIncludeAudio;
-  let keepMicWhenAudio = lastScreenShareKeepMicWhenAudio;
+  let includeAudio = screenShareAudioPrefs.includeAudio;
+  let keepMicWhenAudio = screenShareAudioPrefs.keepMicWhenAudio;
   if (!mediaState.screenShareEnabled) {
     if (speakerStateBeforeShare === null) speakerStateBeforeShare = speakerEnabled;
     setSpeakerEnabled(true, { userGesture: true, persist: true, showStatus: false });
@@ -2277,15 +2299,10 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
     const audioMode = chooseScreenShareAudioMode();
     includeAudio = !!audioMode.includeAudio;
     keepMicWhenAudio = !!audioMode.keepMic;
-    lastScreenShareIncludeAudio = includeAudio;
-    lastScreenShareKeepMicWhenAudio = keepMicWhenAudio;
-    micStateBeforeContentOnlyShare = !!mediaState.microphoneEnabled;
-    micMutedByContentOnlyShare = false;
-    if (includeAudio && !keepMicWhenAudio) {
-      if (mediaState.microphoneEnabled) {
-        await controller.setMicrophoneEnabled(false);
-        micMutedByContentOnlyShare = true;
-      }
+    screenShareAudioPrefs.includeAudio = includeAudio;
+    screenShareAudioPrefs.keepMicWhenAudio = keepMicWhenAudio;
+    await applyScreenShareMicPolicy(controller, mediaState, { includeAudio, keepMic: keepMicWhenAudio });
+    if (includeAudio && !keepMicWhenAudio && contentOnlyShareMicState.micTemporarilyMuted) {
       setStatus(TEXT_SCREEN_SHARE_AUDIO_CONTENT_ONLY);
     } else {
       setStatus(includeAudio ? TEXT_SCREEN_SHARE_AUDIO_ON : TEXT_SCREEN_SHARE_AUDIO_OFF);
@@ -2299,11 +2316,9 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
       verifySharedAudioAvailability(controller).catch(() => {});
     }
   } catch (err) {
-    if (!mediaState.screenShareEnabled && micMutedByContentOnlyShare && micStateBeforeContentOnlyShare === true) {
-      await controller.setMicrophoneEnabled(true).catch(() => {});
+    if (!mediaState.screenShareEnabled) {
+      await restoreMicrophoneAfterContentOnlyShare(controller).catch(() => {});
     }
-    micStateBeforeContentOnlyShare = null;
-    micMutedByContentOnlyShare = false;
     setStatus(err?.message || TEXT_LIVEKIT_CONNECT_FAILED, 'error');
     throw err;
   }
