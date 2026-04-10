@@ -1,6 +1,6 @@
 # Docs
 
-- `STABILITY_AUDIT.md`: engineering notes on RTC stability risks and follow-up work.
-- `答辩讲解文档.md`: presentation/defense script for the project.
+- `STABILITY_AUDIT.md`: 基于当前 `Flask + Socket.IO + LiveKit` 实现整理的稳定性审计，重点覆盖运行时房间状态、LiveKit 媒体层、屏幕共享、虚拟背景、录屏和运维风险。
+- `答辩讲解文档.md`: 面向课程答辩的讲解稿，按“系统结构 -> 代码分工 -> 运行流程 -> 技术选型”组织，并补充了“如果改用 C 语言是否可行、为什么当前项目不选 C 语言”。
 
-These files are kept outside the repository root because they are reference material, not runtime code.
+这些文档都是说明材料，不属于运行时代码。

@@ -159,6 +159,7 @@ CHAT_VIDEO_MAX_UPLOAD_BYTES = 120 * 1024 * 1024
 CHAT_ROOM_STORAGE_LIMIT_BYTES = 120 * 1024 * 1024
 CHAT_GLOBAL_STORAGE_LIMIT_BYTES = 512 * 1024 * 1024
 CHAT_IMAGE_MAX_DIMENSION = 1920
+RECORDING_REMUX_TIMEOUT_SECONDS = 600
 ALLOWED_CHAT_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "mp4", "webm", "mov", "m4v", "avi", "3gp", "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "txt", "zip", "rar", "7z"}
 CHAT_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".heic", ".heif"}
 CHAT_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v", ".avi", ".3gp"}
@@ -544,6 +545,44 @@ def get_system_metrics():
         "active_room_count": len(rooms),
         "active_socket_count": len(sid_to_user),
     }
+
+
+def build_recording_remux_commands(ffmpeg_path, input_path, output_path):
+    common_prefix = [ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path]
+    audio_tail = ["-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2"]
+    h264_video_tail = [
+        "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+        "-profile:v", "main", "-movflags", "+faststart",
+    ]
+    mpeg4_video_tail = [
+        "-c:v", "mpeg4", "-q:v", "5", "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+    ]
+    return [
+        common_prefix + ["-map", "0:v:0", "-map", "0:a?"] + h264_video_tail + audio_tail + ["-shortest", output_path],
+        common_prefix + ["-map", "0:v:0", "-map", "0:a?"] + mpeg4_video_tail + audio_tail + ["-shortest", output_path],
+        common_prefix + ["-map", "0:v:0"] + h264_video_tail + [output_path],
+        common_prefix + ["-map", "0:v:0"] + mpeg4_video_tail + [output_path],
+    ]
+
+
+def remux_recording_with_ffmpeg(ffmpeg_path, input_path, output_path, timeout=RECORDING_REMUX_TIMEOUT_SECONDS):
+    errors = []
+    for command in build_recording_remux_commands(ffmpeg_path, input_path, output_path):
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+        except Exception as exc:
+            errors.append(str(exc))
+            continue
+        if completed.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            return True, errors
+        err = (completed.stderr or completed.stdout or "ffmpeg failed").strip()
+        errors.append(err[-800:])
+        try:
+            os.remove(output_path)
+        except OSError:
+            pass
+    return False, errors
 
 
 def build_turn_ice_servers():
@@ -1261,55 +1300,8 @@ def api_remux_recording():
     output_path = os.path.join(workdir, "output.mp4")
     upload.save(input_path)
 
-    command_candidates = [
-        [
-            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
-            "-map", "0:v:0", "-map", "0:a?",
-            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-            "-profile:v", "main", "-movflags", "+faststart",
-            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
-            "-shortest", output_path,
-        ],
-        [
-            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
-            "-map", "0:v:0", "-map", "0:a?",
-            "-c:v", "mpeg4", "-q:v", "5", "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
-            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
-            "-shortest", output_path,
-        ],
-        [
-            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
-            "-map", "0:v:0",
-            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-            "-profile:v", "main", "-movflags", "+faststart",
-            output_path,
-        ],
-        [
-            ffmpeg_path, "-y", "-fflags", "+genpts", "-i", input_path,
-            "-map", "0:v:0",
-            "-c:v", "mpeg4", "-q:v", "5", "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
-            output_path,
-        ],
-    ]
-
-    errors = []
-    for cmd in command_candidates:
-        try:
-            completed = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        except Exception as exc:
-            errors.append(str(exc))
-            continue
-        if completed.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-            break
-        err = (completed.stderr or completed.stdout or "ffmpeg failed").strip()
-        errors.append(err[-800:])
-        try:
-            os.remove(output_path)
-        except OSError:
-            pass
-    else:
+    success, errors = remux_recording_with_ffmpeg(ffmpeg_path, input_path, output_path)
+    if not success:
         shutil.rmtree(workdir, ignore_errors=True)
         app.logger.warning("recording remux failed: %s", " | ".join(errors[-3:]) or "ffmpeg failed")
         return jsonify({"success": False, "message": "ffmpeg failed"}), 500
