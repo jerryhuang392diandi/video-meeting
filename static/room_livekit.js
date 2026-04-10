@@ -2,6 +2,7 @@
   const lk = global.LivekitClient;
   const mediaUtils = global.RoomPageUtils || {};
   const setMediaTrackContentHint = mediaUtils.setMediaTrackContentHint || function () {};
+  const VIDEO_QUALITY = lk?.VideoQuality || { HIGH: 'high', MEDIUM: 'medium', LOW: 'low' };
   const SOURCE_FIELD_MAP = new Map([
     [lk?.Track?.Source?.Camera, 'cameraVideo'],
     [lk?.Track?.Source?.ScreenShare, 'screenVideo'],
@@ -34,23 +35,182 @@
     };
   }
 
+  function normalizeShareProfile(input, mobile = isMobileViewport()) {
+    const mode = input?.mode === 'detail' ? 'detail' : 'motion';
+    const level = ['high', 'balanced', 'stable'].includes(input?.level) ? input.level : 'high';
+    return { mode, level, mobile };
+  }
+
+  function getScreenShareProfileConfig(input) {
+    const profile = normalizeShareProfile(input);
+    const presets = profile.mobile
+      ? {
+          motion: {
+            high: {
+              resolution: { width: 960, height: 540 },
+              encoding: { maxBitrate: 1_700_000, maxFramerate: 24, priority: 'high' },
+              layers: [
+                createVideoPreset(640, 360, 900_000, 20, 'medium'),
+                createVideoPreset(426, 240, 420_000, 15, 'low'),
+              ],
+              contentHint: 'motion',
+              degradationPreference: 'maintain-framerate',
+              quality: VIDEO_QUALITY.HIGH,
+            },
+            balanced: {
+              resolution: { width: 960, height: 540 },
+              encoding: { maxBitrate: 1_200_000, maxFramerate: 20, priority: 'medium' },
+              layers: [
+                createVideoPreset(640, 360, 720_000, 18, 'medium'),
+                createVideoPreset(426, 240, 360_000, 12, 'low'),
+              ],
+              contentHint: 'motion',
+              degradationPreference: 'maintain-framerate',
+              quality: VIDEO_QUALITY.MEDIUM,
+            },
+            stable: {
+              resolution: { width: 854, height: 480 },
+              encoding: { maxBitrate: 850_000, maxFramerate: 18, priority: 'medium' },
+              layers: [
+                createVideoPreset(640, 360, 520_000, 15, 'medium'),
+                createVideoPreset(426, 240, 260_000, 10, 'low'),
+              ],
+              contentHint: 'motion',
+              degradationPreference: 'maintain-framerate',
+              quality: VIDEO_QUALITY.LOW,
+            },
+          },
+          detail: {
+            high: {
+              resolution: { width: 1280, height: 720 },
+              encoding: { maxBitrate: 2_000_000, maxFramerate: 15, priority: 'high' },
+              layers: [
+                createVideoPreset(1024, 576, 1_000_000, 12, 'medium'),
+                createVideoPreset(640, 360, 420_000, 10, 'low'),
+              ],
+              contentHint: 'text',
+              degradationPreference: 'maintain-resolution',
+              quality: VIDEO_QUALITY.HIGH,
+            },
+            balanced: {
+              resolution: { width: 1024, height: 576 },
+              encoding: { maxBitrate: 1_300_000, maxFramerate: 12, priority: 'medium' },
+              layers: [
+                createVideoPreset(854, 480, 760_000, 10, 'medium'),
+                createVideoPreset(640, 360, 340_000, 8, 'low'),
+              ],
+              contentHint: 'text',
+              degradationPreference: 'maintain-resolution',
+              quality: VIDEO_QUALITY.MEDIUM,
+            },
+            stable: {
+              resolution: { width: 960, height: 540 },
+              encoding: { maxBitrate: 900_000, maxFramerate: 10, priority: 'medium' },
+              layers: [
+                createVideoPreset(640, 360, 480_000, 8, 'medium'),
+                createVideoPreset(426, 240, 220_000, 6, 'low'),
+              ],
+              contentHint: 'text',
+              degradationPreference: 'maintain-resolution',
+              quality: VIDEO_QUALITY.LOW,
+            },
+          },
+        }
+      : {
+          motion: {
+            high: {
+              resolution: { width: 1280, height: 720 },
+              encoding: { maxBitrate: 3_000_000, maxFramerate: 30, priority: 'high' },
+              layers: [
+                createVideoPreset(960, 540, 1_600_000, 24, 'medium'),
+                createVideoPreset(640, 360, 750_000, 18, 'low'),
+              ],
+              contentHint: 'motion',
+              degradationPreference: 'maintain-framerate',
+              quality: VIDEO_QUALITY.HIGH,
+            },
+            balanced: {
+              resolution: { width: 1280, height: 720 },
+              encoding: { maxBitrate: 2_200_000, maxFramerate: 24, priority: 'high' },
+              layers: [
+                createVideoPreset(960, 540, 1_200_000, 20, 'medium'),
+                createVideoPreset(640, 360, 580_000, 15, 'low'),
+              ],
+              contentHint: 'motion',
+              degradationPreference: 'maintain-framerate',
+              quality: VIDEO_QUALITY.MEDIUM,
+            },
+            stable: {
+              resolution: { width: 960, height: 540 },
+              encoding: { maxBitrate: 1_450_000, maxFramerate: 20, priority: 'medium' },
+              layers: [
+                createVideoPreset(640, 360, 800_000, 18, 'medium'),
+                createVideoPreset(426, 240, 360_000, 12, 'low'),
+              ],
+              contentHint: 'motion',
+              degradationPreference: 'maintain-framerate',
+              quality: VIDEO_QUALITY.LOW,
+            },
+          },
+          detail: {
+            high: {
+              resolution: { width: 1920, height: 1080 },
+              encoding: { maxBitrate: 4_400_000, maxFramerate: 18, priority: 'high' },
+              layers: [
+                createVideoPreset(1280, 720, 2_100_000, 15, 'medium'),
+                createVideoPreset(960, 540, 900_000, 10, 'low'),
+              ],
+              contentHint: 'text',
+              degradationPreference: 'maintain-resolution',
+              quality: VIDEO_QUALITY.HIGH,
+            },
+            balanced: {
+              resolution: { width: 1600, height: 900 },
+              encoding: { maxBitrate: 2_700_000, maxFramerate: 15, priority: 'high' },
+              layers: [
+                createVideoPreset(1280, 720, 1_450_000, 12, 'medium'),
+                createVideoPreset(960, 540, 720_000, 10, 'low'),
+              ],
+              contentHint: 'text',
+              degradationPreference: 'maintain-resolution',
+              quality: VIDEO_QUALITY.MEDIUM,
+            },
+            stable: {
+              resolution: { width: 1280, height: 720 },
+              encoding: { maxBitrate: 1_500_000, maxFramerate: 12, priority: 'medium' },
+              layers: [
+                createVideoPreset(960, 540, 900_000, 10, 'medium'),
+                createVideoPreset(640, 360, 420_000, 8, 'low'),
+              ],
+              contentHint: 'text',
+              degradationPreference: 'maintain-resolution',
+              quality: VIDEO_QUALITY.LOW,
+            },
+          },
+        };
+    return {
+      ...profile,
+      ...presets[profile.mode][profile.level],
+    };
+  }
+
+  function getFallbackShareProfile(profile) {
+    const normalized = normalizeShareProfile(profile);
+    if (normalized.level === 'high') return { mode: normalized.mode, level: 'balanced' };
+    if (normalized.level === 'balanced') return { mode: normalized.mode, level: 'stable' };
+    if (normalized.mode === 'motion') return { mode: 'detail', level: 'balanced' };
+    return null;
+  }
+
   function buildRoomOptions({ facingMode = 'user' } = {}) {
     const mobile = isMobileViewport();
     const cameraPrimary = mobile
       ? createVideoPreset(640, 360, 700_000, 24, 'medium')
       : createVideoPreset(1280, 720, 1_800_000, 30, 'medium');
     const cameraLayer = mobile
-      ? createVideoPreset(320, 180, 180_000, 20, 'low')
+      ? createVideoPreset(320, 180, 180_000, 18, 'low')
       : createVideoPreset(640, 360, 700_000, 20, 'low');
-    const screenPrimary = mobile
-      ? createVideoPreset(1280, 720, 2_400_000, 20, 'high')
-      : createVideoPreset(1920, 1080, 5_500_000, 24, 'high');
-    const screenLayerMid = mobile
-      ? createVideoPreset(960, 540, 1_200_000, 20, 'medium')
-      : createVideoPreset(1280, 720, 2_800_000, 20, 'medium');
-    const screenLayerLow = mobile
-      ? createVideoPreset(640, 360, 600_000, 10, 'low')
-      : createVideoPreset(960, 540, 1_400_000, 12, 'low');
+    const defaultShare = getScreenShareProfileConfig({ mode: 'motion', level: 'high', mobile });
     return {
       adaptiveStream: true,
       dynacast: true,
@@ -76,8 +236,8 @@
         degradationPreference: 'maintain-framerate',
         videoEncoding: cameraPrimary.encoding,
         videoSimulcastLayers: [cameraLayer],
-        screenShareEncoding: screenPrimary.encoding,
-        screenShareSimulcastLayers: [screenLayerMid, screenLayerLow],
+        screenShareEncoding: defaultShare.encoding,
+        screenShareSimulcastLayers: defaultShare.layers,
       },
     };
   }
@@ -100,14 +260,16 @@
       setLocalPreview,
       onScreenShareState,
       onLocalScreenShareState,
-      setStatus,
       roomOptions,
+      initialShareProfile,
     } = options;
 
     let room = null;
     let connected = false;
     let connectPromise = null;
     let localState = createRemoteState();
+    let shareProfile = normalizeShareProfile(initialShareProfile);
+    let senderStatsCache = { bytesSent: null, timestamp: null };
     const remoteStates = new Map();
 
     function resolveRoomOptions() {
@@ -138,6 +300,18 @@
       if (fieldName) target[fieldName] = mediaTrack || null;
     }
 
+    function getActiveShareConfig() {
+      return getScreenShareProfileConfig(shareProfile);
+    }
+
+    function getScreenShareTrackPublication() {
+      return room?.localParticipant?.getTrackPublication(lk.Track.Source.ScreenShare) || null;
+    }
+
+    function getScreenShareTrack() {
+      return getScreenShareTrackPublication()?.track || null;
+    }
+
     function applyTrackContentHint(publication) {
       const mediaTrack = trackToMediaStreamTrack(publication?.track);
       if (!mediaTrack) return;
@@ -146,7 +320,7 @@
           setMediaTrackContentHint(mediaTrack, 'motion');
           break;
         case lk.Track.Source.ScreenShare:
-          setMediaTrackContentHint(mediaTrack, 'text');
+          setMediaTrackContentHint(mediaTrack, getActiveShareConfig().contentHint);
           break;
         case lk.Track.Source.Microphone:
         case lk.Track.Source.ScreenShareAudio:
@@ -232,6 +406,82 @@
       return room;
     }
 
+    async function applyActiveScreenShareProfile() {
+      const track = getScreenShareTrack();
+      const publication = getScreenShareTrackPublication();
+      if (!track || !publication) return false;
+      const profile = getActiveShareConfig();
+      const mediaTrack = trackToMediaStreamTrack(track);
+      if (mediaTrack) {
+        setMediaTrackContentHint(mediaTrack, profile.contentHint);
+      }
+      if (typeof track.setDegradationPreference === 'function') {
+        try {
+          await track.setDegradationPreference(profile.degradationPreference);
+        } catch (_) {}
+      }
+      if (typeof track.setPublishingQuality === 'function') {
+        try {
+          await track.setPublishingQuality(profile.quality);
+        } catch (_) {}
+      }
+      return true;
+    }
+
+    function pickPrimaryVideoSenderStat(stats = []) {
+      return [...stats]
+        .filter((report) => report && (report.kind === 'video' || report.type === 'video'))
+        .sort((a, b) => {
+          const aScore = (Number(a.frameWidth || 0) * Number(a.frameHeight || 0)) || Number(a.targetBitrate || 0);
+          const bScore = (Number(b.frameWidth || 0) * Number(b.frameHeight || 0)) || Number(b.targetBitrate || 0);
+          return bScore - aScore;
+        })[0] || null;
+    }
+
+    function summarizeScreenShareSenderStat(report) {
+      if (!report) return null;
+      let outboundKbps = null;
+      if (
+        Number.isFinite(report.bytesSent)
+        && Number.isFinite(senderStatsCache.bytesSent)
+        && Number.isFinite(report.timestamp)
+        && Number.isFinite(senderStatsCache.timestamp)
+        && report.timestamp > senderStatsCache.timestamp
+      ) {
+        outboundKbps = Math.round(((report.bytesSent - senderStatsCache.bytesSent) * 8) / (report.timestamp - senderStatsCache.timestamp));
+      }
+      senderStatsCache = {
+        bytesSent: Number.isFinite(report.bytesSent) ? report.bytesSent : senderStatsCache.bytesSent,
+        timestamp: Number.isFinite(report.timestamp) ? report.timestamp : senderStatsCache.timestamp,
+      };
+      return {
+        fps: Number.isFinite(report.framesPerSecond) ? Math.round(report.framesPerSecond) : null,
+        rttMs: Number.isFinite(report.roundTripTime) ? Math.round(report.roundTripTime * 1000) : null,
+        packetsLost: Number.isFinite(report.packetsLost) ? Math.round(report.packetsLost) : 0,
+        qualityLimitationReason: report.qualityLimitationReason || '',
+        targetBitrateKbps: Number.isFinite(report.targetBitrate) ? Math.round(report.targetBitrate / 1000) : null,
+        outboundKbps,
+        frameWidth: Number.isFinite(report.frameWidth) ? report.frameWidth : null,
+        frameHeight: Number.isFinite(report.frameHeight) ? report.frameHeight : null,
+      };
+    }
+
+    async function getScreenShareSenderSnapshot() {
+      const track = getScreenShareTrack();
+      if (!track || typeof track.getSenderStats !== 'function') return null;
+      try {
+        const stats = await track.getSenderStats();
+        const primary = pickPrimaryVideoSenderStat(Array.isArray(stats) ? stats : []);
+        return summarizeScreenShareSenderStat(primary);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function resetScreenShareStatsCache() {
+      senderStatsCache = { bytesSent: null, timestamp: null };
+    }
+
     function bindRoomEvents() {
       room
         .on(lk.RoomEvent.TrackSubscribed, (track, publication, participant) => {
@@ -261,6 +511,8 @@
           syncLocalStateFromPublications();
           syncLocalPreview();
           if (publication?.source === lk.Track.Source.ScreenShare) {
+            resetScreenShareStatsCache();
+            applyActiveScreenShareProfile().catch(() => {});
             onLocalScreenShareState?.(true);
           }
         })
@@ -269,11 +521,13 @@
           syncLocalStateFromPublications();
           syncLocalPreview();
           if (publication?.source === lk.Track.Source.ScreenShare) {
+            resetScreenShareStatsCache();
             onLocalScreenShareState?.(false);
           }
         })
         .on(lk.RoomEvent.Disconnected, () => {
           connected = false;
+          resetScreenShareStatsCache();
           onLocalScreenShareState?.(false);
         });
       if (lk.RoomEvent.TrackMuted) {
@@ -325,7 +579,7 @@
       return data;
     }
 
-    async function connect({ autoEnableCamera = false, autoEnableMicrophone = false } = {}) {
+    async function connect() {
       if (connected && room) return room;
       if (connectPromise) return connectPromise;
       connectPromise = (async () => {
@@ -340,10 +594,6 @@
           autoSubscribe: true,
         });
         connected = true;
-        await Promise.allSettled([
-          autoEnableMicrophone ? activeRoom.localParticipant.setMicrophoneEnabled(true) : Promise.resolve(),
-          autoEnableCamera ? activeRoom.localParticipant.setCameraEnabled(true) : Promise.resolve(),
-        ]);
         syncLocalStateFromPublications();
         syncLocalPreview();
         return activeRoom;
@@ -390,28 +640,35 @@
       return true;
     }
 
-    async function setScreenShareEnabled(nextEnabled, { includeAudio } = {}) {
+    async function setScreenShareEnabled(nextEnabled, { includeAudio, profile } = {}) {
       const activeRoom = requireRoom();
       const publication = activeRoom.localParticipant.getTrackPublication(lk.Track.Source.ScreenShare);
       const enabled = typeof nextEnabled === 'boolean'
         ? nextEnabled
         : !(publication?.isMuted === false && publication?.track);
+      if (profile) {
+        shareProfile = normalizeShareProfile(profile);
+      }
       const shareAudio = typeof includeAudio === 'boolean' ? includeAudio : true;
+      const config = getActiveShareConfig();
       await activeRoom.localParticipant.setScreenShareEnabled(
         enabled,
         enabled ? {
           audio: shareAudio,
-          contentHint: 'text',
-          resolution: window.matchMedia('(max-width: 768px)').matches
-            ? { width: 1280, height: 720 }
-            : { width: 1920, height: 1080 },
+          contentHint: config.contentHint,
+          resolution: config.resolution,
         } : undefined,
         enabled ? {
-          degradationPreference: 'maintain-resolution',
+          degradationPreference: config.degradationPreference,
           simulcast: true,
           videoCodec: 'vp8',
         } : undefined,
       );
+      if (enabled) {
+        await applyActiveScreenShareProfile();
+      } else {
+        resetScreenShareStatsCache();
+      }
       syncLocalStateFromPublications();
       syncLocalPreview();
       return enabled;
@@ -430,6 +687,7 @@
       }
       room = null;
       connected = false;
+      resetScreenShareStatsCache();
       localState = createRemoteState();
       remoteStates.clear();
     }
@@ -471,11 +729,13 @@
       return lines;
     }
 
-    function getDiagnosticsEntries() {
+    async function getDiagnosticsEntries() {
       if (!room) {
         return [{ label: 'LiveKit', lines: ['status: disconnected'] }];
       }
       const entries = [];
+      const activeShareConfig = getActiveShareConfig();
+      const shareSender = await getScreenShareSenderSnapshot();
       entries.push({
         label: 'LiveKit local',
         lines: [
@@ -484,6 +744,11 @@
           `microphone: ${localState.microphone ? 'on' : 'off'}`,
           `screen_video: ${localState.screenVideo ? 'on' : 'off'}`,
           `screen_audio: ${localState.screenAudio ? 'on' : 'off'}`,
+          `share_profile: ${shareProfile.mode}/${shareProfile.level}`,
+          `share_target: ${activeShareConfig.resolution.width}x${activeShareConfig.resolution.height} @ ${activeShareConfig.encoding.maxFramerate}fps`,
+          shareSender
+            ? `share_sender: out=${shareSender.outboundKbps ?? '-'} kbps | target=${shareSender.targetBitrateKbps ?? '-'} kbps | fps=${shareSender.fps ?? '-'} | rtt=${shareSender.rttMs ?? '-'} ms | reason=${shareSender.qualityLimitationReason || '-'}`
+            : 'share_sender: inactive',
         ],
       });
       room.remoteParticipants?.forEach?.((participant) => {
@@ -502,6 +767,16 @@
       prepareConnection,
       getLocalMediaState,
       getDiagnosticsEntries,
+      getScreenShareSenderSnapshot,
+      getScreenShareProfile: () => ({ ...shareProfile }),
+      getFallbackScreenShareProfile: () => getFallbackShareProfile(shareProfile),
+      setScreenShareProfile: async (profile, { applyToActiveShare = false } = {}) => {
+        shareProfile = normalizeShareProfile(profile);
+        if (applyToActiveShare) {
+          return await applyActiveScreenShareProfile();
+        }
+        return true;
+      },
       setMicrophoneEnabled,
       setCameraEnabled,
       replaceCameraTrack,
@@ -513,5 +788,6 @@
   global.RoomPageLiveKit = {
     createController,
     buildRoomOptions,
+    getScreenShareProfileConfig,
   };
 })(window);

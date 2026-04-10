@@ -1,0 +1,105 @@
+Git + 服务器更新一键式操作清单
+================================
+
+项目路径：
+/opt/video-meeting
+
+
+一、本地（客户端）每次更新代码并推送
+--------------------------------
+# 进入你的本地项目目录
+cd 你的项目目录
+
+# 先看状态
+git status
+
+# 拉一下远程最新代码，避免冲突
+git pull origin main
+
+# 添加修改
+git add .
+
+# 提交修改
+git commit -m "这里写本次修改说明"
+
+# 推送到远程仓库
+git push origin main
+
+
+二、服务器端每次更新：一套命令直接走完
+--------------------------------
+cd /opt/video-meeting && \
+git clean -fd && \
+git checkout main && \
+git pull origin main && \
+source /opt/video-meeting/venv/bin/activate && \
+pip install -r requirements.txt && \
+systemctl restart video-meeting && \
+systemctl status video-meeting
+
+
+三、服务器端每次更新：分行版
+--------------------------
+cd /opt/video-meeting
+git clean -fd
+git checkout main
+git pull origin main
+source /opt/video-meeting/venv/bin/activate
+pip install -r requirements.txt
+systemctl restart video-meeting
+systemctl status video-meeting
+
+
+四、如果只改了代码，没改依赖，也建议这样走
+--------------------------------------
+cd /opt/video-meeting && \
+git clean -fd && \
+git checkout main && \
+git pull origin main && \
+source /opt/video-meeting/venv/bin/activate && \
+systemctl restart video-meeting && \
+systemctl status video-meeting
+
+
+五、服务有问题时，立刻排查
+------------------------
+# 查看服务状态
+systemctl status video-meeting
+
+# 查看最近 100 行日志
+journalctl -u video-meeting -n 100 --no-pager
+
+# 实时追日志
+journalctl -u video-meeting -f
+
+
+六、如果 systemd 配置改过了，要执行
+-------------------------------
+systemctl daemon-reload
+systemctl restart video-meeting
+systemctl status video-meeting
+
+
+七、常见补充命令
+--------------
+# 看当前目录
+pwd
+
+# 看目录内容
+ls -al
+
+# 看当前分支和状态
+git branch -a
+git status
+
+# 看 service 文件
+cat /etc/systemd/system/video-meeting.service
+
+
+八、最核心的两条，你平时基本就用这个
+--------------------------------
+【本地提交并推送】
+git pull origin main && git add . && git commit -m "修改说明" && git push origin main
+
+【服务器更新并重启】
+cd /opt/video-meeting && git clean -fd && git checkout main && git pull origin main && source /opt/video-meeting/venv/bin/activate && pip install -r requirements.txt && systemctl restart video-meeting && systemctl status video-meeting

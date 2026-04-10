@@ -45,6 +45,18 @@ const TEXT_SCREEN_SHARE_AUDIO_CONTENT_ONLY = {{ ('将仅发送共享内容声音
 const TEXT_SCREEN_SHARE_AUDIO_UNAVAILABLE = {{ ('当前浏览器/共享源未提供共享音频。请优先选择“浏览器标签页”并勾选“共享标签页音频/共享系统音频”。' if lang == 'zh' else 'This browser or selected source did not provide screen-share audio. Prefer sharing a browser tab and enable tab/system audio in the picker.')|tojson }};
 const TEXT_SCREEN_SHARE_BANNER_SELF = {{ ('正在共享屏幕，其他参会者已临时隐藏' if lang == 'zh' else 'You are sharing your screen. Other participants are temporarily hidden')|tojson }};
 const TEXT_SCREEN_SHARE_BANNER_OTHER = {{ ('{name} 正在共享屏幕，其他参会者已临时隐藏' if lang == 'zh' else '{name} is sharing the screen. Other participants are temporarily hidden')|tojson }};
+const TEXT_SHARE_PROFILE_MOTION = {{ t('share_profile_motion')|tojson }};
+const TEXT_SHARE_PROFILE_DETAIL = {{ t('share_profile_detail')|tojson }};
+const TEXT_SHARE_PROFILE_BUTTON = {{ t('share_profile_button')|tojson }};
+const TEXT_SHARE_PROFILE_MOTION_DESC = {{ t('share_profile_motion_desc')|tojson }};
+const TEXT_SHARE_PROFILE_DETAIL_DESC = {{ t('share_profile_detail_desc')|tojson }};
+const TEXT_SHARE_PROFILE_MOTION_STATUS = {{ t('share_profile_motion_status')|tojson }};
+const TEXT_SHARE_PROFILE_DETAIL_STATUS = {{ t('share_profile_detail_status')|tojson }};
+const TEXT_SHARE_PROFILE_APPLY_ACTIVE_CONFIRM = {{ t('share_profile_apply_active_confirm')|tojson }};
+const TEXT_SHARE_PROFILE_STABILITY_PROMPT = {{ t('share_profile_stability_prompt')|tojson }};
+const TEXT_SHARE_PROFILE_STABILITY_APPLIED = {{ t('share_profile_stability_applied')|tojson }};
+const TEXT_SHARE_PROFILE_STABILITY_KEPT = {{ t('share_profile_stability_kept')|tojson }};
+const TEXT_SHARE_PROFILE_STABILITY_MANUAL = {{ t('share_profile_stability_manual')|tojson }};
 const TEXT_NO_VIDEO = {{ ('未开启摄像头' if lang == 'zh' else 'Camera off')|tojson }};
 const TEXT_RECORD_STOP = {{ ('停止录屏' if lang == 'zh' else 'Stop recording')|tojson }};
 const TEXT_RECORD_SAVED = {{ ('录屏文件已保存' if lang == 'zh' else 'Recording saved')|tojson }};
@@ -151,6 +163,8 @@ let processedFrameCount = 0;
 let virtualBgActivationToken = 0;
 let activeVirtualBgToken = 0;
 let hasLeftMeeting = false;
+let joinMediaBootstrapDone = false;
+let joinMediaBootstrapTimer = null;
 const MAX_VBG_WIDTH = 960;
 const MAX_VBG_HEIGHT = 540;
 const VBG_CAPTURE_FPS = IS_MOBILE ? 20 : 24;
@@ -212,8 +226,10 @@ const videoHomePageBtn = document.getElementById('videoHomePageBtn');
 const videoSearchInput = document.getElementById('videoSearchInput');
 const videoPagerInfo = document.getElementById('videoPagerInfo');
 const shareScreenBtn = document.getElementById('shareScreenBtn');
+const shareProfileBtn = document.getElementById('shareProfileBtn');
 const toggleSpeakerBtn = document.getElementById('toggleSpeakerBtn');
 const virtualBgBtn = document.getElementById('virtualBgBtn');
+const shareProfileTip = document.getElementById('shareProfileTip');
 const rtcDiagnosticsOutput = document.getElementById('rtcDiagnosticsOutput');
 const refreshRtcStatsBtn = document.getElementById('refreshRtcStatsBtn');
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -352,6 +368,7 @@ let screenShareStream = null;
 const SPEAKER_PREFERENCE_KEY = 'meeting_speaker_enabled_v2';
 const LEGACY_SPEAKER_PREFERENCE_KEY = 'meeting_speaker_enabled';
 const RELOAD_RECOVERY_KEY = 'meeting_media_reload_recovery_v1';
+const SHARE_PROFILE_KEY = 'meeting_share_profile_v1';
 
 function getSpeakerPreferenceStorageKey() {
   return `${SPEAKER_PREFERENCE_KEY}:${CURRENT_USER_ID || 'guest'}`;
@@ -427,8 +444,56 @@ function readReloadRecoveryHint() {
   }
 }
 
+function updateShareProfileUi() {
+  if (shareProfileBtn) {
+    shareProfileBtn.textContent = `${TEXT_SHARE_PROFILE_BUTTON} · ${getShareProfileLabel(shareProfilePreference)}`;
+    shareProfileBtn.classList.add('active');
+    shareProfileBtn.dataset.mode = shareProfilePreference.mode;
+    shareProfileBtn.title = getShareProfileDescription(shareProfilePreference);
+  }
+  if (shareProfileTip) {
+    shareProfileTip.textContent = getShareProfileDescription(shareProfilePreference);
+  }
+}
+
+function getShareProfileStorageKey() {
+  return `${SHARE_PROFILE_KEY}:${CURRENT_USER_ID || 'guest'}`;
+}
+
+function normalizeShareProfilePreference(input) {
+  return {
+    mode: input?.mode === 'detail' ? 'detail' : 'motion',
+    level: ['high', 'balanced', 'stable'].includes(input?.level) ? input.level : 'high',
+  };
+}
+
+function readShareProfilePreference() {
+  try {
+    const raw = localStorage.getItem(getShareProfileStorageKey());
+    if (!raw) return { mode: 'motion', level: 'high' };
+    return normalizeShareProfilePreference(JSON.parse(raw));
+  } catch (_) {
+    return { mode: 'motion', level: 'high' };
+  }
+}
+
+function writeShareProfilePreference(profile) {
+  try {
+    localStorage.setItem(getShareProfileStorageKey(), JSON.stringify(normalizeShareProfilePreference(profile)));
+  } catch (_) {}
+}
+
+function getShareProfileLabel(profile) {
+  return profile?.mode === 'detail' ? TEXT_SHARE_PROFILE_DETAIL : TEXT_SHARE_PROFILE_MOTION;
+}
+
+function getShareProfileDescription(profile) {
+  return profile?.mode === 'detail' ? TEXT_SHARE_PROFILE_DETAIL_DESC : TEXT_SHARE_PROFILE_MOTION_DESC;
+}
+
 migrateLegacySpeakerPreference();
 let speakerEnabled = readSpeakerPreference();
+let shareProfilePreference = readShareProfilePreference();
 const videoPlaybackRetryTimers = new WeakMap();
 let mediaPlaybackActivated = false;
 let pendingReloadRecoveryHint = null;
@@ -441,6 +506,11 @@ let speakerForcedByShareRule = false;
 const contentOnlyShareMicState = {
   wasMicEnabled: null,
   micTemporarilyMuted: false,
+};
+const shareStabilityMonitor = {
+  timer: null,
+  badSampleCount: 0,
+  promptCooldownUntil: 0,
 };
 
 function chooseScreenShareAudioMode() {
@@ -488,6 +558,96 @@ async function verifySharedAudioAvailability(controller) {
   if (mediaState.screenAudioEnabled) return;
   if (!screenShareAudioPrefs.includeAudio) return;
   setStatus(TEXT_SCREEN_SHARE_AUDIO_UNAVAILABLE, 'warning');
+}
+
+async function applyShareProfilePreference(profile, { applyToActiveShare = false, showStatus = true } = {}) {
+  const nextProfile = normalizeShareProfilePreference(profile);
+  shareProfilePreference = nextProfile;
+  writeShareProfilePreference(nextProfile);
+  updateShareProfileUi();
+  if (IS_LIVEKIT_MODE && livekitController) {
+    try {
+      await livekitController.setScreenShareProfile?.(nextProfile, { applyToActiveShare });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  if (showStatus) {
+    setStatus(nextProfile.mode === 'detail' ? TEXT_SHARE_PROFILE_DETAIL_STATUS : TEXT_SHARE_PROFILE_MOTION_STATUS);
+  }
+  return nextProfile;
+}
+
+async function toggleShareProfileMode() {
+  const nextProfile = {
+    mode: shareProfilePreference.mode === 'motion' ? 'detail' : 'motion',
+    level: 'high',
+  };
+  const applyToActiveShare = !!livekitLocalShareActive && !!window.confirm(TEXT_SHARE_PROFILE_APPLY_ACTIVE_CONFIRM);
+  await applyShareProfilePreference(nextProfile, { applyToActiveShare, showStatus: true });
+}
+
+function clearShareStabilityMonitor() {
+  if (shareStabilityMonitor.timer) {
+    clearInterval(shareStabilityMonitor.timer);
+  }
+  shareStabilityMonitor.timer = null;
+  shareStabilityMonitor.badSampleCount = 0;
+}
+
+function isBadShareSample(snapshot, profile) {
+  if (!snapshot) return false;
+  const qualityLimited = !!snapshot.qualityLimitationReason && snapshot.qualityLimitationReason !== 'none';
+  const lowHeadroom = Number.isFinite(snapshot.outboundKbps)
+    && Number.isFinite(snapshot.targetBitrateKbps)
+    && snapshot.targetBitrateKbps > 0
+    && snapshot.outboundKbps < Math.round(snapshot.targetBitrateKbps * 0.58);
+  if (profile.mode === 'motion') {
+    if (Number.isFinite(snapshot.fps) && snapshot.fps < 20 && (qualityLimited || lowHeadroom)) return true;
+    if (Number.isFinite(snapshot.fps) && snapshot.fps < 18) return true;
+  } else {
+    if (Number.isFinite(snapshot.fps) && snapshot.fps < 10 && qualityLimited) return true;
+    if (lowHeadroom && qualityLimited) return true;
+  }
+  return (Number.isFinite(snapshot.rttMs) && snapshot.rttMs > 420 && (qualityLimited || lowHeadroom))
+    || (Number.isFinite(snapshot.packetsLost) && snapshot.packetsLost > 20 && qualityLimited);
+}
+
+async function maybePromptShareProfileFallback() {
+  if (!livekitLocalShareActive || document.hidden) return;
+  const now = Date.now();
+  if (shareStabilityMonitor.promptCooldownUntil > now) return;
+  const controller = livekitController;
+  if (!controller?.getScreenShareSenderSnapshot) return;
+  const snapshot = await controller.getScreenShareSenderSnapshot();
+  if (!isBadShareSample(snapshot, shareProfilePreference)) {
+    shareStabilityMonitor.badSampleCount = 0;
+    return;
+  }
+  shareStabilityMonitor.badSampleCount += 1;
+  if (shareStabilityMonitor.badSampleCount < 3) return;
+  shareStabilityMonitor.badSampleCount = 0;
+  shareStabilityMonitor.promptCooldownUntil = now + 45000;
+  const fallback = controller.getFallbackScreenShareProfile?.();
+  if (!fallback) {
+    setStatus(TEXT_SHARE_PROFILE_STABILITY_MANUAL, 'warning');
+    return;
+  }
+  const confirmed = window.confirm(TEXT_SHARE_PROFILE_STABILITY_PROMPT);
+  if (!confirmed) {
+    setStatus(TEXT_SHARE_PROFILE_STABILITY_KEPT, 'warning');
+    return;
+  }
+  await applyShareProfilePreference(fallback, { applyToActiveShare: true, showStatus: false });
+  setStatus(TEXT_SHARE_PROFILE_STABILITY_APPLIED, 'warning');
+}
+
+function startShareStabilityMonitor() {
+  clearShareStabilityMonitor();
+  if (!livekitLocalShareActive) return;
+  shareStabilityMonitor.timer = window.setInterval(() => {
+    maybePromptShareProfileFallback().catch((err) => console.error(err));
+  }, 5000);
 }
 
 function updateSpeakerButtonState() {
@@ -1212,10 +1372,12 @@ function handleLocalLiveKitScreenShareState(isActive) {
   if (livekitLocalShareActive === nextState) return;
   livekitLocalShareActive = nextState;
   if (nextState) {
+    startShareStabilityMonitor();
     broadcastUiEvent({ type: 'screen_share_started', hideSidebar: true });
     setStatus(TEXT_SCREEN_SHARE_MODE);
     return;
   }
+  clearShareStabilityMonitor();
   broadcastUiEvent({ type: 'screen_share_stopped' });
   restoreMicrophoneAfterContentOnlyShare().catch(() => {});
   setStatus(TEXT_SCREEN_SHARE_STOPPED);
@@ -1254,6 +1416,7 @@ function ensureLiveKitController() {
     roomId: ROOM_ID,
     roomPassword: ROOM_PASSWORD,
     roomOptions: window.RoomPageLiveKit.buildRoomOptions?.() || {},
+    initialShareProfile: shareProfilePreference,
     isHost: IS_HOST === true || IS_HOST === 'true',
     getParticipantSid: () => socket.id,
     getDisplayName: () => USER_NAME,
@@ -1285,16 +1448,36 @@ async function ensureLiveKitConnected() {
   const controller = ensureLiveKitController();
   if (!controller || controller.isConnected()) return controller;
   try {
-    await controller.connect({
-      autoEnableCamera: !!PREF_AUTO_ENABLE_CAMERA,
-      autoEnableMicrophone: !!PREF_AUTO_ENABLE_MICROPHONE,
-    });
+    await controller.connect();
     return controller;
   } catch (err) {
     console.error(err);
     setStatus(`${TEXT_LIVEKIT_CONNECT_FAILED}: ${err?.message || 'unknown error'}`, 'error');
     throw err;
   }
+}
+
+function scheduleJoinMediaBootstrap() {
+  if (!IS_LIVEKIT_MODE || joinMediaBootstrapDone || joinMediaBootstrapTimer) return;
+  if (!PREF_AUTO_ENABLE_CAMERA && !PREF_AUTO_ENABLE_MICROPHONE) {
+    joinMediaBootstrapDone = true;
+    return;
+  }
+  joinMediaBootstrapTimer = window.setTimeout(async () => {
+    joinMediaBootstrapTimer = null;
+    if (hasLeftMeeting) return;
+    try {
+      const controller = await ensureLiveKitConnected();
+      if (!controller) return;
+      await Promise.allSettled([
+        PREF_AUTO_ENABLE_CAMERA ? controller.setCameraEnabled(true) : Promise.resolve(),
+        PREF_AUTO_ENABLE_MICROPHONE ? controller.setMicrophoneEnabled(true) : Promise.resolve(),
+      ]);
+      joinMediaBootstrapDone = true;
+    } catch (err) {
+      console.error(err);
+    }
+  }, 180);
 }
 
 function downloadBlob(blob, filename) {
@@ -1983,6 +2166,7 @@ const rtcDiagnostics = createRtcDiagnosticsController({
   getHeaderLines: () => ([
     `participants: ${Object.keys(participantMeta).length + 1}`,
     `sharing: ${isSharingScreen ? 'yes' : 'no'}`,
+    `share_profile: ${shareProfilePreference.mode}/${shareProfilePreference.level}`,
     `virtual_bg: ${virtualBgEnabled ? 'on' : 'off'}`,
   ]),
   outputEl: rtcDiagnosticsOutput,
@@ -1998,6 +2182,11 @@ function cleanupMeetingSession() {
   if (hasLeftMeeting) return;
   hasLeftMeeting = true;
   livekitLocalShareActive = false;
+  clearShareStabilityMonitor();
+  if (joinMediaBootstrapTimer) {
+    clearTimeout(joinMediaBootstrapTimer);
+    joinMediaBootstrapTimer = null;
+  }
   try {
     disableVirtualBackgroundState({ stopCanvas: true });
   } catch (_) {}
@@ -2035,7 +2224,6 @@ socket.on('connect', () => {
   queueRenderLayout();
   socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
   ensureLiveKitController()?.prepareConnection?.(LIVEKIT_URL);
-  ensureLiveKitConnected().catch(() => {});
 });
 
 socket.on('join_ok', async (data) => {
@@ -2069,6 +2257,9 @@ socket.on('join_ok', async (data) => {
     const reloadHint = pendingReloadRecoveryHint;
     pendingReloadRecoveryHint = null;
     await restoreLiveKitMediaAfterReload(reloadHint);
+    joinMediaBootstrapDone = true;
+  } else {
+    scheduleJoinMediaBootstrap();
   }
   refreshRtcDiagnostics().catch(() => {});
   if (data && data.host_present === false && IS_HOST) {
@@ -2286,9 +2477,13 @@ document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-
   }
   setStatus(enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 });
+shareProfileBtn && (shareProfileBtn.onclick = () => runMediaTask('share-profile-toggle', async () => {
+  await toggleShareProfileMode();
+}));
 document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-screen', async () => {
   const controller = await ensureLiveKitConnected();
   if (!controller) return;
+  await controller.setScreenShareProfile?.(shareProfilePreference, { applyToActiveShare: false });
   const mediaState = controller.getLocalMediaState?.() || {};
   let includeAudio = screenShareAudioPrefs.includeAudio;
   let keepMicWhenAudio = screenShareAudioPrefs.keepMicWhenAudio;
@@ -2311,6 +2506,7 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
   try {
     await controller.setScreenShareEnabled(undefined, {
       includeAudio: mediaState.screenShareEnabled ? undefined : includeAudio,
+      profile: shareProfilePreference,
     });
     if (!mediaState.screenShareEnabled && includeAudio) {
       verifySharedAudioAvailability(controller).catch(() => {});
@@ -2439,6 +2635,7 @@ window.addEventListener('beforeunload', () => {
 initChatUi();
 pendingReloadRecoveryHint = readReloadRecoveryHint();
 setSpeakerEnabled(speakerEnabled, { userGesture: false, persist: false, showStatus: false });
+updateShareProfileUi();
 refreshRtcStatsBtn?.addEventListener('click', () => { refreshRtcDiagnostics().catch(() => {}); });
 ensureCard('local', getDisplayName('local'), true);
 updateVirtualBackgroundButtonState();
