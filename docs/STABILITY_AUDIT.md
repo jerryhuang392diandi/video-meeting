@@ -1,172 +1,169 @@
-# 视频会议稳定性审计
+# 稳定性审计 / Stability Audit
 
-## 结论
+## 结论摘要 / Executive Summary
 
-当前项目的主路径已经是 `Flask + Socket.IO + LiveKit SFU`，整体稳定性瓶颈不再是旧版浏览器 Mesh 信令冲突，而是下面几类问题：
+中文：
 
-- 后端房间在线态仍保存在单进程内存 `rooms / sid_to_user / user_active_sids`
-- Socket.IO 的成员状态与 LiveKit 的媒体状态是两套系统，需要持续保持一致
-- 屏幕共享、虚拟背景、录屏都属于高资源占用功能，容易在低性能设备上互相争抢资源
-- 录屏转 MP4 依赖服务端 `ffmpeg`，属于额外的部署点
-- 当前仍以单体 `app.py` 维护所有业务，后续复杂度继续增长时可维护性会下降
+当前项目已经不再以浏览器 Mesh/P2P 作为主媒体路径，而是采用 `Flask + Socket.IO + LiveKit SFU` 的分层架构。稳定性重点因此发生了变化：主要风险不再是旧版 WebRTC 自协商冲突，而是运行时在线态仍在单进程内存中、Socket.IO 与 LiveKit 两套状态源之间的一致性、以及屏幕共享/虚拟背景/录屏带来的资源压力。
 
-换句话说，现在的风险重点是“业务状态一致性”和“资源压榨场景的退化能力”，不是多人 Mesh 连接数量爆炸。
+English:
 
-## 当前架构概览
+The project no longer relies on browser mesh/P2P as the primary media path. It now uses a layered `Flask + Socket.IO + LiveKit SFU` architecture. The main stability risks have therefore shifted away from legacy WebRTC self-negotiation conflicts toward single-process runtime room state, consistency between Socket.IO and LiveKit, and the resource cost of screen sharing, virtual background, and recording.
 
-### 业务层
+## 当前系统边界 / Current System Boundaries
 
-- `app.py` 处理登录、建房、加房、历史会议、后台管理、聊天、附件、录屏转封装
-- SQLAlchemy 持久化用户、会议、参会记录、密码找回请求
+### 业务层 / Business Layer
 
-### 实时状态层
+- `app.py` 负责登录注册、会议创建与加入、会议历史、管理员后台、聊天附件、录屏转封装、LiveKit token 下发。
+- SQLAlchemy 负责持久化用户、会议、参会记录、密码找回请求等数据。
 
-- Socket.IO 负责成员加入/离开、主持人动作、聊天广播、屏幕共享 UI 状态同步
-- 运行时在线态保存在进程内存
+### 状态同步层 / State Sync Layer
 
-### 媒体层
+- Socket.IO 负责成员加入/离开、聊天广播、主持人动作、共享焦点状态、界面级事件同步。
+- 房间在线态主要保存在内存结构中，例如 `rooms`、`sid_to_user`、`user_active_sids`。
 
-- LiveKit 负责摄像头、麦克风、屏幕共享、远端轨道订阅
-- 前端通过 `static/room_livekit.js` 管理房间连接与发布/订阅
+### 媒体层 / Media Layer
 
-### 展示层
+- LiveKit 负责摄像头、麦克风、屏幕共享、远端轨道订阅与 SFU 分发。
+- `static/room_livekit.js` 和房间脚本负责媒体连接、发布、恢复与前端控制。
 
-- `templates/_room_scripts.html` 负责房间页初始化
-- `static/room_ui.js`、`static/room_chat.js`、`static/room_diagnostics.js` 负责布局、聊天、诊断展示
+### 展示层 / Presentation Layer
 
-## 已确认的稳定性优点
+- `templates/_room_layout.html` 负责房间结构。
+- `templates/_room_scripts.html` 负责房间初始化和主交互编排。
+- `static/room_ui.js`、`static/room_chat.js`、`static/room_diagnostics.js` 分别负责布局、聊天、诊断展示。
 
-### 1. 已切到 SFU，而不是浏览器 Mesh
+## 已有优点 / Existing Strengths
 
-这意味着每个参会者不需要与其他每个人分别建立一套浏览器直连，稳定性和扩展性明显优于旧的 P2P Mesh。
+### 1. 媒体层已经迁移到 SFU / Media Already Runs on SFU
 
-### 2. LiveKit 与业务层已经做了边界划分
+中文：当前多人会议的扩展性明显优于传统浏览器 Mesh。每个用户不需要和所有其他成员分别建链，复杂度和带宽压力更可控。
 
-- Flask/Socket.IO 管业务
-- LiveKit 管媒体
+English: Multi-party scalability is much better than browser mesh. Each participant no longer needs a direct peer connection to every other participant.
 
-这比把所有音视频协商逻辑都堆在前端要稳得多，也更容易继续扩展。
+### 2. 业务与媒体职责已有边界 / Clearer Separation of Concerns
 
-### 3. 房间页已经有诊断面板
+中文：Flask/Socket.IO 管业务和房间状态，LiveKit 管媒体轨道。这比把所有逻辑都堆在一套自写 WebRTC 信令里更稳定，也更便于后续维护。
 
-`static/room_diagnostics.js` 能汇总 RTC 统计信息，便于排查码率、RTT、丢包和帧率。
+English: Flask/Socket.IO owns business and room state, while LiveKit owns media tracks. This is more maintainable than keeping everything in a custom WebRTC signaling flow.
 
-## 当前主要风险
+### 3. 已有基础诊断能力 / Basic Diagnostics Already Exist
 
-### A. 运行时房间状态仍然是单进程内存态
+中文：房间页已经有 RTC/LiveKit 诊断面板，排查码率、RTT、丢包、帧率时比纯黑盒系统更容易。
 
-当前这些状态不在 Redis 或数据库里，而是在应用进程内：
+English: The room page already exposes RTC/LiveKit diagnostics, which makes bitrate, RTT, packet loss, and frame-rate troubleshooting much easier.
 
-- `rooms`
-- `sid_to_user`
-- `user_active_sids`
+## 主要风险 / Main Risks
 
-风险：
+### A. 在线态仍是单进程内存 / Runtime Presence Is Still Single-Process Memory
 
-- 服务重启后在线态全部丢失
-- 多实例部署时状态不共享
-- Socket 连接与数据库记录之间没有真正的分布式一致性
+中文：
 
-建议：
+- 服务重启后在线态会丢失
+- 默认不适合多实例横向扩展
+- Socket 连接态和持久化数据之间没有真正的分布式一致性
 
-- 短期：继续保持单实例部署，避免把它误当成天然可横向扩展的架构
-- 中期：把在线态迁移到 Redis
-- 长期：将房间在线态与信令能力进一步拆分
+English:
 
-### B. Socket 成员状态和 LiveKit 媒体状态需要持续对齐
+- Online room presence is lost on restart
+- Horizontal scaling is not safe by default
+- There is no true distributed consistency between sockets and persisted data
 
-项目当前是“Socket.IO 维护谁在房间里，LiveKit 维护谁在发媒体”。这本身是合理设计，但必须注意：
+建议 / Recommendation:
 
-- 参与者加入成功，不等于媒体一定已经就绪
-- Socket 已离开，不等于 LiveKit 轨道已瞬时完成清理
-- 刷新重连和同账号多端在线时，最容易出现 UI 状态和媒体状态短暂错位
+- 短期保持单实例部署
+- 明确在文档中写出这一限制
+- 中期考虑将在线态迁移到 Redis
 
-建议：
+### B. Socket.IO 与 LiveKit 是两套状态源 / Socket.IO and LiveKit Are Two Sources of Truth
 
-- 继续保持“房间成员身份”使用明确的 `participant_sid`
-- 在所有重连和恢复路径上，优先做 roster 同步，再做媒体恢复
-- 每次改动 `join_ok / participant_snapshot / leave_room / disconnect` 时都做端到端复查
+中文：
 
-### C. 屏幕共享是高风险链路
+当前设计本身合理，但必须持续处理“成员状态”和“媒体状态”不同步的问题。用户加入成功，不代表媒体一定已就绪；Socket 离开，也不代表媒体轨道已瞬时清理。
 
-屏幕共享会同时影响：
+English:
 
-- LiveKit 媒体发布
-- 房间布局切换
-- 扬声器策略
-- 主讲人焦点状态
+The design is reasonable, but it requires continuous care to prevent drift between room membership state and media state. A successful room join does not mean media is ready yet, and a socket leaving does not guarantee that media tracks have been cleaned up instantly.
 
-风险点：
+重点关注 / Focus areas:
 
-- 刷新或异常退出后，`active_sharer_*` 状态可能短暂残留
-- 本地共享结束后，UI 与媒体恢复顺序容易出错
-- 移动端对共享音频、自动播放和全屏交互限制更多
+- `join_ok`
+- `participant_snapshot`
+- 刷新恢复与重连
+- 同账号多端在线
+- 屏幕共享开始与停止后的 UI 状态恢复
 
-建议：
+### C. 屏幕共享是联动最多的高风险功能 / Screen Share Is a High-Risk Cross-Cutting Feature
 
-- 每次修改共享逻辑时，同时检查服务端 `active_sharer_*` 清理和前端焦点恢复
-- 保持“UI 聚焦状态”和“媒体发布状态”分开处理
-- 对移动端继续优先保证“能看到共享内容”，其次才是复杂交互
+中文：
 
-### D. 虚拟背景的资源占用较高
+屏幕共享会同时触及 LiveKit 发布状态、房间布局、共享者焦点、扬声器体验和移动端浏览器限制。只要其中一个恢复顺序错位，就容易表现为“UI 还以为在共享，但媒体已经停了”或相反。
 
-当前虚拟背景依赖浏览器端分割和 Canvas 处理。它的代价不是信令复杂，而是本地 CPU/GPU 压力。
+English:
 
-风险：
+Screen sharing touches LiveKit publication state, room layout, share focus, speaker behavior, and mobile browser limitations all at once. Any mismatch in cleanup or restoration order can leave the UI and media transport out of sync.
 
-- 弱设备掉帧
-- 与屏幕共享、录屏同时启用时卡顿明显
-- 低端移动端发热和续航压力大
+建议 / Recommendation:
 
-建议：
+- 共享逻辑改动时，必须同时检查服务端 `active_sharer_*` 清理和前端焦点恢复
+- 对移动端优先保证“能看到共享内容”，其次再追求复杂交互
+- 刷新、异常退出、重新加入都要回归测试
 
-- 继续把虚拟背景视为增强能力，而不是核心稳定能力
-- 在双端联调里专门覆盖“开摄像头 + 虚拟背景 + 屏幕共享”的极限路径
-- 如后续用户规模变大，可考虑默认关闭或进一步降采样
+### D. 虚拟背景和录屏都在抢资源 / Virtual Background and Recording Compete for Resources
 
-### E. 录屏转 MP4 依赖服务端 ffmpeg
+中文：
 
-前端录屏本身是浏览器能力，但导出可拖动的 MP4 依赖后端转封装接口。
+虚拟背景依赖浏览器端分割与 Canvas 合成；录屏依赖浏览器编码，必要时还要走服务端 `ffmpeg`。在低性能设备上，这两类功能与摄像头、屏幕共享并行时容易掉帧、发热、卡顿。
 
-风险：
+English:
 
-- `ffmpeg` 未安装时功能不可用
-- 服务端转码会吃 CPU 和磁盘 IO
-- 大文件转换容易造成等待感知
+Virtual background depends on browser-side segmentation and compositing. Recording depends on browser encoding and may additionally rely on server-side `ffmpeg`. On weaker devices, these features easily compete with camera and screen sharing for CPU/GPU resources.
 
-建议：
+建议 / Recommendation:
 
-- 在部署文档里明确 `ffmpeg` 为可选但关键依赖
-- 大规模部署时考虑异步任务队列，而不是 Web 请求内直接执行
+- 把它们视为增强功能，而不是稳定性基线
+- 文档和演示中明确说明资源占用事实
+- 弱设备优先保证可用性，而不是画质或特效
 
-## 当前优先级建议
+### E. 单体 `app.py` 的维护压力会继续增长 / The Monolithic `app.py` Will Keep Growing
+
+中文：当前单体后端结构在课程项目阶段是可接受的，但随着功能增加，认证、房间、聊天、后台、录屏相关逻辑继续堆叠，会降低可读性与修改安全性。
+
+English: A monolithic backend is acceptable at this stage, but ongoing feature growth will reduce readability and make changes riskier across authentication, room, chat, admin, and recording logic.
+
+## 当前优先级建议 / Recommended Priority Order
 
 ### P0
 
-- 保持单实例部署前提写清楚
-- 所有房间相关改动都做 Socket 状态与 LiveKit 状态一致性复查
-- 屏幕共享相关改动必须覆盖刷新、重连、移动端场景
+- 文档中明确单实例部署前提
+- 所有房间相关改动都复查 Socket.IO 与 LiveKit 的一致性
+- 屏幕共享改动必须覆盖刷新、重连、移动端回归
 
 ### P1
 
-- 把在线态迁移到 Redis
-- 为房间恢复、同账号多端、主持人离线回归建立更清晰的状态机
-- 为录屏转 MP4 增加更明确的运维说明和失败提示
+- 在线态迁移到 Redis
+- 梳理更清晰的房间恢复与同账号多端状态机
+- 为录屏转 MP4 补充更明确的部署与失败提示
 
 ### P2
 
-- 拆分 `app.py` 中的业务域
-- 视部署规模决定是否引入独立任务队列与更完整的运维监控
+- 按业务域拆分 `app.py`
+- 视部署规模引入任务队列和更完整的监控
 
-## 不建议的误判
+## 不建议的误判 / Misdiagnoses to Avoid
 
-- 不要把当前问题继续归因到旧的 Mesh `createOffer` 冲突，那已经不是主路径
-- 不要把 LiveKit 稳定性问题和 Socket.IO 房间状态问题混成一类，它们是两个层面的系统
-- 不要把虚拟背景和录屏都当成“免费功能”，它们本质上都在抢本地或服务端资源
+- 不要继续把当前稳定性问题简单归因到旧的 Mesh `createOffer` 冲突
+- 不要混淆“Socket 房间状态问题”和“LiveKit 媒体问题”
+- 不要把虚拟背景和录屏当作零成本能力
 
-## 建议的后续工作顺序
+Do not:
 
-1. 先把运行时在线态和部署边界写清楚，避免误部署
-2. 再补足房间恢复、屏幕共享、移动端场景的回归测试
-3. 然后考虑 Redis 化在线态
-4. 最后再考虑把单体 `app.py` 拆分为更清晰的模块
+- blame everything on legacy mesh offer collisions
+- mix room-state bugs with media-transport bugs
+- treat virtual background and recording as free features
+
+## 一句话结论 / One-Line Conclusion
+
+中文：当前项目的核心稳定性问题，已经从“如何把浏览器 P2P 协商写对”转向“如何把业务状态、媒体状态和高负载功能的退化路径管理好”。
+
+English: The core stability challenge has shifted from “making browser P2P negotiation work” to “keeping business state, media state, and high-cost feature degradation paths under control.”

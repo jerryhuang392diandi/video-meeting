@@ -1,96 +1,131 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This is a Flask + Flask-SocketIO app with a mostly monolithic backend in `app.py`. Keep feature changes grouped by concern inside that file (auth, room lifecycle, chat upload, admin).
+This project is now a `Flask + Flask-SocketIO + LiveKit` online meeting app with a mostly monolithic backend in `app.py`. Keep feature changes grouped by concern inside that file, such as auth, room lifecycle, chat upload, recording, and admin management.
 
-- `app.py`: routes, Socket.IO events, SQLAlchemy models, runtime config.
-- `templates/`: Jinja2 pages and room partials (for example `_room_layout.html`, `_room_scripts.html`).
-- `static/`: room frontend logic (`room_rtc.js`, `room_ui.js`, `room_chat.js`, diagnostics) and shared styles.
+- `app.py`: routes, REST APIs, Socket.IO events, SQLAlchemy models, runtime config, LiveKit token handling.
+- `templates/`: Jinja2 pages and room partials, especially `_room_layout.html` and `_room_scripts.html`.
+- `static/`: room frontend logic (`room_livekit.js`, `room_ui.js`, `room_chat.js`, `room_diagnostics.js`, `room_utils.js`) and shared styles.
 - `translations.py`: Chinese/English translation keys used by `t(...)` in templates and backend.
 - `check_i18n.py`: lightweight i18n consistency checker for hardcoded Chinese in templates.
-- `instance/` (generated, ignored): SQLite DB and runtime uploads.
+- `docs/`: project docs, deployment notes, stability audit, and defense notes.
+- `instance/` (generated, ignored): SQLite DB, runtime uploads, generated admin password file.
 
 ## Build, Test, and Development Commands
-- `python -m venv venv` then `venv\Scripts\activate` (Windows): create and activate local environment.
-- `pip install -r requirements.txt`: install Flask/SocketIO dependencies.
-- `python app.py`: run local server.
+- `python -m venv venv` then `venv\Scripts\activate` on Windows: create and activate local environment.
+- `pip install -r requirements.txt`: install Flask, Socket.IO, and LiveKit-related dependencies.
+- `python app.py`: run the local server.
 - `python check_i18n.py`: scan templates for untranslated hardcoded Chinese text.
 
-There is currently no formal CI test runner in this repo; use the checks below before opening a PR.
+There is currently no formal CI test runner in this repo. Before shipping, rely on the manual checks listed below.
 
 ## Coding Style & Naming Conventions
-Use Python 4-space indentation and keep naming consistent with existing code:
-- `snake_case` for functions/variables (`preferred_display_name`, `chat_upload_dir`).
-- `UPPER_SNAKE_CASE` for constants (`MAX_PARTICIPANTS`).
-- clear, short event/route names aligned with existing Socket.IO and Flask patterns.
+Use Python 4-space indentation and keep naming consistent with the existing code:
 
-For templates, prefer translation keys (`t('key')`) over inline UI text. For static JS/CSS, keep changes modular by file responsibility (RTC logic in `room_rtc.js`, UI state in `room_ui.js`).
+- `snake_case` for functions and variables, such as `preferred_display_name` and `chat_upload_dir`.
+- `UPPER_SNAKE_CASE` for constants.
+- clear and short route/event names aligned with existing Flask and Socket.IO patterns.
+
+For templates, prefer translation keys through `t('key')` instead of inline UI text. For static JS/CSS, keep changes modular by file responsibility:
+
+- `room_livekit.js`: LiveKit room connection, local publish/unpublish, remote track handling.
+- `room_ui.js`: room layout, focus state, participant card UI.
+- `room_chat.js`: chat rendering and attachment rendering.
+- `room_diagnostics.js`: RTC/LiveKit diagnostics summary.
+- `room_utils.js`: shared helpers.
 
 ## Testing Guidelines
 Before submitting:
+
 - run `python check_i18n.py`;
 - start the app and smoke test login, room join/leave, media controls, and chat attachment upload;
-- verify both `zh` and `en` UI paths for any changed template.
-- for RTC changes, explicitly test the `join_ok` path with two clients (desktop + mobile): after first join (without refresh), each side must see the other side's card/video.
-- verify that joining with local camera/mic still blocked or not yet granted can still receive remote media (no "only self visible" regression).
+- verify both `zh` and `en` UI paths for any changed template;
+- test a two-client room join flow, ideally desktop + mobile, and confirm first join works without refresh;
+- verify that joining with local camera/mic still blocked or not yet granted can still receive remote media;
+- if you changed admin logic, verify `/admin` and the main admin actions still work.
 
-## RTC Regression Guard
-`templates/_room_scripts.html` has a recurring failure point around `join_ok` + `ensurePeer(...)`. Do not remove the base audio/video transceiver bootstrap unless replaced with an equivalent negotiation strategy.
+## LiveKit Regression Guard
+The project’s primary media path is now LiveKit SFU. Do not reintroduce browser-mesh assumptions into the main room bootstrap path.
 
-Minimum manual check after editing this area:
-- User A enters room, then User B enters from mobile Safari/Chrome.
-- B should immediately see A (without page refresh).
-- Both sides should receive `participant_snapshot` updates and keep remote cards visible.
-- If sharer refreshes while screen sharing, server must clear stale `active_sharer_*` state; client must not stay stuck in "self is sharer" layout.
-- After `join_ok` and `participant_snapshot`, ensure a renegotiation sweep still runs so late media readiness does not leave peers in "only self visible" state.
-- Joining with the same account on two devices must not evict the other active device; only truly stale same-user sids may be pruned.
+Minimum manual check after editing room media logic:
 
-### Mandatory RTC Change Review
-Before shipping any RTC/signaling change, do a full conflict audit across all offer paths, not only the function being edited.
-
-Required checklist:
-- Enumerate every `createOffer` call site and verify they all use the same initiator rule.
-- Verify `callPeer`, media-sync renegotiation, ICE-failure recovery, and snapshot/join handlers cannot bypass that rule.
-- Re-check server-side room state transitions (`join_room`, `participant_snapshot`, `active_sharer_*`) for stale-state conflicts after refresh/reconnect.
-- Run desktop↔mobile first-join tests in both directions, then refresh-and-rejoin tests, before finalizing.
+- User A enters a room, then User B joins from desktop or mobile.
+- B should immediately see A without refresh.
+- Both sides should remain visible after `join_ok`, `participant_snapshot`, and LiveKit room connection complete.
+- Refresh while screen sharing must not leave stale server-side `active_sharer_*` state or stale client-side “self is sharer” layout.
+- Joining with the same account on two devices must not evict the other active device unless the old socket is truly stale.
+- Room load must fail cleanly if LiveKit config is missing, including the expected `503` path.
 
 ## Cross-Module Conflict Audit
 Before editing any non-trivial logic, inspect adjacent modules and shared state first, then check whether the change creates duplicated or conflicting flows elsewhere.
 
 Minimum review steps for every substantial code change:
-- Identify every entry point that can mutate the same state (for example: initial load, refresh recovery, snapshot sync, user-triggered action, background retry).
-- Trace which files own that state and which files consume it (`app.py`, `templates/_room_scripts.html`, `static/room_rtc.js`, UI helpers).
-- Prefer one canonical update path per state domain; if the same state is updated in multiple handlers, refactor to a shared helper before adding more conditions.
+
+- Identify every entry point that can mutate the same state, such as initial load, refresh recovery, snapshot sync, user-triggered action, background retry, and disconnect cleanup.
+- Trace which files own that state and which files consume it, especially `app.py`, `templates/_room_scripts.html`, `static/room_livekit.js`, and UI helpers.
+- Prefer one canonical update path per state domain. If the same state is updated in multiple handlers, refactor to a shared helper before adding more conditions.
 - After refactoring, re-read all related handlers end-to-end and verify they still agree on ordering, ownership, and cleanup.
 
+## Room State Consistency Notes
+Important project-specific reality:
+
+- Socket.IO owns room roster, chat, host permissions, and UI-level room state.
+- LiveKit owns camera, microphone, screen share media transport, and remote track delivery.
+- Runtime online state is still primarily stored in single-process memory on the Flask side.
+
+That means every room change should be checked for consistency across:
+
+- Flask runtime room state
+- Socket.IO roster events
+- LiveKit participant/media lifecycle
+- front-end layout and focus state
+
 ## Screen Share Notes
-Important open documentation references:
-- MDN Perfect Negotiation: use symmetric WebRTC negotiation patterns; do not mix ad-hoc host-only offer rules into browser P2P flows.
-- MDN `MediaStreamTrack.contentHint`: screen sharing should prefer `detail` (or `text` when supported) for slides/text; camera video should prefer `motion`.
-- Jitsi / mediasoup architecture docs: stable multi-party conferencing at distance is typically built on SFU routing, not browser mesh.
+Screen sharing is still one of the most failure-prone features because it spans backend room state, LiveKit publication state, participant focus, and mobile browser constraints.
 
-Project-specific guidance:
-- This repository currently behaves like a mesh/P2P app, so long-distance performance is highly sensitive to RTT, packet loss, and TURN relay geography.
-- If two far-apart users are relayed through a distant TURN server, latency is infrastructure-limited; codec tweaks alone will not fully fix it.
-- For screen sharing, tune for one goal at a time: `detail` for text readability, `motion` for smoother cursor/video. Do not expect both at low bitrate.
-- Screen share bitrate/FPS must be lower on mobile and under weak networks; prioritize stability before sharpness.
-- When diagnosing poor remote screen-share FPS, check in this order: ICE path (direct vs relay), TURN region distance, RTT/loss stats, then sender bitrate/FPS constraints.
-- If product requirements include reliable long-distance multi-party screen sharing, plan an SFU migration; repeated mesh-side patches are a stopgap, not a final architecture.
+When changing screen share behavior:
 
-## SFU Migration Guard
-When migrating RTC from mesh to LiveKit SFU, do not mix half-migrated media control paths. Keep one owner per responsibility.
+- verify server cleanup of `active_sharer_*` fields;
+- verify client focus state reset after stop, refresh, and reconnect;
+- treat UI focus state separately from media publication state;
+- prioritize “remote users can still see the share” over polished secondary interactions on mobile or weak networks;
+- re-check recording and virtual background interactions if they share the same local media path.
 
-Required review steps before each SFU change:
-- Confirm which layer owns each action: Flask/Socket.IO for auth, room roster, chat, host permissions; LiveKit for camera, microphone, screen share, remote track delivery.
-- Audit every button handler and lifecycle hook (`connect`, `join_ok`, `participant_snapshot`, leave/reload cleanup) so a LiveKit path cannot fall through into mesh renegotiation code.
-- Keep participant identity mapping explicit. If Socket.IO still drives UI roster, LiveKit participant identity must match the same per-user/session key used by the room UI.
-- Treat screen-share focus state separately from media transport. UI focus/banners may stay on Socket.IO events during migration, but media publication/subscription must come from LiveKit only.
-- After each migration step, read the full room bootstrap path end-to-end and verify there is no duplicate media initialization, duplicate cleanup, or mixed publish/unpublish ownership.
+## Recording and Virtual Background Notes
+Both features are resource-heavy and should be treated as enhancement features, not baseline stability guarantees.
+
+- Recording may depend on browser output format and optional server-side `ffmpeg` remux.
+- Virtual background depends on browser-side processing and can degrade weak devices.
+- If a change touches local media replacement, verify camera, screen share, virtual background, and recording paths do not conflict.
+
+## Deployment and Runtime Guard
+Do not write docs or make deployment assumptions as if this app were already safely horizontally scalable.
+
+Current runtime reality:
+
+- room online state is still largely single-process memory;
+- LiveKit is external infrastructure and must be configured correctly;
+- `ffmpeg` is optional but required for some recording export paths;
+- deployment docs must stay aligned with actual env vars such as `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `PUBLIC_HOST`, and `PUBLIC_SCHEME`.
+
+## Documentation Maintenance
+When project behavior changes, update the relevant docs in the same workstream whenever practical.
+
+At minimum, check whether the change affects:
+
+- `README.md`
+- `docs/README.md`
+- `docs/STABILITY_AUDIT.md`
+- `docs/DEPLOYMENT_GUIDE.md`
+- `docs/答辩讲解文档.md`
+- `AGENTS.md`
+
+Do not leave `AGENTS.md` describing old mesh/P2P behavior after the code and README have moved on.
 
 ## Commit & Pull Request Guidelines
-Recent history favors concise, imperative commit subjects (for example: “Fix ...”, “Improve ...”, “Tune ...”).
+Recent history favors concise, imperative commit subjects such as `Fix ...`, `Improve ...`, or `Tune ...`.
 
 - Keep commit titles specific and action-first.
 - Scope PRs to one functional change area.
-- PR description should include: problem, solution summary, manual test steps, and screenshots/GIFs for UI changes.
-- Link related issues and call out config/env var changes explicitly (`PUBLIC_HOST`, `PUBLIC_SCHEME`, admin credentials).
+- PR descriptions should include the problem, the solution summary, manual test steps, and screenshots/GIFs for UI changes where relevant.
+- Link related issues and call out config/env var changes explicitly, especially `PUBLIC_HOST`, `PUBLIC_SCHEME`, admin credentials, and LiveKit-related settings.
