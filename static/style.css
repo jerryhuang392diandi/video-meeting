@@ -387,10 +387,43 @@ video {
   .grid.two, .auth-card, .room-grid-layout { grid-template-columns: 1fr; }
   .hero-copy h1 { font-size: 32px; }
   .topbar { flex-direction: column; align-items: flex-start; }
+  .top-actions {
+    width: 100%;
+  }
   .side-panel { position: static; }
+}
+@media (max-width: 720px) {
+  .shell {
+    padding: 20px 14px 32px;
+  }
+  .brand {
+    font-size: 24px;
+  }
+  .top-actions {
+    align-items: stretch;
+  }
+  .top-actions .chip,
+  .top-actions .user-pill {
+    flex: 1 1 calc(50% - 10px);
+    justify-content: center;
+    text-align: center;
+  }
+  .top-actions .lang-switch {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+  .hero-card {
+    padding: 22px;
+  }
 }
 @media (max-width: 620px) {
   .button-grid-2 { grid-template-columns: 1fr; }
+}
+@media (max-width: 460px) {
+  .top-actions .chip,
+  .top-actions .user-pill {
+    flex-basis: 100%;
+  }
 }
 
 
@@ -939,15 +972,6 @@ body.has-simulated-fullscreen {
   padding: 30px 34px 24px;
   overflow: hidden;
 }
-.guide-book::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 1px;
-  background: linear-gradient(180deg, transparent, rgba(255,255,255,.13), transparent);
-}
 .guide-book-topline {
   position: relative;
   z-index: 1;
@@ -1072,9 +1096,6 @@ body.has-simulated-fullscreen {
   }
   .guide-book {
     padding: 22px 18px 18px;
-  }
-  .guide-book::before {
-    display: none;
   }
   .guide-book-topline {
     flex-direction: column;
