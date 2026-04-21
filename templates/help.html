@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}{{ t('help_page_title') }}{% endblock %}
-{% block shell_class %}auth-shell narrow-shell{% endblock %}
+{% block shell_class %}auth-shell guide-shell{% endblock %}
 {% block content %}
 <header class="topbar compact">
   <div>
@@ -10,6 +10,7 @@
   <div class="top-actions">
     {% include '_language_switch.html' %}
     <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
+    <a class="chip" href="{{ url_for('index') }}">{{ t('back_home') }}</a>
   </div>
 </header>
 
@@ -19,47 +20,173 @@
     <h1>{{ t('guide_center') }}</h1>
     <p>{{ t('help_page_intro') }}</p>
     <div class="landing-actions">
-      <a class="ghost-btn anchor-btn" href="{{ url_for('login') }}">{{ t('back_to_login') }}</a>
+      <a class="ghost-btn anchor-btn" href="{{ url_for('index') }}">{{ t('back_home') }}</a>
       <a class="ghost-btn anchor-btn" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
       <a class="ghost-btn anchor-btn" href="{{ url_for('support_page') }}">{{ t('open_support_center') }}</a>
     </div>
   </div>
 </section>
 
-<section class="panel elevated-card help-page-panel">
-  <div class="section-head">
-    <h2>{{ t('guide_directory') }}</h2>
-    <span class="section-tag">{{ t('help_tag') }}</span>
-  </div>
-  <div class="guide-page-list">
-    <details class="guide-item">
-      <summary>{{ t('guide_login') }}</summary>
-      <p>{{ t('guide_login_desc') }}</p>
-    </details>
-    <details class="guide-item">
-      <summary>{{ t('guide_register') }}</summary>
-      <p>{{ t('guide_register_desc') }}</p>
-    </details>
-    <details class="guide-item">
-      <summary>{{ t('guide_create_meeting') }}</summary>
-      <p>{{ t('guide_create_meeting_desc') }}</p>
-    </details>
-    <details class="guide-item">
-      <summary>{{ t('guide_join_meeting') }}</summary>
-      <p>{{ t('guide_join_meeting_desc') }}</p>
-    </details>
-    <details class="guide-item">
-      <summary>{{ t('guide_share_screen') }}</summary>
-      <p>{{ t('guide_share_screen_desc') }}</p>
-    </details>
-    <details class="guide-item">
-      <summary>{{ t('guide_chat_delivery') }}</summary>
-      <p>{{ t('guide_chat_delivery_desc') }}</p>
-    </details>
-    <details class="guide-item">
-      <summary>{{ t('guide_account_region') }}</summary>
-      <p>{{ t('guide_account_region_desc') }}</p>
-    </details>
+<section class="guide-book-shell" data-guide-book>
+  <aside class="guide-book-nav" aria-label="{{ t('guide_directory') }}">
+    <div class="guide-book-nav-title">{{ t('guide_directory') }}</div>
+    <button class="guide-book-tab active" type="button" data-guide-page="0">{{ t('guide_login') }}</button>
+    <button class="guide-book-tab" type="button" data-guide-page="1">{{ t('guide_register') }}</button>
+    <button class="guide-book-tab" type="button" data-guide-page="2">{{ t('guide_account_region') }}</button>
+    <button class="guide-book-tab" type="button" data-guide-page="3">{{ t('guide_create_meeting') }}</button>
+    <button class="guide-book-tab" type="button" data-guide-page="4">{{ t('guide_join_meeting') }}</button>
+    <button class="guide-book-tab" type="button" data-guide-page="5">{{ t('guide_room_controls') }}</button>
+    <button class="guide-book-tab" type="button" data-guide-page="6">{{ t('guide_share_screen') }}</button>
+    <button class="guide-book-tab" type="button" data-guide-page="7">{{ t('guide_chat_delivery') }}</button>
+    <button class="guide-book-tab" type="button" data-guide-page="8">{{ t('guide_host_management') }}</button>
+  </aside>
+
+  <div class="guide-book">
+    <div class="guide-book-topline">
+      <div>
+        <span class="eyebrow">{{ t('help_page_title') }}</span>
+        <h2>{{ t('guide_book_title') }}</h2>
+      </div>
+      <span class="section-tag" data-guide-counter>1 / 9</span>
+    </div>
+    <p class="guide-book-hint">{{ t('guide_book_hint') }}</p>
+
+    <div class="guide-book-pages">
+      <article class="guide-book-page active" data-guide-book-page>
+        <h3>{{ t('guide_login') }}</h3>
+        <p>{{ t('guide_login_desc') }}</p>
+        <ul>
+          <li>{{ t('guide_login_item_credentials') }}</li>
+          <li>{{ t('guide_login_item_single_device') }}</li>
+          <li>{{ t('guide_login_item_recovery') }}</li>
+        </ul>
+      </article>
+      <article class="guide-book-page" data-guide-book-page hidden>
+        <h3>{{ t('guide_register') }}</h3>
+        <p>{{ t('guide_register_desc') }}</p>
+        <ul>
+          <li>{{ t('guide_register_item_username') }}</li>
+          <li>{{ t('guide_register_item_after') }}</li>
+        </ul>
+      </article>
+      <article class="guide-book-page" data-guide-book-page hidden>
+        <h3>{{ t('guide_account_region') }}</h3>
+        <p>{{ t('guide_account_region_desc') }}</p>
+        <ul>
+          <li>{{ t('guide_account_item_display') }}</li>
+          <li>{{ t('guide_account_item_timezone') }}</li>
+          <li>{{ t('guide_account_item_translation') }}</li>
+          <li>{{ t('guide_account_item_defaults') }}</li>
+        </ul>
+      </article>
+      <article class="guide-book-page" data-guide-book-page hidden>
+        <h3>{{ t('guide_create_meeting') }}</h3>
+        <p>{{ t('guide_create_meeting_desc') }}</p>
+        <ul>
+          <li>{{ t('guide_create_item_host_name') }}</li>
+          <li>{{ t('guide_create_item_invite') }}</li>
+          <li>{{ t('guide_create_item_mobile') }}</li>
+        </ul>
+      </article>
+      <article class="guide-book-page" data-guide-book-page hidden>
+        <h3>{{ t('guide_join_meeting') }}</h3>
+        <p>{{ t('guide_join_meeting_desc') }}</p>
+        <ul>
+          <li>{{ t('guide_join_item_link') }}</li>
+          <li>{{ t('guide_join_item_manual') }}</li>
+          <li>{{ t('guide_join_item_permissions') }}</li>
+          <li>{{ t('guide_join_item_receive') }}</li>
+        </ul>
+      </article>
+      <article class="guide-book-page" data-guide-book-page hidden>
+        <h3>{{ t('guide_room_controls') }}</h3>
+        <p>{{ t('guide_room_controls_desc') }}</p>
+        <ul>
+          <li>{{ t('guide_room_item_camera') }}</li>
+          <li>{{ t('guide_room_item_speaker') }}</li>
+          <li>{{ t('guide_room_item_layout') }}</li>
+          <li>{{ t('guide_room_item_diagnostics') }}</li>
+        </ul>
+      </article>
+      <article class="guide-book-page" data-guide-book-page hidden>
+        <h3>{{ t('guide_share_screen') }}</h3>
+        <p>{{ t('guide_share_screen_desc') }}</p>
+        <ul>
+          <li>{{ t('guide_share_item_source') }}</li>
+          <li>{{ t('guide_share_item_audio') }}</li>
+          <li>{{ t('guide_share_item_profile') }}</li>
+          <li>{{ t('guide_share_item_stop') }}</li>
+        </ul>
+      </article>
+      <article class="guide-book-page" data-guide-book-page hidden>
+        <h3>{{ t('guide_chat_delivery') }}</h3>
+        <p>{{ t('guide_chat_delivery_desc') }}</p>
+        <ul>
+          <li>{{ t('guide_chat_item_mentions') }}</li>
+          <li>{{ t('guide_chat_item_files') }}</li>
+          <li>{{ t('guide_chat_item_permission') }}</li>
+          <li>{{ t('guide_chat_item_translate') }}</li>
+        </ul>
+      </article>
+      <article class="guide-book-page" data-guide-book-page hidden>
+        <h3>{{ t('guide_host_management') }}</h3>
+        <p>{{ t('guide_host_management_desc') }}</p>
+        <ul>
+          <li>{{ t('guide_host_item_clear_chat') }}</li>
+          <li>{{ t('guide_host_item_end') }}</li>
+          <li>{{ t('guide_host_item_admin') }}</li>
+        </ul>
+      </article>
+    </div>
+
+    <div class="guide-book-footer">
+      <button class="ghost-btn" type="button" data-guide-prev>{{ t('guide_prev_page') }}</button>
+      <a class="ghost-btn anchor-btn" href="{{ url_for('index') }}">{{ t('back_home') }}</a>
+      <button class="ghost-btn" type="button" data-guide-next>{{ t('guide_next_page') }}</button>
+    </div>
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const book = document.querySelector('[data-guide-book]');
+    if (!book) return;
+    const pages = Array.from(book.querySelectorAll('[data-guide-book-page]'));
+    const tabs = Array.from(book.querySelectorAll('[data-guide-page]'));
+    const prev = book.querySelector('[data-guide-prev]');
+    const next = book.querySelector('[data-guide-next]');
+    const counter = book.querySelector('[data-guide-counter]');
+    let current = 0;
+
+    const showPage = (index) => {
+      current = Math.max(0, Math.min(index, pages.length - 1));
+      pages.forEach((page, pageIndex) => {
+        const active = pageIndex === current;
+        page.hidden = !active;
+        page.classList.toggle('active', active);
+      });
+      tabs.forEach((tab, tabIndex) => {
+        const active = tabIndex === current;
+        tab.classList.toggle('active', active);
+        tab.setAttribute('aria-current', active ? 'page' : 'false');
+      });
+      if (prev) prev.disabled = current === 0;
+      if (next) next.disabled = current === pages.length - 1;
+      if (counter) counter.textContent = `${current + 1} / ${pages.length}`;
+    };
+
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => showPage(Number(tab.dataset.guidePage || 0)));
+    });
+    if (prev) prev.addEventListener('click', () => showPage(current - 1));
+    if (next) next.addEventListener('click', () => showPage(current + 1));
+    book.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowLeft') showPage(current - 1);
+      if (event.key === 'ArrowRight') showPage(current + 1);
+    });
+    showPage(0);
+  });
+</script>
 {% endblock %}

@@ -16,7 +16,14 @@ An online meeting system built with `Flask + Flask-SocketIO + LiveKit`. The curr
 - Admin dashboard for users, meetings, password reset requests, and system stats
 - Chinese/English UI and a lightweight i18n checker
 - Bilingual Quickstart page for international guests
+- Full User Guide covering account preferences, join-time devices, chat attachments, screen sharing, and host actions
 - RTC/LiveKit diagnostics inside the meeting room
+
+## User-Facing Pages
+
+- `/quickstart`: A short first-use path covering language switching, sign-in, meeting creation or join, device permission, chat attachments, and screen sharing.
+- `/help`: The full User Guide, with details for account preferences, region/time zone, translation defaults, in-room device controls, shared screen audio, attachment permissions, and host wrap-up actions.
+- `/support`: Support page for login, device permission, meeting entry, or file upload issues.
 
 ## Architecture
 
