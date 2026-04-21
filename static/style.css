@@ -139,6 +139,25 @@ button:hover, .anchor-btn:hover, .chip:hover { transform: translateY(-1px); }
 }
 .chip.active { background: rgba(130,177,255,.18); border-color: rgba(130,177,255,.34); }
 .chip.danger { color: white; background: rgba(255,123,147,.16); }
+.lang-switch {
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.lang-switch-label {
+  padding: 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.lang-chip {
+  min-width: 54px;
+  justify-content: center;
+  padding: 8px 12px;
+  font-weight: 800;
+}
 .feature-chip { font-size: 13px; color: var(--muted); }
 .action-chip { color: var(--text); }
 .hero-card, .panel, .form-card, .status-card {
@@ -703,6 +722,66 @@ body.has-simulated-fullscreen {
   word-break: break-word;
 }
 
+.quickstart-shell {
+  max-width: 1180px;
+}
+.quickstart-hero {
+  min-height: 280px;
+  display: flex;
+  align-items: center;
+}
+.quickstart-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 22px;
+}
+.quickstart-card {
+  position: relative;
+  min-height: 230px;
+  padding-top: 58px;
+}
+.quickstart-card h2,
+.quickstart-detail h2,
+.quickstart-note h2 {
+  margin-top: 0;
+}
+.quickstart-card p,
+.quickstart-note p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+.quickstart-step {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: rgba(109,217,166,.14);
+  color: var(--success);
+  border: 1px solid rgba(109,217,166,.28);
+  font-weight: 800;
+}
+.quickstart-detail-grid {
+  margin-bottom: 22px;
+}
+.quickstart-detail ul {
+  margin: 12px 0 0;
+  padding-left: 20px;
+  color: var(--muted);
+  line-height: 1.8;
+}
+.quickstart-detail li + li {
+  margin-top: 8px;
+}
+.quickstart-note {
+  padding: 24px;
+}
+
 
 .auth-landing-card {
   display: grid;
@@ -794,6 +873,9 @@ body.has-simulated-fullscreen {
   min-height: 118px;
 }
 @media (max-width: 900px) {
+  .quickstart-steps {
+    grid-template-columns: 1fr;
+  }
   .auth-landing-card {
     grid-template-columns: 1fr;
     min-height: auto;
@@ -1317,6 +1399,10 @@ textarea {
   }
   .top-actions > * {
     max-width: 100% !important;
+  }
+  .lang-switch {
+    width: 100%;
+    justify-content: flex-start;
   }
   .room-grid-layout {
     display: grid !important;

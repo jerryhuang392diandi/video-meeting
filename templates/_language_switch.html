@@ -1,0 +1,5 @@
+<div class="lang-switch" aria-label="{{ t('language') }}">
+  <span class="lang-switch-label">{{ t('language_switch_label') }}</span>
+  <a class="chip lang-chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}" lang="zh">中文</a>
+  <a class="chip lang-chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}" lang="en">EN</a>
+</div>

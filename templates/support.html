@@ -7,9 +7,9 @@
     <div class="brand">{{ t('app_name') }}</div>
     <div class="muted">{{ t('subtitle') }}</div>
   </div>
-  <div class="lang-switch">
-    <a class="chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}">{{ t('lang_zh') }}</a>
-    <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
+  <div class="top-actions">
+    {% include '_language_switch.html' %}
+    <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
   </div>
 </header>
 
@@ -20,6 +20,7 @@
     <p>{{ t('support_page_intro') }}</p>
     <div class="landing-actions">
       <a class="ghost-btn anchor-btn" href="{{ url_for('login') }}">{{ t('back_to_login') }}</a>
+      <a class="ghost-btn anchor-btn" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
       <a class="ghost-btn anchor-btn" href="{{ url_for('help_page') }}">{{ t('open_help_center') }}</a>
     </div>
   </div>

@@ -5,10 +5,7 @@
     <div class="muted">{{ t('record_password_label') }}: {{ room_password }}</div>
   </div>
   <div class="top-actions">
-    <div class="lang-switch">
-      <a class="chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}">{{ t('lang_zh') }}</a>
-      <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">{{ t('lang_en') }}</a>
-    </div>
+    {% include '_language_switch.html' %}
     <span class="user-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
     <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
   </div>

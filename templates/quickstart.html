@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('quickstart_page_title') }}{% endblock %}
+{% block shell_class %}auth-shell quickstart-shell{% endblock %}
+{% block content %}
+<header class="topbar compact">
+  <div>
+    <div class="brand">{{ t('quickstart_page_title') }}</div>
+    <div class="muted">{{ t('quickstart_intro') }}</div>
+  </div>
+  <div class="top-actions">
+    {% include '_language_switch.html' %}
+    {% if current_user.is_authenticated %}
+      <a class="chip" href="{{ url_for('index') }}">{{ t('back_home') }}</a>
+    {% else %}
+      <a class="chip" href="{{ url_for('login') }}">{{ t('back_to_login') }}</a>
+    {% endif %}
+  </div>
+</header>
+
+<section class="hero-card quickstart-hero glass-highlight">
+  <div class="hero-copy wide">
+    <span class="eyebrow">{{ t('quickstart_eyebrow') }}</span>
+    <h1>{{ t('quickstart_heading') }}</h1>
+    <p>{{ t('quickstart_summary') }}</p>
+    <div class="feature-list">
+      <span class="feature-chip">{{ t('quickstart_guest_tag') }}</span>
+      <span class="feature-chip">{{ t('quickstart_host_tag') }}</span>
+      <span class="feature-chip">LiveKit SFU</span>
+      <span class="feature-chip">{{ t('meeting_duration_limit') }}</span>
+    </div>
+  </div>
+</section>
+
+<section class="quickstart-steps">
+  <article class="panel quickstart-card">
+    <span class="quickstart-step">1</span>
+    <h2>{{ t('quickstart_step_language') }}</h2>
+    <p>{{ t('quickstart_step_language_desc') }}</p>
+  </article>
+  <article class="panel quickstart-card">
+    <span class="quickstart-step">2</span>
+    <h2>{{ t('quickstart_step_account') }}</h2>
+    <p>{{ t('quickstart_step_account_desc') }}</p>
+  </article>
+  <article class="panel quickstart-card">
+    <span class="quickstart-step">3</span>
+    <h2>{{ t('quickstart_step_join') }}</h2>
+    <p>{{ t('quickstart_step_join_desc') }}</p>
+  </article>
+  <article class="panel quickstart-card">
+    <span class="quickstart-step">4</span>
+    <h2>{{ t('quickstart_step_create') }}</h2>
+    <p>{{ t('quickstart_step_create_desc') }}</p>
+  </article>
+  <article class="panel quickstart-card">
+    <span class="quickstart-step">5</span>
+    <h2>{{ t('quickstart_step_room') }}</h2>
+    <p>{{ t('quickstart_step_room_desc') }}</p>
+  </article>
+  <article class="panel quickstart-card">
+    <span class="quickstart-step">6</span>
+    <h2>{{ t('quickstart_step_chat') }}</h2>
+    <p>{{ t('quickstart_step_chat_desc') }}</p>
+  </article>
+</section>
+
+<section class="grid two quickstart-detail-grid">
+  <div class="panel elevated-card quickstart-detail">
+    <h2>{{ t('quickstart_hosts_title') }}</h2>
+    <ul>
+      <li>{{ t('quickstart_hosts_item_create') }}</li>
+      <li>{{ t('quickstart_hosts_item_invite') }}</li>
+      <li>{{ t('quickstart_hosts_item_end') }}</li>
+    </ul>
+  </div>
+  <div class="panel elevated-card quickstart-detail">
+    <h2>{{ t('quickstart_guests_title') }}</h2>
+    <ul>
+      <li>{{ t('quickstart_guests_item_link') }}</li>
+      <li>{{ t('quickstart_guests_item_permission') }}</li>
+      <li>{{ t('quickstart_guests_item_devices') }}</li>
+    </ul>
+  </div>
+</section>
+
+<section class="panel elevated-card quickstart-note">
+  <div class="section-head">
+    <h2>{{ t('quickstart_troubleshooting_title') }}</h2>
+    <span class="section-tag">{{ t('help_tag') }}</span>
+  </div>
+  <p>{{ t('quickstart_troubleshooting_desc') }}</p>
+  <div class="landing-actions">
+    <a class="ghost-btn anchor-btn" href="{{ url_for('help_page') }}">{{ t('open_help_center') }}</a>
+    <a class="ghost-btn anchor-btn" href="{{ url_for('support_page') }}">{{ t('open_support_center') }}</a>
+  </div>
+</section>
+{% endblock %}

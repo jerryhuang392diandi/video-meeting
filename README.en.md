@@ -15,6 +15,7 @@ An online meeting system built with `Flask + Flask-SocketIO + LiveKit`. The curr
 - Host controls for ending meetings, clearing chat, and managing room behavior
 - Admin dashboard for users, meetings, password reset requests, and system stats
 - Chinese/English UI and a lightweight i18n checker
+- Bilingual Quickstart page for international guests
 - RTC/LiveKit diagnostics inside the meeting room
 
 ## Architecture

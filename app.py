@@ -1055,6 +1055,11 @@ def help_page():
     return render_template("help.html")
 
 
+@app.route("/quickstart")
+def quickstart_page():
+    return render_template("quickstart.html")
+
+
 @app.route("/support")
 def support_page():
     return render_template("support.html")
