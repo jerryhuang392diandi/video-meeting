@@ -167,7 +167,11 @@ python check_i18n.py
 ## 文档
 
 - [docs/README.md](docs/README.md) / [English](docs/README.en.md): 文档地图
+
 - [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) / [English](docs/DEPLOYMENT_GUIDE.en.md): 部署、更新和排障
+
 - [docs/STABILITY_AUDIT.md](docs/STABILITY_AUDIT.md) / [English](docs/STABILITY_AUDIT.en.md): 稳定性风险和后续演进建议
+
 - [docs/项目说明与代码索引.md](docs/%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](docs/PROJECT_GUIDE.en.md): 项目逻辑、核心流程、代码索引和展示讲解口径
-- `docs/视觉媒体通信期末大作业实践报告.docx`: 课程报告原稿
+
+	

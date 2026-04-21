@@ -167,7 +167,11 @@ Deployment and runtime configuration mainly follow these official documents. See
 ## Documentation
 
 - [docs/README.md](docs/README.md) / [English](docs/README.en.md): documentation map
+
 - [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) / [English](docs/DEPLOYMENT_GUIDE.en.md): deployment, update, and troubleshooting
+
 - [docs/STABILITY_AUDIT.md](docs/STABILITY_AUDIT.md) / [English](docs/STABILITY_AUDIT.en.md): stability risks and evolution plan
+
 - [docs/项目说明与代码索引.md](docs/%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](docs/PROJECT_GUIDE.en.md): project logic, core flows, code index, and presentation notes
-- `docs/视觉媒体通信期末大作业实践报告.docx`: archived course report
+
+	
