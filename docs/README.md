@@ -1,46 +1,28 @@
-# 文档导航 / Documentation Hub
+# 文档地图
 
-这个目录存放项目当前版本的配套说明文档。除课程报告 `.docx` 外，其余文档已按当前代码状态重新整理，尽量采用中文主叙述，并补充英文说明，方便在 GitHub 上直接阅读。
+这里放项目说明、部署手册、稳定性审计和课程答辩材料。根目录 [README.md](../README.md) 是项目入口；本文件只负责告诉你该读哪一份文档。
 
-This directory contains the supporting documentation for the current project state. Except for the course report `.docx`, the other documents have been rewritten around the current codebase, with Chinese as the primary language and English added for GitHub readability.
+## 推荐阅读顺序
 
-## 文档列表 / Documents
+1. [../README.md](../README.md): 先了解项目功能、架构、本地运行和关键配置。
+2. [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md): 准备部署、更新服务器或排查线上问题时阅读。
+3. [STABILITY_AUDIT.md](STABILITY_AUDIT.md): 改房间、媒体、屏幕共享、录屏或部署架构前阅读。
+4. [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md): 准备课程展示、口头讲解或代码跟读时阅读。
 
-### [../README.md](../README.md)
+## 文档职责
 
-- 中文：仓库主页文档，适合第一次打开项目时快速了解功能、架构、运行方式和环境变量。
-- English: The repository landing page for a quick understanding of features, architecture, setup, and environment variables.
+| 文档 | 用途 | 适合读者 |
+| --- | --- | --- |
+| [../README.md](../README.md) | 项目总览、本地启动、配置和基本检查 | 第一次打开项目的人 |
+| [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) | 服务器更新、依赖安装、服务重启、日志排查 | 部署和维护项目的人 |
+| [STABILITY_AUDIT.md](STABILITY_AUDIT.md) | 当前架构边界、风险、回归重点和演进方向 | 修改核心逻辑的人 |
+| [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) | 项目逻辑、核心流程、代码索引和常见问题回答 | 准备展示或维护代码的人 |
+| `视觉媒体通信期末大作业实践报告.docx` | 课程报告原稿归档 | 需要提交课程材料的人 |
 
-### [STABILITY_AUDIT.md](STABILITY_AUDIT.md)
+## 维护规则
 
-- 中文：围绕当前 `Flask + Socket.IO + LiveKit` 架构整理的稳定性审计，重点关注单进程在线态、Socket.IO 与 LiveKit 的一致性、屏幕共享、虚拟背景、录屏和后续演进风险。
-- English: A stability audit for the current `Flask + Socket.IO + LiveKit` architecture, focusing on single-process runtime state, Socket.IO and LiveKit consistency, screen sharing, virtual background, recording, and future evolution risks.
-
-### [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
-
-- 中文：把原来的纯文本更新清单改写为 Markdown 部署手册，覆盖本地提交流程、服务器更新流程、依赖更新、systemd 管理与日志排查。
-- English: A Markdown deployment guide that replaces the old plain-text checklist, covering local Git workflow, server updates, dependency refresh, systemd management, and log troubleshooting.
-
-### [答辩讲解文档.md](%E7%AD%94%E8%BE%A9%E8%AE%B2%E8%A7%A3%E6%96%87%E6%A1%A3.md)
-
-- 中文：面向课程答辩的讲解稿，按“项目是什么、为什么这样做、代码怎么分工、局限在哪里”组织，也保留了“为什么不用 C 语言”的回答素材。
-- English: Defense notes for a course presentation, organized around what the project is, why it was built this way, how the code is split, what the limitations are, and why C was not chosen.
-
-### `视觉媒体通信期末大作业实践报告.docx`
-
-- 中文：课程报告 Word 原稿，本次不改写，只保留归档。
-- English: The original course report in Word format. It is intentionally preserved and not rewritten in this pass.
-
-## 阅读建议 / Recommended Reading Order
-
-1. 先看根目录 `README.md`
-2. 再看 `STABILITY_AUDIT.md`
-3. 如果要部署或更新服务器，再看 `DEPLOYMENT_GUIDE.md`
-4. 如果要准备答辩，再看 `答辩讲解文档.md`
-
-Suggested order:
-
-1. Start with the root `README.md`
-2. Then read `STABILITY_AUDIT.md`
-3. Use `DEPLOYMENT_GUIDE.md` for deployment and update work
-4. Use `答辩讲解文档.md` when preparing for a presentation or defense
+- 行为变化优先更新根 README。
+- 部署命令、环境变量或服务管理方式变化时更新 `DEPLOYMENT_GUIDE.md`。
+- 房间状态、LiveKit、屏幕共享、录屏、虚拟背景相关变化时更新 `STABILITY_AUDIT.md`。
+- 课程展示口径、核心流程或代码索引变化时更新 `项目说明与代码索引.md`。
+- `.docx` 报告是归档材料，除非明确需要重新出报告，否则不要把它当作代码文档同步更新。
