@@ -1,6 +1,12 @@
 {% extends 'base.html' %}
 {% block title %}{{ error_title or '404' }}{% endblock %}
 {% block content %}
+<header class="topbar compact">
+  <div></div>
+  <div class="top-actions">
+    {% include '_language_switch.html' %}
+  </div>
+</header>
 <section class="panel centered narrow-panel panel-glow">
   <div class="eyebrow">{{ error_title or '404' }}</div>
   <h1>{{ error_message or t('page_not_found') }}</h1>

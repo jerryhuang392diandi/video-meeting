@@ -7,6 +7,7 @@
     <div class="muted">{{ t('manage_account_desc') }}</div>
   </div>
   <div class="top-actions">
+    {% include '_language_switch.html' %}
     <a class="chip" href="{{ url_for('index') }}">{{ t('back_home') }}</a>
   </div>
 </header>
@@ -22,11 +23,28 @@
       <label>{{ t('display_name') }}</label>
       <input name="display_name" maxlength="32" value="{{ preferred_display_name }}" />
       <label>{{ t('region_timezone') }}</label>
-      <select name="region">
-        {% for item in region_timezone_options %}
-        <option value="{{ item }}" {% if region == item %}selected{% endif %}>{{ item }}</option>
-        {% endfor %}
-      </select>
+      <div class="timezone-picker" data-timezone-picker>
+        <input type="hidden" name="region" value="{{ region }}" data-timezone-input />
+        <button class="timezone-picker-button" type="button" aria-haspopup="listbox" aria-expanded="false" data-timezone-button>
+          <span data-timezone-current>{{ region_timezone_label }}</span>
+          <small>{{ region }}</small>
+        </button>
+        <div class="timezone-picker-menu" role="listbox" hidden data-timezone-menu>
+          {% for item in region_timezone_options %}
+          <button
+            class="timezone-picker-option {% if region == item.value %}selected{% endif %}"
+            type="button"
+            role="option"
+            aria-selected="{{ 'true' if region == item.value else 'false' }}"
+            data-value="{{ item.value }}"
+            data-label="{{ item.label }}"
+          >
+            <span>{{ item.label }}</span>
+            <small>{{ item.code }}</small>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
       <label>{{ t('translation_default') }}</label>
       <select name="preferred_locale">
         <option value="auto" {% if preferred_locale == 'auto' %}selected{% endif %}>{{ t('auto_detect') }}</option>
@@ -75,4 +93,68 @@
     </form>
   </div>
 </section>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-timezone-picker]').forEach((picker) => {
+      const input = picker.querySelector('[data-timezone-input]');
+      const button = picker.querySelector('[data-timezone-button]');
+      const current = picker.querySelector('[data-timezone-current]');
+      const menu = picker.querySelector('[data-timezone-menu]');
+      const options = Array.from(picker.querySelectorAll('[data-value]'));
+      if (!input || !button || !current || !menu) return;
+
+      const close = () => {
+        menu.hidden = true;
+        button.setAttribute('aria-expanded', 'false');
+      };
+      const open = () => {
+        menu.hidden = false;
+        button.setAttribute('aria-expanded', 'true');
+        const selected = picker.querySelector('.timezone-picker-option.selected') || options[0];
+        if (selected) selected.focus({ preventScroll: true });
+      };
+      const selectOption = (option) => {
+        input.value = option.dataset.value || '';
+        current.textContent = option.dataset.label || option.textContent.trim();
+        button.querySelector('small').textContent = input.value;
+        options.forEach((item) => {
+          const isSelected = item === option;
+          item.classList.toggle('selected', isSelected);
+          item.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+        });
+        close();
+        button.focus();
+      };
+
+      button.addEventListener('click', () => {
+        if (menu.hidden) open();
+        else close();
+      });
+      options.forEach((option, index) => {
+        option.addEventListener('click', () => selectOption(option));
+        option.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            close();
+            button.focus();
+          } else if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            options[Math.min(index + 1, options.length - 1)].focus();
+          } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            options[Math.max(index - 1, 0)].focus();
+          } else if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectOption(option);
+          }
+        });
+      });
+      document.addEventListener('click', (event) => {
+        if (!picker.contains(event.target)) close();
+      });
+    });
+  });
+</script>
 {% endblock %}

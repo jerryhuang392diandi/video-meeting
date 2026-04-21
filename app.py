@@ -182,6 +182,46 @@ REGION_TIMEZONE_OPTIONS = [
     "Australia/Sydney",
     "UTC",
 ]
+REGION_TIMEZONE_LABELS = {
+    "zh": {
+        "Asia/Tokyo": "东京，日本",
+        "Asia/Shanghai": "上海，中国",
+        "Asia/Hong_Kong": "香港，中国",
+        "Asia/Singapore": "新加坡",
+        "Asia/Seoul": "首尔，韩国",
+        "Asia/Dubai": "迪拜，阿联酋",
+        "Asia/Tehran": "德黑兰，伊朗",
+        "Europe/Moscow": "莫斯科，俄罗斯",
+        "Europe/Istanbul": "伊斯坦布尔，土耳其",
+        "Europe/London": "伦敦，英国",
+        "Europe/Paris": "巴黎，法国",
+        "Europe/Berlin": "柏林，德国",
+        "America/Los_Angeles": "洛杉矶，美国",
+        "America/New_York": "纽约，美国",
+        "America/Toronto": "多伦多，加拿大",
+        "Australia/Sydney": "悉尼，澳大利亚",
+        "UTC": "协调世界时",
+    },
+    "en": {
+        "Asia/Tokyo": "Tokyo, Japan",
+        "Asia/Shanghai": "Shanghai, China",
+        "Asia/Hong_Kong": "Hong Kong, China",
+        "Asia/Singapore": "Singapore",
+        "Asia/Seoul": "Seoul, South Korea",
+        "Asia/Dubai": "Dubai, United Arab Emirates",
+        "Asia/Tehran": "Tehran, Iran",
+        "Europe/Moscow": "Moscow, Russia",
+        "Europe/Istanbul": "Istanbul, Turkey",
+        "Europe/London": "London, United Kingdom",
+        "Europe/Paris": "Paris, France",
+        "Europe/Berlin": "Berlin, Germany",
+        "America/Los_Angeles": "Los Angeles, United States",
+        "America/New_York": "New York, United States",
+        "America/Toronto": "Toronto, Canada",
+        "Australia/Sydney": "Sydney, Australia",
+        "UTC": "UTC",
+    },
+}
 
 from translations import TRANSLATIONS
 
@@ -265,6 +305,21 @@ def tf(lang: str, key: str) -> str:
     return TRANSLATIONS.get(lang, TRANSLATIONS["zh"]).get(key, key)
 
 
+def localized_timezone_options(lang: str):
+    labels = REGION_TIMEZONE_LABELS.get(lang, REGION_TIMEZONE_LABELS["zh"])
+    return [
+        {
+            "value": value,
+            "label": labels.get(value, value),
+            "code": value,
+        }
+        for value in REGION_TIMEZONE_OPTIONS
+    ]
+
+
+def localized_timezone_label(value: str, lang: str) -> str:
+    labels = REGION_TIMEZONE_LABELS.get(lang, REGION_TIMEZONE_LABELS["zh"])
+    return labels.get(value, value)
 
 
 def preferred_display_name(user):
@@ -1000,6 +1055,8 @@ def account_page():
             auto_enable_speaker = bool_from_form(request.form.get("auto_enable_speaker"), True)
             if preferred_locale not in {"auto", "zh", "en"}:
                 preferred_locale = "auto"
+            if region not in REGION_TIMEZONE_OPTIONS:
+                region = "Asia/Tokyo"
             if default_attachment_permission not in {"view", "download"}:
                 default_attachment_permission = "download"
             if not username:
@@ -1035,14 +1092,17 @@ def account_page():
                 disconnect_user_sockets(fresh_user.id, message=t("kicked"))
                 message = t("password_updated")
     fresh_user = db.session.get(User, current_user.id)
+    current_region = fresh_user.region or "Asia/Tokyo"
+    current_lang = session.get("lang", "zh")
     return render_template(
         "account.html",
         user=fresh_user,
         message=message,
         error=error,
         preferred_display_name=preferred_display_name(fresh_user),
-        region=(fresh_user.region or "Asia/Tokyo"),
-        region_timezone_options=REGION_TIMEZONE_OPTIONS,
+        region=current_region,
+        region_timezone_options=localized_timezone_options(current_lang),
+        region_timezone_label=localized_timezone_label(current_region, current_lang),
         preferred_locale=(fresh_user.preferred_locale or "auto"),
         default_attachment_permission=(fresh_user.default_attachment_permission or "download"),
         default_danmaku_enabled=bool(getattr(fresh_user, "default_danmaku_enabled", True)),

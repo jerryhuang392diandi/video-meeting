@@ -13,6 +13,7 @@
     .meta{flex:1;min-width:0}.meta h1{font-size:22px;margin:0 0 8px;word-break:break-word}.meta p{margin:4px 0;color:#b8c7e6}
     .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 16px;border-radius:12px;text-decoration:none;border:1px solid rgba(255,255,255,.08);color:#eef4ff;background:rgba(255,255,255,.05)}
     .btn.primary{background:linear-gradient(135deg,#7aa8ff,#67d4ff);color:#081225;border:none;font-weight:700}
+    .top-actions{display:flex;justify-content:flex-end;margin-bottom:14px}.lang-switch{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}.lang-switch-label{padding:0 8px;color:#9eb2d2;font-size:12px;font-weight:700;white-space:nowrap}.chip{padding:10px 14px;border-radius:999px;color:#eef4ff;text-decoration:none;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}.chip.active{background:rgba(130,177,255,.18);border-color:rgba(130,177,255,.34)}
     .preview{margin-top:18px;border-radius:18px;overflow:hidden;background:#020814;border:1px solid rgba(255,255,255,.08);min-height:280px;display:flex;align-items:center;justify-content:center}
     .preview iframe,.preview img,.preview video,.preview audio,.preview pre{width:100%;max-width:100%;border:0}.preview img,.preview video{display:block;max-height:78vh;object-fit:contain;background:#000}.preview iframe{height:78vh;background:#fff}.preview pre{margin:0;padding:18px;white-space:pre-wrap;word-break:break-word;color:#eaf2ff;background:#06111f;min-height:280px;box-sizing:border-box}
     .note{padding:18px;color:#b8c7e6;line-height:1.7}.warn{color:#ffd6a6}
@@ -20,6 +21,13 @@
 </head>
 <body>
   <div class="wrap">
+    <div class="top-actions">
+      <div class="lang-switch" aria-label="{{ t('language') }}">
+        <span class="lang-switch-label">{{ t('language_switch_label') }}</span>
+        <a class="chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}" lang="zh">中文</a>
+        <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}" lang="en">EN</a>
+      </div>
+    </div>
     <div class="card">
       <div class="head">
         <div class="badge">{{ (attachment.kind or attachment.name.split('.')[-1] if '.' in attachment.name else 'FILE')|upper }}</div>
