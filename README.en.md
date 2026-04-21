@@ -142,6 +142,20 @@ Recommended manual smoke tests:
 - Chinese/English UI switching
 - Common admin dashboard actions
 
+## References
+
+Deployment and runtime configuration mainly follow these official documents. See the "References" section in [docs/DEPLOYMENT_GUIDE.en.md](docs/DEPLOYMENT_GUIDE.en.md) for the detailed deployment context.
+
+| Topic | Official documentation |
+| --- | --- |
+| Flask-SocketIO deployment | [Flask-SocketIO Deployment](https://flask-socketio.readthedocs.io/en/latest/deployment.html) |
+| Gunicorn settings | [Gunicorn Settings](https://docs.gunicorn.org/en/stable/settings.html) |
+| Nginx WebSocket proxying | [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html) |
+| Certbot / Let's Encrypt | [Certbot install guide](https://eff-certbot.readthedocs.io/en/stable/install.html) |
+| Cloudflare SSL mode | [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) |
+| systemd environment variables | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) |
+| LiveKit | [LiveKit Docs](https://docs.livekit.io/) |
+
 ## Documentation
 
 - [docs/README.md](docs/README.md) / [English](docs/README.en.md): documentation map

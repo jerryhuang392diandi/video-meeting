@@ -4,6 +4,27 @@
 
 This guide covers the full path from buying a Linux cloud server to running the app online. Examples assume Ubuntu 22.04 / 24.04, Nginx, systemd, Gunicorn + eventlet, SQLite, and an external LiveKit service. Replace paths, domains, and service names as needed.
 
+## 0. How to Read Command Blocks
+
+Commands in this guide run in a Linux shell on the server unless stated otherwise. After important command blocks, the guide explains:
+
+- What each line does.
+- Which values must be replaced with your real values.
+- Which parameters can be customized for your server or project.
+
+The examples use these placeholders:
+
+| Placeholder | Meaning | Replace with |
+| --- | --- | --- |
+| `meeting.example.com` | Meeting system domain | Your own domain or subdomain |
+| `your_server_ip` | Cloud server public IP | The public IP shown in your cloud console |
+| `/opt/video-meeting` | Project deployment directory | Keep it or use your own directory |
+| `deploy` | Linux runtime user | Keep it or use your own username |
+| `video-meeting` | systemd service name | Keep it or use a shorter service name |
+| `main` | Git default branch | Your actual deployment branch |
+
+For a course demo, keeping the example directory, username, and service name reduces troubleshooting variables.
+
 ## 1. Recommended Architecture
 
 ```text
@@ -45,6 +66,15 @@ apt upgrade -y
 timedatectl set-timezone Asia/Shanghai
 ```
 
+Command explanation:
+
+| Command | Meaning | Customizable |
+| --- | --- | --- |
+| `ssh root@your_server_ip` | Log in to the new server as root | Replace `your_server_ip`; replace `root` if your provider uses another username |
+| `apt update` | Refresh package indexes | Usually keep it |
+| `apt upgrade -y` | Upgrade installed packages; `-y` auto-confirms | Remove `-y` if you want manual confirmation |
+| `timedatectl set-timezone Asia/Shanghai` | Set server timezone to Shanghai | Use `UTC` or another timezone if appropriate |
+
 Create a dedicated runtime user:
 
 ```bash
@@ -53,6 +83,14 @@ usermod -aG sudo deploy
 su - deploy
 ```
 
+Command explanation:
+
+| Command | Meaning | Customizable |
+| --- | --- | --- |
+| `adduser deploy` | Create a normal Linux user named `deploy` | Replace `deploy` with another username |
+| `usermod -aG sudo deploy` | Allow `deploy` to run admin commands through `sudo` | In stricter production setups, omit sudo and let an admin run privileged commands |
+| `su - deploy` | Switch to the `deploy` user | Must match the user above |
+
 ## 3. Install System Dependencies
 
 ```bash
@@ -60,12 +98,19 @@ sudo apt update
 sudo apt install -y python3 python3-venv python3-pip git nginx ffmpeg curl ufw
 ```
 
-Notes:
+Command and dependency explanation:
 
-- `python3-venv` creates the virtual environment.
-- `nginx` handles the public entry point, HTTPS, and WebSocket reverse proxy.
-- `ffmpeg` remuxes browser WebM recordings to MP4; omit it only if MP4 export is not needed.
-- `ufw` is the common Ubuntu firewall tool.
+| Item | Meaning | Customizable |
+| --- | --- | --- |
+| `sudo apt update` | Refresh package indexes | Do not skip |
+| `python3` | Python runtime | Ubuntu 22.04 / 24.04 built-in versions are usually enough |
+| `python3-venv` | Creates the project virtual environment | Required |
+| `python3-pip` | Installs Python packages | Required |
+| `git` | Pulls code from Git | Optional if deploying by archive, but Git is recommended |
+| `nginx` | Public entry, HTTPS, WebSocket reverse proxy | Can be replaced by Caddy/Apache, but this guide uses Nginx |
+| `ffmpeg` | WebM recording remux to MP4 | Optional if MP4 export is not needed |
+| `curl` | Command-line HTTP testing | Recommended |
+| `ufw` | Ubuntu firewall tool | Can be supplemented by cloud security groups |
 
 Enable a basic firewall:
 
@@ -75,6 +120,15 @@ sudo ufw allow "Nginx Full"
 sudo ufw enable
 sudo ufw status
 ```
+
+Command explanation:
+
+| Command | Meaning | Customizable |
+| --- | --- | --- |
+| `sudo ufw allow OpenSSH` | Allows SSH so you do not lock yourself out | If SSH uses a custom port, allow that port |
+| `sudo ufw allow "Nginx Full"` | Allows Nginx HTTP `80` and HTTPS `443` | If not using Nginx, allow `80/tcp` and `443/tcp` manually |
+| `sudo ufw enable` | Enables the firewall | Confirm SSH is allowed first |
+| `sudo ufw status` | Shows active firewall rules | Use it to verify rules |
 
 ## 4. Prepare the Project Directory
 
@@ -100,6 +154,19 @@ pip install gunicorn eventlet
 If you upload a project archive instead, extract it into `/opt/video-meeting`, then create the virtual environment and install dependencies.
 
 `gunicorn` and `eventlet` are for Linux production runtime only; Windows local development still uses `python app.py` as shown in the root README.
+
+Command explanation:
+
+| Command | Meaning | Customizable |
+| --- | --- | --- |
+| `sudo mkdir -p /opt/video-meeting` | Creates the project directory, including parents | Replace with `/srv/video-meeting` or another path if desired |
+| `sudo chown deploy:deploy /opt/video-meeting` | Gives ownership to the `deploy` user | Must match your runtime user |
+| `git clone ... .` | Clones the repository into the current directory; trailing `.` avoids creating another subdirectory | Replace URL; private repos need SSH key or token setup |
+| `python3 -m venv venv` | Creates the `venv` virtual environment | Directory name can change, but systemd must match |
+| `source venv/bin/activate` | Activates the virtual environment | Run it before manual dependency installs |
+| `pip install --upgrade pip` | Upgrades pip | Optional but recommended |
+| `pip install -r requirements.txt` | Installs project dependencies | Re-run after requirements changes |
+| `pip install gunicorn eventlet` | Installs Linux production runtime dependencies | Can move to a dedicated production requirements file later |
 
 ## 5. Configure Environment Variables
 
@@ -131,11 +198,36 @@ SESSION_COOKIE_SAMESITE=Lax
 REMEMBER_COOKIE_SAMESITE=Lax
 ```
 
+Configuration explanation:
+
+| Setting | Meaning | Required | Customizable |
+| --- | --- | --- | --- |
+| `SECRET_KEY` | Flask session signing secret | Yes | Use a long random value; never commit it |
+| `DATABASE_URL` | SQLAlchemy database URL | No | Keep SQLite or switch to PostgreSQL/MySQL later |
+| `PUBLIC_SCHEME` | Public access scheme | Yes | Use `https` online; use `http` only for local HTTP |
+| `PUBLIC_HOST` | Public hostname | Yes | Use `meeting.example.com` without `https://` |
+| `LIVEKIT_URL` | Browser-facing LiveKit URL | Yes | LiveKit Cloud usually gives `wss://...livekit.cloud` |
+| `LIVEKIT_API_KEY` | LiveKit key for backend token signing | Yes | Copy from LiveKit console |
+| `LIVEKIT_API_SECRET` | LiveKit secret for backend token signing | Yes | Copy from LiveKit console and keep private |
+| `ADMIN_USERNAME` | Initial admin username | No | Defaults to `root`; set explicitly in production |
+| `ADMIN_PASSWORD` | Initial admin password | No | Strongly recommended; otherwise generated into `instance/admin_password.txt` |
+| `SESSION_COOKIE_SECURE` | Sends session cookie over HTTPS only | Recommended for HTTPS | Set to `1` online |
+| `REMEMBER_COOKIE_SECURE` | Sends remember cookie over HTTPS only | Recommended for HTTPS | Set to `1` online |
+| `SESSION_COOKIE_SAMESITE` | SameSite policy for session cookie | Recommended | Use `Lax` for normal same-site deployment |
+| `REMEMBER_COOKIE_SAMESITE` | SameSite policy for remember cookie | Recommended | Use `Lax` for normal same-site deployment |
+
 Generate a `SECRET_KEY`:
 
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
+
+Command explanation:
+
+| Part | Meaning | Customizable |
+| --- | --- | --- |
+| `python3 -c "..."` | Runs a one-line Python snippet | Keep it |
+| `secrets.token_urlsafe(48)` | Generates a random secret suitable for URLs/cookies | `48` can be increased; do not make it small |
 
 Important:
 
@@ -206,6 +298,31 @@ Stable demo path:
 
 ## 8. Nginx Reverse Proxy
 
+Socket.IO needs WebSocket or long polling. The official Nginx WebSocket proxy pattern maps the client `Upgrade` header to a connection variable, so create this map first.
+
+Create the WebSocket map:
+
+```bash
+sudo nano /etc/nginx/conf.d/websocket-map.conf
+```
+
+Add:
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+```
+
+Configuration explanation:
+
+| Directive | Meaning | Customizable |
+| --- | --- | --- |
+| `map $http_upgrade $connection_upgrade` | Creates a variable based on whether the client requests protocol upgrade | Variable name can change, but the site config must match |
+| `default upgrade;` | If `Upgrade` exists, upgrade the connection to WebSocket | Keep it |
+| `'' close;` | If no `Upgrade` header exists, treat it as normal HTTP | Keep it |
+
 Create the site config:
 
 ```bash
@@ -229,12 +346,30 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+        proxy_set_header Connection $connection_upgrade;
         proxy_read_timeout 3600;
         proxy_send_timeout 3600;
     }
 }
 ```
+
+Configuration explanation:
+
+| Directive | Meaning | Customizable |
+| --- | --- | --- |
+| `listen 80;` | Listens on HTTP; Certbot uses it to issue the certificate | Use default for public HTTPS setup |
+| `server_name meeting.example.com;` | Domain served by this block | Must be your domain |
+| `client_max_body_size 150m;` | Maximum upload request body | Current video attachment limit is 120 MB; increase if app limits increase |
+| `proxy_pass http://127.0.0.1:8000;` | Forwards traffic to local Gunicorn | Port must match systemd `--bind` |
+| `proxy_http_version 1.1;` | Required for WebSocket proxying | Keep it |
+| `proxy_set_header Host $host;` | Passes original host to Flask | Keep it |
+| `proxy_set_header X-Real-IP $remote_addr;` | Passes client IP | Behind Cloudflare, you can later add real IP handling |
+| `proxy_set_header X-Forwarded-For ...` | Passes proxy chain IPs | Keep it |
+| `proxy_set_header X-Forwarded-Proto $scheme;` | Passes external scheme | Used for HTTPS-aware behavior and secure cookies |
+| `proxy_set_header Upgrade $http_upgrade;` | Passes WebSocket upgrade header | Required for Socket.IO WebSocket |
+| `proxy_set_header Connection $connection_upgrade;` | Uses the map variable for upgrade/close | Must match the map above |
+| `proxy_read_timeout 3600;` | Allows long-running upstream reads | Adjust if needed |
+| `proxy_send_timeout 3600;` | Allows long-running upstream sends | Adjust if needed |
 
 Enable it:
 
@@ -248,18 +383,51 @@ sudo systemctl reload nginx
 
 ## 9. HTTPS Certificate
 
-Use Let's Encrypt:
+Certbot officially recommends snap installation for Ubuntu + Nginx. Install the snap version first:
 
 ```bash
-sudo apt install -y certbot python3-certbot-nginx
+sudo snap install core
+sudo snap refresh core
+sudo apt remove -y certbot
+sudo snap install --classic certbot
+sudo ln -s /snap/bin/certbot /usr/bin/certbot
+```
+
+Command explanation:
+
+| Command | Meaning | Customizable |
+| --- | --- | --- |
+| `sudo snap install core` | Installs snap core runtime | If already installed, the command may say so |
+| `sudo snap refresh core` | Updates snap core | Keep it |
+| `sudo apt remove -y certbot` | Removes apt Certbot to avoid command conflicts | Can skip if apt Certbot was never installed |
+| `sudo snap install --classic certbot` | Installs official snap Certbot | Keep it |
+| `sudo ln -s /snap/bin/certbot /usr/bin/certbot` | Makes `certbot` available in the usual PATH | If it already exists, it has already been configured |
+
+Issue the certificate and let Certbot update Nginx:
+
+```bash
 sudo certbot --nginx -d meeting.example.com
 ```
+
+Command explanation:
+
+| Argument | Meaning | Customizable |
+| --- | --- | --- |
+| `--nginx` | Lets Certbot read and edit Nginx config | Use `certonly --nginx` if you want to edit Nginx manually |
+| `-d meeting.example.com` | Domain for the certificate | Must be your domain; use multiple `-d` flags for multiple domains |
 
 Verify renewal:
 
 ```bash
 sudo certbot renew --dry-run
 ```
+
+Command explanation:
+
+| Argument | Meaning | Customizable |
+| --- | --- | --- |
+| `renew` | Tests renewal flow | Keep it |
+| `--dry-run` | Simulation only; does not replace the real certificate | Keep it for verification |
 
 After HTTPS is ready, keep `.env` aligned:
 
@@ -300,11 +468,24 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-Key points:
+Configuration explanation:
 
-- `--worker-class eventlet` matches Flask-SocketIO.
-- `--workers 1` is intentional because runtime room state is in memory.
-- Bind only to `127.0.0.1:8000`; Nginx owns the public entry point.
+| Setting | Meaning | Customizable |
+| --- | --- | --- |
+| `Description` | Human-readable service description | Change to your project name |
+| `After=network.target` | Starts after network is available | Usually keep it |
+| `User=deploy` / `Group=deploy` | Runs the service as a normal user | Must match the runtime user |
+| `WorkingDirectory=/opt/video-meeting` | Service working directory | Must match project directory |
+| `EnvironmentFile=/opt/video-meeting/.env` | Loads environment variables from `.env` | Path can change if the file exists and permissions are correct |
+| `Environment=PYTHONUNBUFFERED=1` | Sends Python logs to journal promptly | Recommended |
+| `ExecStart=...gunicorn...` | Actual application start command | Adjust virtualenv path, port, or module if the project changes |
+| `--worker-class eventlet` | Uses eventlet worker for Socket.IO long connections | Flask-SocketIO supports this; changing worker type requires re-testing |
+| `--workers 1` | Starts exactly one worker | Required for current in-memory room state; do not casually increase |
+| `--bind 127.0.0.1:8000` | Listens only on local port 8000 | Port can change, but Nginx `proxy_pass` must match |
+| `app:app` | Flask app object `app` inside `app.py` | Change if the file/object is renamed |
+| `Restart=always` | Restarts after crashes | Recommended |
+| `RestartSec=5` | Waits 5 seconds before restart | Adjustable |
+| `WantedBy=multi-user.target` | Enables normal boot auto-start | Keep it |
 
 Start and enable it:
 
@@ -315,12 +496,28 @@ sudo systemctl start video-meeting
 sudo systemctl status video-meeting
 ```
 
+Command explanation:
+
+| Command | Meaning | Customizable |
+| --- | --- | --- |
+| `sudo systemctl daemon-reload` | Reloads systemd unit files | Required after editing `.service` |
+| `sudo systemctl enable video-meeting` | Enables auto-start on boot | Replace service name if changed |
+| `sudo systemctl start video-meeting` | Starts the service | Use `restart` for restarts |
+| `sudo systemctl status video-meeting` | Shows service status and recent logs | First troubleshooting step |
+
 Logs:
 
 ```bash
 journalctl -u video-meeting -n 100 --no-pager
 journalctl -u video-meeting -f
 ```
+
+Command explanation:
+
+| Command | Meaning | Customizable |
+| --- | --- | --- |
+| `journalctl -u video-meeting -n 100 --no-pager` | Shows latest 100 log lines without pager | Change `100` as needed |
+| `journalctl -u video-meeting -f` | Follows logs live | Use while reproducing an issue |
 
 ## 11. First Online Verification
 
@@ -445,7 +642,7 @@ Confirm Nginx preserves WebSocket headers:
 ```nginx
 proxy_http_version 1.1;
 proxy_set_header Upgrade $http_upgrade;
-proxy_set_header Connection "upgrade";
+proxy_set_header Connection $connection_upgrade;
 proxy_read_timeout 3600;
 ```
 
@@ -512,7 +709,20 @@ sudo systemctl daemon-reload
 sudo systemctl restart video-meeting
 ```
 
-## 16. Operations to Avoid
+## 16. References
+
+This guide combines the current project code with these official documents:
+
+| Topic | Official docs | Adopted point |
+| --- | --- | --- |
+| Flask-SocketIO + Gunicorn | [Flask-SocketIO Deployment](https://flask-socketio.readthedocs.io/en/latest/deployment.html) | Use Gunicorn with `eventlet`, keeping `-w 1` / `--workers 1` |
+| Gunicorn arguments | [Gunicorn Settings](https://docs.gunicorn.org/en/stable/settings.html) | Meaning of `--bind`, `--workers`, and `--worker-class` |
+| Nginx WebSocket | [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html) | Forward `Upgrade` explicitly and use `map` for `Connection` |
+| Certbot | [Certbot install guide](https://eff-certbot.readthedocs.io/en/stable/install.html) | Use snap Certbot for Ubuntu/Nginx |
+| Cloudflare SSL | [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) | Full (strict) requires a valid origin certificate |
+| systemd environment | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) | `EnvironmentFile=` loads variables from a file |
+
+## 17. Operations to Avoid
 
 - Do not run production service with the Flask debug server.
 - Do not start multiple Gunicorn workers to "improve performance" unless runtime room state has moved to shared storage.

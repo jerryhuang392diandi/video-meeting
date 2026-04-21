@@ -142,6 +142,20 @@ python check_i18n.py
 - 中英文界面切换
 - 管理员后台常用操作
 
+## 参考资料
+
+部署和运行配置主要参考以下官方文档；更详细的逐步说明见 [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) 的“参考依据”章节。
+
+| 主题 | 官方文档 |
+| --- | --- |
+| Flask-SocketIO 部署 | [Flask-SocketIO Deployment](https://flask-socketio.readthedocs.io/en/latest/deployment.html) |
+| Gunicorn 参数 | [Gunicorn Settings](https://docs.gunicorn.org/en/stable/settings.html) |
+| Nginx WebSocket 代理 | [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html) |
+| Certbot / Let's Encrypt | [Certbot install guide](https://eff-certbot.readthedocs.io/en/stable/install.html) |
+| Cloudflare SSL 模式 | [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) |
+| systemd 环境变量 | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) |
+| LiveKit | [LiveKit Docs](https://docs.livekit.io/) |
+
 ## 文档
 
 - [docs/README.md](docs/README.md) / [English](docs/README.en.md): 文档地图

@@ -16,7 +16,7 @@
 | 文档 | 用途 | 适合读者 |
 | --- | --- | --- |
 | [../README.md](../README.md) / [English](../README.en.md) | 项目总览、本地启动、配置和基本检查 | 第一次打开项目的人 |
-| [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) / [English](DEPLOYMENT_GUIDE.en.md) | 云服务器准备、DNS/Cloudflare、Nginx、systemd、依赖安装、服务更新和日志排查 | 部署和维护项目的人 |
+| [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) / [English](DEPLOYMENT_GUIDE.en.md) | 云服务器准备、DNS/Cloudflare、Nginx、systemd、依赖安装、服务更新、日志排查和官方参考资料 | 部署和维护项目的人 |
 | [STABILITY_AUDIT.md](STABILITY_AUDIT.md) / [English](STABILITY_AUDIT.en.md) | 当前架构边界、风险、回归重点和演进方向 | 修改核心逻辑的人 |
 | [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](PROJECT_GUIDE.en.md) | 项目逻辑、核心流程、代码索引和常见问题回答 | 准备展示或维护代码的人 |
 | `视觉媒体通信期末大作业实践报告.docx` | 课程报告原稿归档 | 需要提交课程材料的人 |
