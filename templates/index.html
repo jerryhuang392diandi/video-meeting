@@ -9,8 +9,6 @@
     {% include '_language_switch.html' %}
     <span class="user-pill">{{ t('current_user') }}: {{ current_user.username }}</span>
     <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
-    <a class="chip" href="{{ url_for('help_page') }}">{{ t('open_help_center') }}</a>
-    <a class="chip" href="{{ url_for('support_page') }}">{{ t('open_support_center') }}</a>
     <a class="chip" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>
     <a class="chip" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
     <button class="chip mobile-scan-trigger" id="mobileScanToggleBtn" type="button">{{ ('扫码入会' if lang == 'zh' else 'Scan QR') }}</button>
