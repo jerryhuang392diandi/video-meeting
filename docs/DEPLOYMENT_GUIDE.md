@@ -1,5 +1,7 @@
 # 部署与更新手册
 
+[中文](DEPLOYMENT_GUIDE.md) | [English](DEPLOYMENT_GUIDE.en.md)
+
 这份文档用于部署、更新和排查当前 `Flask + Flask-SocketIO + LiveKit` 会议系统。示例路径和服务名可以按你的服务器实际情况替换。
 
 ## 部署前提

@@ -1,5 +1,7 @@
 # 稳定性审计
 
+[中文](STABILITY_AUDIT.md) | [English](STABILITY_AUDIT.en.md)
+
 当前项目已经迁移到 `Flask + Socket.IO + LiveKit SFU` 的分层架构。主要风险不再是浏览器 Mesh/P2P 自协商，而是业务状态、Socket.IO 房间状态、LiveKit 媒体状态之间的一致性，以及屏幕共享、虚拟背景、录屏带来的资源压力。
 
 ## 系统边界
