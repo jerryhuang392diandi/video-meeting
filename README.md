@@ -71,6 +71,36 @@ python app.py
 
 默认会使用 `instance/app.db` 作为 SQLite 数据库。首次运行时如果没有设置管理员密码，应用会生成初始密码并写入 `instance/admin_password.txt`。
 
+## 云服务器部署概览
+
+生产或课程展示部署建议采用：
+
+```text
+浏览器
+  -> 域名 / Cloudflare DNS
+  -> Nginx 反向代理和 HTTPS
+  -> Gunicorn + eventlet 运行 Flask-SocketIO
+  -> Flask 应用
+  -> LiveKit Cloud 或自建 LiveKit 负责媒体传输
+```
+
+最小服务器建议：
+
+- Ubuntu 22.04 / 24.04 LTS。
+- 2 vCPU、2 GB 内存起步；多人演示、录屏转封装或后台任务较多时建议 4 GB 内存。
+- 开放 `80`、`443` 端口；SSH 端口按云厂商安全组配置。
+- 准备一个域名，例如 `meeting.example.com`。
+- LiveKit 建议优先使用 LiveKit Cloud；如果自建 LiveKit，需要额外准备 LiveKit 服务、TLS、UDP/TCP 可达性和 TURN/ICE 配置。
+
+完整 Linux 云服务器操作步骤见 [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)，包括：
+
+- 购买服务器后的安全组、防火墙、系统用户和目录准备。
+- Cloudflare 或普通 DNS 解析配置。
+- Python 虚拟环境、依赖安装和 `.env` 配置。
+- Nginx 反向代理 WebSocket、上传体积和 HTTPS。
+- systemd 服务文件、开机自启、日志查看和线上更新。
+- LiveKit 缺失、WebSocket 失败、附件上传、录屏转 MP4 等常见排障。
+
 ## 关键配置
 
 最重要的是 LiveKit 配置。缺少这些配置时，房间媒体能力不可用，`/room/<room_id>` 会返回 `503`。

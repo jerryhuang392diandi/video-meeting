@@ -71,6 +71,36 @@ python app.py
 
 By default the app uses `instance/app.db` as the SQLite database. On first run, if no admin password is configured, the app generates one and writes it to `instance/admin_password.txt`.
 
+## Cloud Server Deployment Overview
+
+For production or course demonstrations, use this deployment shape:
+
+```text
+Browser
+  -> Domain / Cloudflare DNS
+  -> Nginx reverse proxy and HTTPS
+  -> Gunicorn + eventlet running Flask-SocketIO
+  -> Flask application
+  -> LiveKit Cloud or self-hosted LiveKit for media transport
+```
+
+Minimum server recommendation:
+
+- Ubuntu 22.04 / 24.04 LTS.
+- Start with 2 vCPU and 2 GB RAM; use 4 GB RAM for larger demos, recording remux, or heavier admin usage.
+- Open ports `80` and `443`; configure SSH in the cloud provider security group.
+- Prepare a domain such as `meeting.example.com`.
+- Prefer LiveKit Cloud for the media service. If self-hosting LiveKit, also prepare LiveKit service deployment, TLS, UDP/TCP reachability, and TURN/ICE settings.
+
+See [docs/DEPLOYMENT_GUIDE.en.md](docs/DEPLOYMENT_GUIDE.en.md) for the full Linux cloud server procedure, including:
+
+- Security groups, firewall, server users, and project directories after buying a server.
+- Cloudflare or plain DNS records.
+- Python virtual environment, dependency installation, and `.env` configuration.
+- Nginx reverse proxy for WebSocket, upload size, and HTTPS.
+- systemd service files, auto-start, log inspection, and production updates.
+- Troubleshooting for missing LiveKit config, WebSocket failures, upload issues, and MP4 recording remux.
+
 ## Key Configuration
 
 LiveKit configuration is required. If it is missing, room media is unavailable and `/room/<room_id>` returns `503`.
