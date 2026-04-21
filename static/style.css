@@ -41,7 +41,7 @@ input, select {
   padding: 14px 16px;
   border-radius: 14px;
   border: 1px solid var(--line);
-  background: rgba(255,255,255,0.05);
+  background-color: rgba(255,255,255,0.05);
   color: var(--text);
   outline: none;
 }
@@ -58,6 +58,15 @@ select {
     calc(100% - 16px) calc(50% - 2px);
   background-size: 6px 6px, 6px 6px;
   background-repeat: no-repeat;
+}
+select option {
+  background-color: #101a2f;
+  color: #edf4ff;
+}
+select option:checked,
+select option:hover {
+  background-color: #1d4f9f;
+  color: #ffffff;
 }
 input:focus, select:focus {
   border-color: rgba(130,177,255,.45);

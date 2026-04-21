@@ -23,7 +23,7 @@
       <input name="display_name" maxlength="32" value="{{ preferred_display_name }}" />
       <label>{{ t('region_timezone') }}</label>
       <select name="region">
-        {% for item in ['Asia/Tokyo','Asia/Shanghai','Asia/Hong_Kong','Europe/London','America/Los_Angeles'] %}
+        {% for item in region_timezone_options %}
         <option value="{{ item }}" {% if region == item %}selected{% endif %}>{{ item }}</option>
         {% endfor %}
       </select>

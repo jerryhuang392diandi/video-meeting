@@ -431,9 +431,20 @@ select {
     min-height: 46px;
     border-radius: 14px;
     padding: 0 14px;
-    background: rgba(255, 255, 255, 0.05);
+    background-color: rgba(255, 255, 255, 0.05);
     color: var(--room-text);
     border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+select option {
+    background-color: #10234a;
+    color: var(--room-text);
+}
+
+select option:checked,
+select option:hover {
+    background-color: #225aa8;
+    color: #ffffff;
 }
 
 /* 输入框/昵称框 */

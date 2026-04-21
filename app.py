@@ -163,6 +163,25 @@ RECORDING_REMUX_TIMEOUT_SECONDS = 600
 ALLOWED_CHAT_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "mp4", "webm", "mov", "m4v", "avi", "3gp", "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "txt", "zip", "rar", "7z"}
 CHAT_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".heic", ".heif"}
 CHAT_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v", ".avi", ".3gp"}
+REGION_TIMEZONE_OPTIONS = [
+    "Asia/Tokyo",
+    "Asia/Shanghai",
+    "Asia/Hong_Kong",
+    "Asia/Singapore",
+    "Asia/Seoul",
+    "Asia/Dubai",
+    "Asia/Tehran",
+    "Europe/Moscow",
+    "Europe/Istanbul",
+    "Europe/London",
+    "Europe/Paris",
+    "Europe/Berlin",
+    "America/Los_Angeles",
+    "America/New_York",
+    "America/Toronto",
+    "Australia/Sydney",
+    "UTC",
+]
 
 from translations import TRANSLATIONS
 
@@ -1023,6 +1042,7 @@ def account_page():
         error=error,
         preferred_display_name=preferred_display_name(fresh_user),
         region=(fresh_user.region or "Asia/Tokyo"),
+        region_timezone_options=REGION_TIMEZONE_OPTIONS,
         preferred_locale=(fresh_user.preferred_locale or "auto"),
         default_attachment_permission=(fresh_user.default_attachment_permission or "download"),
         default_danmaku_enabled=bool(getattr(fresh_user, "default_danmaku_enabled", True)),
