@@ -229,7 +229,7 @@ pip install -r requirements.txt
 2. 在项目设置里复制 server URL、API key、API secret。
 3. 在项目根目录新建 `.env`，把三项 LiveKit 配置和本地基础配置写进去。
 
-更细的 LiveKit Cloud 操作、为什么 Nginx 不代理 LiveKit、自建 LiveKit 要检查哪些端口，已经写在 [docs/DEPLOYMENT_GUIDE.md 的 LiveKit 选项](docs/DEPLOYMENT_GUIDE.md#6-livekit-选项) 里。生产环境变量的完整说明见 [docs/DEPLOYMENT_GUIDE.md 的配置环境变量](docs/DEPLOYMENT_GUIDE.md#5-配置环境变量)。
+更细的 LiveKit Cloud 操作、为什么 Nginx 不代理 LiveKit、自建 LiveKit 的域名/端口/Docker Compose 示例，已经写在 [docs/DEPLOYMENT_GUIDE.md 的 LiveKit 配置选择](docs/DEPLOYMENT_GUIDE.md#7-livekit-配置选择) 里。生产环境变量的完整说明见 [docs/DEPLOYMENT_GUIDE.md 的配置环境变量](docs/DEPLOYMENT_GUIDE.md#5-配置环境变量)。
 
 ```env
 SECRET_KEY=local-dev-secret-change-me
@@ -331,16 +331,16 @@ http://127.0.0.1:5000
 | GitHub | 代码托管与版本管理 | https://github.com/ |
 | Gitee | 国内可选代码托管平台 | https://gitee.com/ |
 
-完整 Linux 云服务器操作步骤见 [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)。这份部署手册已经按零基础顺序重写了 Nginx 和 LiveKit 相关内容，建议第一次部署时照着它从前往后做，不要直接跳到配置片段。
+完整 Linux 云服务器操作步骤见 [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)。这份部署手册已经按零基础顺序整理了购买服务器、国内备案、Windows/macOS/FinalShell 登录服务器、项目配置、systemd、LiveKit、Nginx 和 HTTPS，建议第一次部署时照着它从前往后做，不要直接跳到配置片段。
 
 里面包括：
 
-- 购买服务器后的安全组、防火墙、系统用户和目录准备。
+- 购买服务器后的备案判断、SSH 登录、密码输入说明、安全组、防火墙、系统用户和目录准备。
 - Cloudflare 或普通 DNS 解析配置。
-- Python 虚拟环境、依赖安装和 `.env` 配置。
-- Nginx 为什么需要反向代理、WebSocket 头、上传体积限制和 HTTPS。
-- systemd 服务文件、开机自启、日志查看和线上更新。
-- LiveKit Cloud 的最短接入步骤，以及自建 LiveKit 时域名、证书、媒体端口、TURN/ICE 的检查清单。
+- Python 虚拟环境、依赖安装和 EOF 方式写 `.env` 配置。
+- Nginx 为什么需要反向代理、WebSocket 头、上传体积限制，以及可直接使用的 HTTPS 配置。
+- EOF 方式写 systemd 服务文件、开机自启、日志查看和线上更新。
+- LiveKit Cloud 的最短接入步骤，以及自建 LiveKit 的域名、证书、Docker Compose、媒体端口、TURN/ICE 检查清单。
 - LiveKit 缺失、WebSocket 失败、附件上传、录屏转 MP4 等常见排障。
 
 ## 关键配置
@@ -393,6 +393,7 @@ python check_i18n.py
 | Flask-SocketIO 部署 | [Flask-SocketIO Deployment](https://flask-socketio.readthedocs.io/en/latest/deployment.html) |
 | Gunicorn 参数 | [Gunicorn Settings](https://docs.gunicorn.org/en/stable/settings.html) |
 | Nginx WebSocket 代理 | [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html) |
+| Nginx HTTPS 配置 | [Configuring HTTPS servers](https://nginx.org/en/docs/http/configuring_https_servers.html) |
 | Certbot / Let's Encrypt | [Certbot install guide](https://eff-certbot.readthedocs.io/en/stable/install.html) |
 | Let's Encrypt | [Let's Encrypt](https://letsencrypt.org/) |
 | Cloudflare 入口 | [Cloudflare](https://www.cloudflare.com/) / [Dashboard](https://dash.cloudflare.com/) |
@@ -401,6 +402,8 @@ python check_i18n.py
 | 域名注册商示例 | [阿里云域名](https://wanwang.aliyun.com/) / [腾讯云 DNSPod](https://dnspod.cloud.tencent.com/) / [Cloudflare Registrar](https://www.cloudflare.com/products/registrar/) / [Namecheap](https://www.namecheap.com/) |
 | systemd 环境变量 | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) |
 | LiveKit | [LiveKit Docs](https://docs.livekit.io/) / [LiveKit Cloud](https://cloud.livekit.io/) |
+| SSH 登录 | [Microsoft OpenSSH](https://learn.microsoft.com/windows-server/administration/openssh/openssh_install_firstuse) / [Ubuntu OpenSSH](https://documentation.ubuntu.com/server/how-to/security/openssh-server/) |
+| 中国大陆备案 | [工信部备案系统](https://beian.miit.gov.cn/) / [阿里云备案](https://help.aliyun.com/zh/icp-filing/) / [腾讯云备案](https://cloud.tencent.com/document/product/243) |
 | GitHub / Gitee | [GitHub](https://github.com/) / [Gitee](https://gitee.com/) |
 | 本地工具 | [Python](https://www.python.org/downloads/) / [Git](https://git-scm.com/downloads) / [FFmpeg](https://ffmpeg.org/download.html) / [VS Code](https://code.visualstudio.com/) / [Homebrew](https://brew.sh/) / [winget](https://learn.microsoft.com/windows/package-manager/winget/) |
 

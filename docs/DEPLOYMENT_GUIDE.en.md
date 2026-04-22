@@ -2,80 +2,75 @@
 
 [中文](DEPLOYMENT_GUIDE.md) | [English](DEPLOYMENT_GUIDE.en.md)
 
-This guide covers the full path from buying a Linux cloud server to running the app online. Examples assume Ubuntu 22.04 / 24.04, Nginx, systemd, Gunicorn + eventlet, SQLite, and an external LiveKit service. Replace paths, domains, and service names as needed.
+This guide follows the real first-deployment order: prepare accounts and a server, connect to the server, deploy the Flask app, systemd, Nginx, HTTPS, and then configure LiveKit. Examples assume Ubuntu 22.04 / 24.04, Nginx, systemd, Gunicorn + eventlet, SQLite, and either LiveKit Cloud or self-hosted LiveKit.
 
 ## Beginner Path
 
-If you only need a reliable course demo, do not start by self-hosting everything. Use this order:
+Use this order for the lowest-risk first deployment:
 
-1. Run the app locally first with `python app.py`.
-2. Deploy the Flask app, Nginx, HTTPS, and systemd on one Ubuntu server.
-3. Use LiveKit Cloud first and put its `wss://...livekit.cloud` URL, API key, and API secret into `.env`.
-4. Test with two real devices.
-5. Consider self-hosted LiveKit only after the main flow works.
+1. Run locally with `python app.py` and verify registration, login, and meeting creation pages.
+2. Buy one Ubuntu cloud server and confirm domain, ICP filing if needed, DNS, and security group rules.
+3. Connect through SSH from Windows CMD/PowerShell, macOS Terminal, Linux shell, or FinalShell.
+4. Deploy the Flask app, `.env`, systemd, Nginx, and HTTPS.
+5. Use LiveKit Cloud first. Put `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` into `.env`.
+6. Test with two real devices. Self-host LiveKit only if you really need to operate your own media service.
 
-The important split is: Nginx proxies this Flask website, while LiveKit carries camera, microphone, and screen-share media. With LiveKit Cloud, Nginx does not proxy LiveKit.
+Nginx proxies this Flask website. LiveKit carries camera, microphone, and screen-share media. With LiveKit Cloud, Nginx does not proxy LiveKit.
 
 ## 0. How to Read Command Blocks
 
-Commands in this guide run in a Linux shell on the server unless stated otherwise. After important command blocks, the guide explains:
-
-- What each line does.
-- Which values must be replaced with your real values.
-- Which parameters can be customized for your server or project.
-
-The examples use these placeholders:
+Unless stated otherwise, commands run in a Linux shell on the server. Placeholders:
 
 | Placeholder | Meaning | Replace with |
 | --- | --- | --- |
-| `meeting.example.com` | Meeting system domain | Your own domain or subdomain |
-| `your_server_ip` | Cloud server public IP | The public IP shown in your cloud console |
+| `meeting.example.com` | Meeting app domain | Your own domain or subdomain |
+| `livekit.example.com` | Self-hosted LiveKit domain | Your media service domain if self-hosting |
+| `your_server_ip` | Cloud server public IP | Public IP from the cloud console |
 | `/opt/video-meeting` | Project deployment directory | Keep it or use your own directory |
 | `deploy` | Linux runtime user | Keep it or use your own username |
-| `video-meeting` | systemd service name | Keep it or use a shorter service name |
-| `main` | Git default branch | Your actual deployment branch |
+| `video-meeting` | systemd service name | Keep it or rename it consistently |
+| `main` | Git default branch | Your real deployment branch |
 
-For a course demo, keeping the example directory, username, and service name reduces troubleshooting variables.
+This guide often writes files with `cat <<'EOF' | sudo tee ...`. That is easier to copy and less error-prone than editing with `nano`. If you use `nano`, save with `Ctrl+O`, press Enter to confirm, and exit with `Ctrl+X`.
 
 ## 0.1 Accounts and Websites to Prepare
 
-Before the first deployment, prepare the following accounts or entry points. Not every item is required immediately, but the guide refers to them later.
-
-| Type | Purpose | Official entry |
+| Type | Purpose | Entry |
 | --- | --- | --- |
-| GitHub | Code hosting, `git clone`, `git push` | https://github.com/ |
-| Gitee | Optional code hosting platform in China | https://gitee.com/ |
-| Cloudflare | DNS hosting, optional proxy, SSL/TLS settings | https://www.cloudflare.com/ |
-| Cloudflare Dashboard | Add domains, DNS records, DNS only / Proxied settings | https://dash.cloudflare.com/ |
+| Cloud server | Runs Flask, Nginx, and systemd | Alibaba Cloud ECS, Tencent Cloud CVM, Huawei Cloud ECS, AWS EC2, Azure VM, DigitalOcean, Vultr |
+| Domain | Lets users open `meeting.example.com` | Alibaba Cloud Domains, Tencent DNSPod, Cloudflare Registrar, Namecheap, or another registrar |
+| ICP filing | Usually required for public domain access on mainland China servers | MIIT filing system or cloud provider filing console |
+| GitHub / Gitee | Code hosting for `git clone` / `git pull` | https://github.com/ / https://gitee.com/ |
+| Cloudflare | Optional DNS hosting, proxy, and SSL/TLS settings | https://www.cloudflare.com/ |
 | LiveKit Cloud | Easiest hosted LiveKit media service | https://cloud.livekit.io/ |
-| Let's Encrypt | Free HTTPS certificate authority, usually used through Certbot | https://letsencrypt.org/ |
-| Certbot | Requests and renews Let's Encrypt certificates on the server | https://certbot.eff.org/ |
-| Python | Local and server runtime | https://www.python.org/downloads/ |
-| Git | Local and server version control | https://git-scm.com/downloads |
-| FFmpeg | MP4 recording export | https://ffmpeg.org/download.html |
-| VS Code | Optional code editor | https://code.visualstudio.com/ |
+| Let's Encrypt / Certbot | Free HTTPS certificates | https://letsencrypt.org/ / https://certbot.eff.org/ |
 
-If you do not have a domain yet, you can buy one from Alibaba Cloud, Tencent Cloud, Huawei Cloud, Cloudflare Registrar, Namecheap, or another registrar. The registrar does not matter as long as you can manage DNS and point `meeting.example.com` to the cloud server public IP.
+Official references are collected at the end. Follow this guide first; use the official docs when your provider or version differs.
 
 ## 1. Recommended Architecture
 
 ```text
 User browser
   -> https://meeting.example.com
-  -> Cloudflare DNS or plain DNS
-  -> Nginx reverse proxy for HTTPS and WebSocket forwarding
+  -> DNS or Cloudflare
+  -> Nginx on 443/80
   -> Gunicorn + eventlet on 127.0.0.1:8000
-  -> Flask + Flask-SocketIO application
-  -> LiveKit Cloud or self-hosted LiveKit SFU
+  -> Flask + Flask-SocketIO app
+
+User browser
+  -> wss://your-project.livekit.cloud or wss://livekit.example.com
+  -> LiveKit SFU
 ```
 
-The current app keeps online room state mainly in single-process memory, so deploy it as one application instance by default. Do not simply start multiple Gunicorn workers or multiple app servers, or `rooms`, `sid_to_user`, chat history, and screen share state can diverge.
+The current app keeps online room state mainly in single-process memory, so deploy it as one application instance by default. Do not simply start multiple Gunicorn workers or multiple app servers, or `rooms`, `sid_to_user`, chat history, and screen-share state can diverge.
 
-## 2. Buying a Server and Base Setup
+## 2. Buying a Server, ICP Filing, and SSH Login
 
-Cloud providers can include Alibaba Cloud, Tencent Cloud, Huawei Cloud, AWS, Azure, DigitalOcean, Vultr, and similar vendors. For a first deployment, buy one normal cloud server first; do not buy load balancers, managed databases, object storage, or other add-ons until the basic app works.
+### 2.1 Buy a Server
 
-| Provider | Official entry | Notes |
+Common cloud server providers:
+
+| Provider | Entry | Notes |
 | --- | --- | --- |
 | Alibaba Cloud ECS | https://www.aliyun.com/product/ecs | Chinese console, good for mainland China users |
 | Tencent Cloud CVM | https://cloud.tencent.com/product/cvm | Chinese console |
@@ -85,46 +80,106 @@ Cloud providers can include Alibaba Cloud, Tencent Cloud, Huawei Cloud, AWS, Azu
 | DigitalOcean Droplets | https://www.digitalocean.com/products/droplets | Simple English dashboard |
 | Vultr Cloud Compute | https://www.vultr.com/products/cloud-compute/ | Simple English dashboard |
 
-For course demos or small demos:
+For course demos or small deployments:
 
 | Item | Recommendation |
 | --- | --- |
 | OS | Ubuntu 22.04 LTS or 24.04 LTS |
 | CPU / RAM | Start with 2 vCPU / 2 GB; use 4 GB for larger demos |
-| Disk | Start with 30 GB; expand if uploads and recordings grow |
-| Inbound ports | `22`, `80`, `443` |
+| Disk | Start with 30 GB; expand later for uploads and recordings |
+| Inbound ports | `22/tcp`, `80/tcp`, `443/tcp` |
 | Domain | A subdomain such as `meeting.example.com` |
-| Python production runtime | `requirements.txt` plus server-side `gunicorn eventlet` |
-
-In the cloud console:
-
-1. Allow `80/tcp` and `443/tcp` in the security group or firewall.
-2. Restrict SSH to your own public IP if possible; otherwise use a strong password or SSH key.
 
 Buying notes:
 
-- Choose a region close to your main users.
-- Choose Ubuntu 22.04 LTS or 24.04 LTS.
-- For temporary demos, short-term monthly billing or pay-as-you-go is fine. Release the server after the demo if you no longer need it.
-- If you later self-host LiveKit, additional LiveKit media ports must be opened.
+- Choose a region close to your users.
+- Beginners should choose Ubuntu LTS instead of CentOS, minimal Debian images, or custom images.
+- Do not buy load balancers, managed databases, or object storage at the start. Get the single-server app working first.
+- Open `22/tcp`, `80/tcp`, and `443/tcp` in the cloud security group. Self-hosted LiveKit needs additional media ports.
 
-First login:
+### 2.2 Mainland China Servers and ICP Filing
+
+If the server is in mainland China and you want to serve a public website through a domain, ICP filing is usually required. Without filing, cloud providers may block domain binding or public access.
+
+Simplified rule:
+
+| Situation | ICP filing usually needed? |
+| --- | --- |
+| Mainland China server + public domain | Yes |
+| Mainland China server + public IP only for temporary testing | Usually no domain filing, but not suitable for a public demo |
+| Hong Kong, Singapore, US, or other non-mainland server | Usually no mainland China ICP filing, but network quality may differ |
+
+ICP filing requirements change. Use MIIT and cloud provider documentation as the source of truth.
+
+### 2.3 Login from Windows, macOS, Linux, or FinalShell
+
+The cloud provider usually gives you a public IP, username, and either a password or SSH private key. Ubuntu usernames are often `root`, `ubuntu`, or a user created in the console.
+
+Windows PowerShell or CMD:
+
+```powershell
+ssh root@your_server_ip
+```
+
+macOS Terminal or Linux shell:
 
 ```bash
 ssh root@your_server_ip
+```
+
+If the username is not `root`:
+
+```bash
+ssh ubuntu@your_server_ip
+```
+
+If you received a private key:
+
+```bash
+ssh -i /path/to/your-key.pem root@your_server_ip
+```
+
+Windows private key example:
+
+```powershell
+ssh -i C:\Users\yourname\.ssh\server.pem root@your_server_ip
+```
+
+First connection often asks:
+
+```text
+Are you sure you want to continue connecting (yes/no/[fingerprint])?
+```
+
+If the IP is your server, type `yes` and press Enter. When typing a password, the terminal usually shows no stars and no cursor movement. Type the password and press Enter. If it fails with `Permission denied`, check the username, password, SSH key, or reset the password in the cloud console.
+
+FinalShell is fine. It is an SSH client with a graphical connection manager:
+
+1. Create a new SSH connection.
+2. Host: `your_server_ip`; port: `22`.
+3. Username: `root`, `ubuntu`, or the provider username.
+4. Choose password or private-key authentication.
+5. After connecting, run the same Linux commands in its terminal.
+
+CMD, PowerShell, macOS Terminal, Linux shell, and FinalShell all connect to the same server-side Linux shell, so the later commands are the same.
+
+### 2.4 First Server Initialization
+
+As root or a sudo-capable user:
+
+```bash
 apt update
 apt upgrade -y
 timedatectl set-timezone Asia/Shanghai
 ```
 
-Command explanation:
+If you are not root:
 
-| Command | Meaning | Customizable |
-| --- | --- | --- |
-| `ssh root@your_server_ip` | Log in to the new server as root | Replace `your_server_ip`; replace `root` if your provider uses another username |
-| `apt update` | Refresh package indexes | Usually keep it |
-| `apt upgrade -y` | Upgrade installed packages; `-y` auto-confirms | Remove `-y` if you want manual confirmation |
-| `timedatectl set-timezone Asia/Shanghai` | Set server timezone to Shanghai | Use `UTC` or another timezone if appropriate |
+```bash
+sudo apt update
+sudo apt upgrade -y
+sudo timedatectl set-timezone Asia/Shanghai
+```
 
 Create a dedicated runtime user:
 
@@ -134,34 +189,14 @@ usermod -aG sudo deploy
 su - deploy
 ```
 
-Command explanation:
-
-| Command | Meaning | Customizable |
-| --- | --- | --- |
-| `adduser deploy` | Create a normal Linux user named `deploy` | Replace `deploy` with another username |
-| `usermod -aG sudo deploy` | Allow `deploy` to run admin commands through `sudo` | In stricter production setups, omit sudo and let an admin run privileged commands |
-| `su - deploy` | Switch to the `deploy` user | Must match the user above |
+If prompted for a new password, set one. Password input not echoing is normal.
 
 ## 3. Install System Dependencies
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip git nginx ffmpeg curl ufw
+sudo apt install -y python3 python3-venv python3-pip git nginx ffmpeg curl ufw ca-certificates gnupg
 ```
-
-Command and dependency explanation:
-
-| Item | Meaning | Customizable |
-| --- | --- | --- |
-| `sudo apt update` | Refresh package indexes | Do not skip |
-| `python3` | Python runtime | Ubuntu 22.04 / 24.04 built-in versions are usually enough |
-| `python3-venv` | Creates the project virtual environment | Required |
-| `python3-pip` | Installs Python packages | Required |
-| `git` | Pulls code from Git | Optional if deploying by archive, but Git is recommended |
-| `nginx` | Public entry, HTTPS, WebSocket reverse proxy | Can be replaced by Caddy/Apache, but this guide uses Nginx |
-| `ffmpeg` | WebM recording remux to MP4 | Optional if MP4 export is not needed |
-| `curl` | Command-line HTTP testing | Recommended |
-| `ufw` | Ubuntu firewall tool | Can be supplemented by cloud security groups |
 
 Enable a basic firewall:
 
@@ -172,18 +207,11 @@ sudo ufw enable
 sudo ufw status
 ```
 
-Command explanation:
-
-| Command | Meaning | Customizable |
-| --- | --- | --- |
-| `sudo ufw allow OpenSSH` | Allows SSH so you do not lock yourself out | If SSH uses a custom port, allow that port |
-| `sudo ufw allow "Nginx Full"` | Allows Nginx HTTP `80` and HTTPS `443` | If not using Nginx, allow `80/tcp` and `443/tcp` manually |
-| `sudo ufw enable` | Enables the firewall | Confirm SSH is allowed first |
-| `sudo ufw status` | Shows active firewall rules | Use it to verify rules |
+Confirm SSH is allowed before `sudo ufw enable`, otherwise you can lock yourself out.
 
 ## 4. Prepare the Project Directory
 
-Example path: `/opt/video-meeting`.
+Example path:
 
 ```bash
 sudo mkdir -p /opt/video-meeting
@@ -197,46 +225,26 @@ Deploy from Git:
 git clone https://github.com/jerryhuang392diandi/video-meeting.git .
 python3 -m venv venv
 source venv/bin/activate
-pip install --upgrade pip
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 pip install gunicorn eventlet
 ```
 
-If you upload a project archive instead, extract it into `/opt/video-meeting`, then create the virtual environment and install dependencies.
-
-`gunicorn` and `eventlet` are for Linux production runtime only; Windows local development still uses `python app.py` as shown in the root README.
-
-Command explanation:
-
-| Command | Meaning | Customizable |
-| --- | --- | --- |
-| `sudo mkdir -p /opt/video-meeting` | Creates the project directory, including parents | Replace with `/srv/video-meeting` or another path if desired |
-| `sudo chown deploy:deploy /opt/video-meeting` | Gives ownership to the `deploy` user | Must match your runtime user |
-| `git clone ... .` | Clones the repository into the current directory; trailing `.` avoids creating another subdirectory | Replace URL; private repos need SSH key or token setup |
-| `python3 -m venv venv` | Creates the `venv` virtual environment | Directory name can change, but systemd must match |
-| `source venv/bin/activate` | Activates the virtual environment | Run it before manual dependency installs |
-| `pip install --upgrade pip` | Upgrades pip | Optional but recommended |
-| `pip install -r requirements.txt` | Installs project dependencies | Re-run after requirements changes |
-| `pip install gunicorn eventlet` | Installs Linux production runtime dependencies | Can move to a dedicated production requirements file later |
+Replace the Git URL if your repository is on Gitee or a private GitHub repo. Private repos need SSH key or token setup.
 
 ## 5. Configure Environment Variables
 
-Use `/opt/video-meeting/.env` for production config and load it from systemd:
+Write `/opt/video-meeting/.env` with EOF:
 
 ```bash
-nano /opt/video-meeting/.env
-```
-
-Example:
-
-```env
+cat <<'EOF' > /opt/video-meeting/.env
 SECRET_KEY=replace-with-a-long-random-secret
 DATABASE_URL=sqlite:////opt/video-meeting/instance/app.db
 
 PUBLIC_SCHEME=https
 PUBLIC_HOST=meeting.example.com
 
-LIVEKIT_URL=wss://your-livekit-host
+LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=replace-with-livekit-api-key
 LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 
@@ -247,25 +255,10 @@ SESSION_COOKIE_SECURE=1
 REMEMBER_COOKIE_SECURE=1
 SESSION_COOKIE_SAMESITE=Lax
 REMEMBER_COOKIE_SAMESITE=Lax
+EOF
+
+chmod 600 /opt/video-meeting/.env
 ```
-
-Configuration explanation:
-
-| Setting | Meaning | Required | Customizable |
-| --- | --- | --- | --- |
-| `SECRET_KEY` | Flask session signing secret | Yes | Use a long random value; never commit it |
-| `DATABASE_URL` | SQLAlchemy database URL | No | Keep SQLite or switch to PostgreSQL/MySQL later |
-| `PUBLIC_SCHEME` | Public access scheme | Yes | Use `https` online; use `http` only for local HTTP |
-| `PUBLIC_HOST` | Public hostname | Yes | Use `meeting.example.com` without `https://` |
-| `LIVEKIT_URL` | Browser-facing LiveKit URL | Yes | LiveKit Cloud usually gives `wss://...livekit.cloud` |
-| `LIVEKIT_API_KEY` | LiveKit key for backend token signing | Yes | Copy from LiveKit console |
-| `LIVEKIT_API_SECRET` | LiveKit secret for backend token signing | Yes | Copy from LiveKit console and keep private |
-| `ADMIN_USERNAME` | Initial admin username | No | Defaults to `root`; set explicitly in production |
-| `ADMIN_PASSWORD` | Initial admin password | No | Strongly recommended; otherwise generated into `instance/admin_password.txt` |
-| `SESSION_COOKIE_SECURE` | Sends session cookie over HTTPS only | Recommended for HTTPS | Set to `1` online |
-| `REMEMBER_COOKIE_SECURE` | Sends remember cookie over HTTPS only | Recommended for HTTPS | Set to `1` online |
-| `SESSION_COOKIE_SAMESITE` | SameSite policy for session cookie | Recommended | Use `Lax` for normal same-site deployment |
-| `REMEMBER_COOKIE_SAMESITE` | SameSite policy for remember cookie | Recommended | Use `Lax` for normal same-site deployment |
 
 Generate a `SECRET_KEY`:
 
@@ -273,40 +266,108 @@ Generate a `SECRET_KEY`:
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Command explanation:
+Configuration:
 
-| Part | Meaning | Customizable |
+| Setting | Meaning | Required |
 | --- | --- | --- |
-| `python3 -c "..."` | Runs a one-line Python snippet | Keep it |
-| `secrets.token_urlsafe(48)` | Generates a random secret suitable for URLs/cookies | `48` can be increased; do not make it small |
+| `SECRET_KEY` | Flask session signing secret; keep it stable | Yes |
+| `DATABASE_URL` | SQLAlchemy database URL; SQLite by default | No |
+| `PUBLIC_SCHEME` | Public scheme; use `https` online | Yes |
+| `PUBLIC_HOST` | Public hostname without `https://` | Yes |
+| `LIVEKIT_URL` | Browser-facing LiveKit `wss://...` URL | Yes |
+| `LIVEKIT_API_KEY` | Backend key for signing LiveKit tokens | Yes |
+| `LIVEKIT_API_SECRET` | Backend secret for signing LiveKit tokens | Yes |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Initial admin account | Recommended |
+| `SESSION_COOKIE_SECURE` / `REMEMBER_COOKIE_SECURE` | Send cookies over HTTPS only | Recommended for HTTPS |
 
-Important:
+Notes:
 
-- `SECRET_KEY` must stay stable across restarts, or user sessions are invalidated.
-- `PUBLIC_HOST` is the hostname without scheme, for example `meeting.example.com`.
-- Use `PUBLIC_SCHEME=https` when HTTPS is enabled.
-- If LiveKit config is missing, room pages intentionally return `503`; that is a configuration problem.
-- SQLite data and uploads live under `instance/`, so production backups must include that directory.
+- Do not commit `.env`.
+- Restart `video-meeting` after changing `.env`.
+- If LiveKit values are missing, room pages intentionally return `503`.
+- Runtime data lives under `instance/`; include it in backups.
 
-## 6. LiveKit Options
+## 6. systemd Service
 
-This app uses LiveKit for the actual media path. Flask checks meeting permissions and issues a LiveKit token; the browser then connects directly to LiveKit.
+Write the service file:
 
-- Nginx proxies the Flask website, not LiveKit Cloud.
-- `LIVEKIT_URL` must be a browser-reachable `wss://...` URL.
-- `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` are backend secrets for token signing.
-- If these values are missing, `/room/<room_id>` returning `503` is expected.
+```bash
+cat <<'EOF' | sudo tee /etc/systemd/system/video-meeting.service
+[Unit]
+Description=Video Meeting Flask-SocketIO App
+After=network.target
 
-### 6.1 LiveKit Cloud
+[Service]
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/video-meeting
+EnvironmentFile=/opt/video-meeting/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/video-meeting/venv/bin/gunicorn --worker-class eventlet --workers 1 --bind 127.0.0.1:8000 app:app
+Restart=always
+RestartSec=5
 
-The simplest path is LiveKit Cloud:
+[Install]
+WantedBy=multi-user.target
+EOF
+```
 
-1. Open the LiveKit Cloud dashboard at https://cloud.livekit.io/ and create a project.
-2. Copy the server URL, usually `wss://...livekit.cloud`.
+Start and enable it:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable video-meeting
+sudo systemctl start video-meeting
+sudo systemctl status video-meeting
+```
+
+Key points:
+
+- `EnvironmentFile=/opt/video-meeting/.env` loads production variables.
+- `--worker-class eventlet` supports Flask-SocketIO long connections.
+- Keep `--workers 1`; current online room state is in process memory.
+- `--bind 127.0.0.1:8000` must match Nginx `proxy_pass`.
+
+Logs:
+
+```bash
+journalctl -u video-meeting -n 100 --no-pager
+journalctl -u video-meeting -f
+```
+
+After editing `.service`:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart video-meeting
+```
+
+After editing only `.env`, restart the service; `daemon-reload` is not needed.
+
+Confirm the local app responds:
+
+```bash
+curl -I http://127.0.0.1:8000
+```
+
+## 7. LiveKit Options
+
+This app uses LiveKit for media. Flask validates meeting permission and issues a token; the browser connects directly to `LIVEKIT_URL`.
+
+### 7.1 LiveKit Cloud
+
+Best for first deployment:
+
+1. Open https://cloud.livekit.io/ and create a project.
+2. Copy the Server URL, usually `wss://xxx.livekit.cloud`.
 3. Create an API key and API secret.
-4. Put them into `.env` as `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`.
+4. Put them into `/opt/video-meeting/.env`.
+5. Restart the app:
 
-The Flask app only issues tokens. Browsers connect directly to LiveKit, so Nginx does not proxy LiveKit Cloud.
+```bash
+sudo systemctl restart video-meeting
+sudo systemctl status video-meeting
+```
 
 Connection shape:
 
@@ -315,41 +376,170 @@ Browser -> https://meeting.example.com -> Nginx -> Flask
 Browser -> wss://your-project.livekit.cloud -> LiveKit Cloud
 ```
 
-### 6.2 Self-Hosted LiveKit
+So Nginx does not need a `livekit.cloud` config when using LiveKit Cloud.
 
-Self-hosting LiveKit gives more control but adds operational work. You must handle:
+### 7.2 Self-Hosted LiveKit: When to Use It
 
-- LiveKit process or container deployment.
-- LiveKit's own HTTPS / WSS endpoint.
-- UDP media ports, TCP fallback, and TURN/ICE reachability.
-- Cloud security group and OS firewall rules for LiveKit ports.
-- Matching LiveKit API key / secret values in Flask `.env`.
+Self-host LiveKit only when you need:
 
-For a course demo, use LiveKit Cloud first, then consider self-hosting after the core flow works.
+- No hosted LiveKit Cloud.
+- Private or intranet deployment.
+- Full control over media region, ports, logs, and cost.
 
-Minimum self-hosted checklist:
+It is more operational work. Get the app working with LiveKit Cloud first, then replace the media service.
+
+### 7.3 Self-Hosted LiveKit: Domains and Ports
+
+Use separate domains:
+
+| Domain | Purpose | Points to |
+| --- | --- | --- |
+| `meeting.example.com` | Flask website | Flask/Nginx server |
+| `livekit.example.com` | LiveKit signaling and WSS | LiveKit server |
+
+For a small demo both domains can point to one server. For production, separate servers are often cleaner. Consider these ports:
+
+| Port | Protocol | Purpose |
+| --- | --- | --- |
+| `443` | TCP | LiveKit WSS / HTTPS entry |
+| `7881` | TCP | WebRTC TCP fallback, depending on LiveKit config |
+| `50000-60000` | UDP | WebRTC UDP media range, depending on LiveKit config |
+| `3478` | UDP/TCP | TURN/STUN if TURN is enabled |
+| `5349` | TCP | TURN TLS if TURN TLS is enabled |
+
+Use your actual LiveKit config and official docs as the final source. Open ports in both the cloud security group and `ufw`.
+
+### 7.4 Self-Hosted LiveKit: Docker Compose Example
+
+Install Docker:
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker deploy
+newgrp docker
+docker --version
+```
+
+Prepare the directory:
+
+```bash
+sudo mkdir -p /opt/livekit
+sudo chown deploy:deploy /opt/livekit
+cd /opt/livekit
+```
+
+Write LiveKit config. Replace the key and secret:
+
+```bash
+cat <<'EOF' > /opt/livekit/livekit.yaml
+port: 7880
+bind_addresses:
+  - ""
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+keys:
+  replace-livekit-api-key: replace-livekit-api-secret
+logging:
+  level: info
+EOF
+```
+
+Write Docker Compose:
+
+```bash
+cat <<'EOF' > /opt/livekit/docker-compose.yml
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+EOF
+```
+
+Start it:
+
+```bash
+docker compose up -d
+docker compose logs -f livekit
+```
+
+Open LiveKit media ports:
+
+```bash
+sudo ufw allow 7881/tcp
+sudo ufw allow 50000:60000/udp
+sudo ufw status
+```
+
+If the same Nginx proxies LiveKit WSS, create a separate `livekit.example.com` site. This only proxies signaling; UDP/TCP media ports still need direct access.
+
+```bash
+cat <<'EOF' | sudo tee /etc/nginx/sites-available/livekit
+server {
+    listen 80;
+    server_name livekit.example.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:7880;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 3600;
+        proxy_send_timeout 3600;
+    }
+}
+EOF
+
+sudo ln -s /etc/nginx/sites-available/livekit /etc/nginx/sites-enabled/livekit
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx -d livekit.example.com
+```
+
+Then update Flask `.env`:
+
+```env
+LIVEKIT_URL=wss://livekit.example.com
+LIVEKIT_API_KEY=replace-livekit-api-key
+LIVEKIT_API_SECRET=replace-livekit-api-secret
+```
+
+Restart:
+
+```bash
+sudo systemctl restart video-meeting
+```
+
+### 7.5 Self-Hosted LiveKit Checklist
 
 | Check | Expected |
 | --- | --- |
-| `LIVEKIT_URL` | `wss://livekit.example.com` |
-| API key / secret | Same values in LiveKit config and Flask `.env` |
-| DNS | LiveKit hostname points to the LiveKit server |
-| TLS/WSS | Browser trusts the certificate |
-| Firewall | Cloud security group and OS firewall allow required LiveKit TCP/UDP ports |
-| TURN | Recommended for restrictive networks |
+| DNS | `livekit.example.com` points to the LiveKit server public IP |
+| HTTPS/WSS | `https://livekit.example.com` has a trusted certificate |
+| `LIVEKIT_URL` | `wss://livekit.example.com`, not `http://` |
+| API key / secret | Exactly match LiveKit config and Flask `.env` |
+| Cloud security group | Allows `443/tcp`, LiveKit TCP fallback, and UDP media ports |
+| `ufw` | Allows the same ports as the cloud security group |
+| NAT/public IP | LiveKit can discover or is told its public address |
+| TURN | Add TURN when campus, corporate, or mobile networks fail |
 
-## 7. Domain, Cloudflare, and DNS
+## 8. Domain, Cloudflare, and DNS
 
-A public deployment needs a domain that users can open, such as `meeting.example.com`. Separate two concepts:
+A public deployment needs a domain users can open, such as `meeting.example.com`.
 
-1. Domain registrar: where you bought the domain, such as Alibaba Cloud, Tencent Cloud, Cloudflare Registrar, or Namecheap.
-2. DNS host: who manages DNS records, such as Cloudflare, Alibaba Cloud DNS, or Tencent Cloud DNS.
+### 8.1 Plain DNS
 
-They can be the same provider or different providers. With Cloudflare, you usually change the domain's nameservers at the registrar, then manage DNS records in the Cloudflare Dashboard.
-
-### 7.1 Plain DNS
-
-Add an A record at your DNS provider:
+Add an A record:
 
 ```text
 Type: A
@@ -358,98 +548,61 @@ Value: your_server_ip
 TTL: Auto or 600
 ```
 
-Check propagation:
+Check it:
 
 ```bash
-dig meeting.example.com
+getent hosts meeting.example.com
 ```
 
-If `dig` is missing:
-
-```bash
-sudo apt install -y dnsutils
-```
-
-### 7.2 Cloudflare
-
-Cloudflare website: https://www.cloudflare.com/ . Dashboard: https://dash.cloudflare.com/ .
-
-If the domain is on Cloudflare:
-
-1. Add an `A` record, name `meeting`, IPv4 address set to the server public IP.
-2. Start with DNS only, then enable Proxied after the server works.
-3. Use SSL/TLS mode `Full (strict)` with a valid server-side certificate.
-4. If Cloudflare proxy is enabled, confirm WebSocket is not blocked; this app needs stable Socket.IO WebSocket or polling.
-
-Beginner Cloudflare flow:
-
-1. Open https://dash.cloudflare.com/ and sign in.
-2. Click Add a site, then enter the root domain, for example `example.com`.
-3. Follow Cloudflare's instructions to change nameservers at the domain registrar.
-4. Wait until Cloudflare shows the domain as Active.
-5. Open DNS and add an `A` record:
+If self-hosting LiveKit, add another record:
 
 ```text
 Type: A
-Name: meeting
-IPv4 address: your_server_ip
-Proxy status: DNS only
-TTL: Auto
+Name: livekit
+Value: livekit_server_ip
+TTL: Auto or 600
 ```
 
-6. Keep DNS only until Nginx and HTTPS work.
-7. After enabling Proxied, re-test login, chat, two-device room join, and LiveKit media.
+### 8.2 Cloudflare
 
-Stable demo path:
+Dashboard: https://dash.cloudflare.com/
 
-1. Run DNS only + Nginx + Let's Encrypt first.
-2. Enable Cloudflare Proxied afterward.
-3. Re-test login, room join, chat, and two-device media.
+Recommended flow:
 
-## 8. Nginx Reverse Proxy
+1. Add the site to Cloudflare.
+2. Change nameservers at the domain registrar as instructed.
+3. Add an `A` record: `meeting -> your_server_ip`.
+4. Start with `DNS only`.
+5. After Nginx and HTTPS work, consider enabling `Proxied`.
+6. Use SSL/TLS mode `Full (strict)`; the origin server still needs a valid certificate.
 
-Nginx is the public entry point for this Flask website. It listens on public `80/443`, then forwards requests to Gunicorn on `127.0.0.1:8000`.
+If LiveKit Cloud uses `*.livekit.cloud`, do not configure it in Cloudflare. Browsers connect directly to LiveKit Cloud.
 
-It is responsible for:
+If self-hosting `livekit.example.com`, start with DNS only. Normal Cloudflare HTTP proxy does not proxy WebRTC UDP media ports.
 
-1. Forwarding public traffic to Flask.
-2. Preserving WebSocket headers for Socket.IO.
-3. Setting upload size limits before requests reach Flask.
+## 9. Nginx Reverse Proxy
 
-Socket.IO needs WebSocket or long polling. The official Nginx WebSocket proxy pattern maps the client `Upgrade` header to a connection variable, so create this map first.
+Nginx listens on public `80/443` and forwards to Gunicorn on `127.0.0.1:8000`. It must preserve WebSocket headers for Socket.IO.
 
-Create the WebSocket map:
+### 9.1 WebSocket Map
+
+Create the Nginx WebSocket map:
 
 ```bash
-sudo nano /etc/nginx/conf.d/websocket-map.conf
-```
-
-Add:
-
-```nginx
+cat <<'EOF' | sudo tee /etc/nginx/conf.d/websocket-map.conf
 map $http_upgrade $connection_upgrade {
     default upgrade;
     '' close;
 }
+EOF
 ```
 
-Configuration explanation:
+### 9.2 Create the Site Config
 
-| Directive | Meaning | Customizable |
-| --- | --- | --- |
-| `map $http_upgrade $connection_upgrade` | Creates a variable based on whether the client requests protocol upgrade | Variable name can change, but the site config must match |
-| `default upgrade;` | If `Upgrade` exists, upgrade the connection to WebSocket | Keep it |
-| `'' close;` | If no `Upgrade` header exists, treat it as normal HTTP | Keep it |
-
-Create the site config:
+Start with HTTP so Certbot can validate the domain:
 
 ```bash
-sudo nano /etc/nginx/sites-available/video-meeting
-```
-
-Start with HTTP; Certbot can later upgrade it to HTTPS:
-
-```nginx
+cat <<'EOF' | sudo tee /etc/nginx/sites-available/video-meeting
 server {
     listen 80;
     server_name meeting.example.com;
@@ -469,25 +622,8 @@ server {
         proxy_send_timeout 3600;
     }
 }
+EOF
 ```
-
-Configuration explanation:
-
-| Directive | Meaning | Customizable |
-| --- | --- | --- |
-| `listen 80;` | Listens on HTTP; Certbot uses it to issue the certificate | Use default for public HTTPS setup |
-| `server_name meeting.example.com;` | Domain served by this block | Must be your domain |
-| `client_max_body_size 150m;` | Maximum upload request body | Current video attachment limit is 120 MB; increase if app limits increase |
-| `proxy_pass http://127.0.0.1:8000;` | Forwards traffic to local Gunicorn | Port must match systemd `--bind` |
-| `proxy_http_version 1.1;` | Required for WebSocket proxying | Keep it |
-| `proxy_set_header Host $host;` | Passes original host to Flask | Keep it |
-| `proxy_set_header X-Real-IP $remote_addr;` | Passes client IP | Behind Cloudflare, you can later add real IP handling |
-| `proxy_set_header X-Forwarded-For ...` | Passes proxy chain IPs | Keep it |
-| `proxy_set_header X-Forwarded-Proto $scheme;` | Passes external scheme | Used for HTTPS-aware behavior and secure cookies |
-| `proxy_set_header Upgrade $http_upgrade;` | Passes WebSocket upgrade header | Required for Socket.IO WebSocket |
-| `proxy_set_header Connection $connection_upgrade;` | Uses the map variable for upgrade/close | Must match the map above |
-| `proxy_read_timeout 3600;` | Allows long-running upstream reads | Adjust if needed |
-| `proxy_send_timeout 3600;` | Allows long-running upstream sends | Adjust if needed |
 
 Enable it:
 
@@ -497,20 +633,56 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-`client_max_body_size 150m` is larger than the current 120 MB video attachment limit.
+If the symlink already exists, it was enabled before. Inspect before changing it.
 
-Nginx and LiveKit are separate when using LiveKit Cloud:
+### 9.3 Enable and Check Syntax
+
+Common checks:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+curl -I http://meeting.example.com
+```
+
+`client_max_body_size 150m` is intentionally larger than the current 120 MB video attachment limit.
+
+### 9.4 How to Tell Whether Nginx Works
+
+```bash
+curl -I http://127.0.0.1:8000
+curl -I http://meeting.example.com
+sudo tail -n 80 /var/log/nginx/error.log
+```
+
+Order of diagnosis:
+
+- If `127.0.0.1:8000` fails, check systemd/Gunicorn/Flask.
+- If `127.0.0.1:8000` works but the domain fails, check Nginx, DNS, security group, and firewall.
+- If pages open but Socket.IO fails, check `Upgrade` and `Connection` proxy headers.
+
+### 9.5 Nginx and LiveKit
+
+With LiveKit Cloud:
 
 ```text
 meeting.example.com -> Nginx -> Flask
 your-project.livekit.cloud -> LiveKit Cloud
 ```
 
-If `curl -I http://127.0.0.1:8000` works but `curl -I http://meeting.example.com` fails, check Nginx, DNS, and firewall. If `127.0.0.1:8000` fails too, check systemd/Gunicorn/Flask logs first.
+With self-hosted LiveKit:
 
-## 9. HTTPS Certificate
+```text
+meeting.example.com -> Nginx -> Flask
+livekit.example.com -> LiveKit WSS entry
+LiveKit UDP/TCP media ports -> direct access to LiveKit
+```
 
-Certbot officially recommends snap installation for Ubuntu + Nginx. Install the snap version first:
+Proxying `livekit.example.com` HTTPS is not enough for WebRTC. Media UDP/TCP ports still need to be open.
+
+## 10. HTTPS Certificate
+
+Certbot recommends snap installation for Ubuntu + Nginx:
 
 ```bash
 sudo snap install core
@@ -520,41 +692,79 @@ sudo snap install --classic certbot
 sudo ln -s /snap/bin/certbot /usr/bin/certbot
 ```
 
-Command explanation:
+If the last line says the file exists, `certbot` is already available.
 
-| Command | Meaning | Customizable |
-| --- | --- | --- |
-| `sudo snap install core` | Installs snap core runtime | If already installed, the command may say so |
-| `sudo snap refresh core` | Updates snap core | Keep it |
-| `sudo apt remove -y certbot` | Removes apt Certbot to avoid command conflicts | Can skip if apt Certbot was never installed |
-| `sudo snap install --classic certbot` | Installs official snap Certbot | Keep it |
-| `sudo ln -s /snap/bin/certbot /usr/bin/certbot` | Makes `certbot` available in the usual PATH | If it already exists, it has already been configured |
+### 10.1 Let Certbot Edit Nginx Automatically
 
-Issue the certificate and let Certbot update Nginx:
+Simplest path:
 
 ```bash
 sudo certbot --nginx -d meeting.example.com
-```
-
-Command explanation:
-
-| Argument | Meaning | Customizable |
-| --- | --- | --- |
-| `--nginx` | Lets Certbot read and edit Nginx config | Use `certonly --nginx` if you want to edit Nginx manually |
-| `-d meeting.example.com` | Domain for the certificate | Must be your domain; use multiple `-d` flags for multiple domains |
-
-Verify renewal:
-
-```bash
 sudo certbot renew --dry-run
 ```
 
-Command explanation:
+Then check:
 
-| Argument | Meaning | Customizable |
-| --- | --- | --- |
-| `renew` | Tests renewal flow | Keep it |
-| `--dry-run` | Simulation only; does not replace the real certificate | Keep it for verification |
+```bash
+curl -I https://meeting.example.com
+```
+
+### 10.2 Manual HTTPS Nginx Config
+
+If you prefer to write Nginx yourself, first request the certificate:
+
+```bash
+sudo certbot certonly --nginx -d meeting.example.com
+```
+
+Then write a complete HTTPS config:
+
+```bash
+cat <<'EOF' | sudo tee /etc/nginx/sites-available/video-meeting
+server {
+    listen 80;
+    server_name meeting.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name meeting.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/meeting.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/meeting.example.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    client_max_body_size 150m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 3600;
+        proxy_send_timeout 3600;
+    }
+}
+EOF
+
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot renew --dry-run
+```
+
+Important points:
+
+- Port `80` redirects to HTTPS.
+- `443 ssl http2` serves real traffic.
+- `X-Forwarded-Proto https` tells Flask the external scheme.
+- WebSocket headers remain present.
+- Certificate paths must match your domain.
 
 After HTTPS is ready, keep `.env` aligned:
 
@@ -564,103 +774,22 @@ SESSION_COOKIE_SECURE=1
 REMEMBER_COOKIE_SECURE=1
 ```
 
-If Cloudflare uses `Full (strict)`, the server still needs a valid certificate; Let's Encrypt is enough.
-
-## 10. systemd Service
-
-Create the service:
-
-```bash
-sudo nano /etc/systemd/system/video-meeting.service
-```
-
-Recommended config:
-
-```ini
-[Unit]
-Description=Video Meeting Flask-SocketIO App
-After=network.target
-
-[Service]
-User=deploy
-Group=deploy
-WorkingDirectory=/opt/video-meeting
-EnvironmentFile=/opt/video-meeting/.env
-Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/video-meeting/venv/bin/gunicorn --worker-class eventlet --workers 1 --bind 127.0.0.1:8000 app:app
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Configuration explanation:
-
-| Setting | Meaning | Customizable |
-| --- | --- | --- |
-| `Description` | Human-readable service description | Change to your project name |
-| `After=network.target` | Starts after network is available | Usually keep it |
-| `User=deploy` / `Group=deploy` | Runs the service as a normal user | Must match the runtime user |
-| `WorkingDirectory=/opt/video-meeting` | Service working directory | Must match project directory |
-| `EnvironmentFile=/opt/video-meeting/.env` | Loads environment variables from `.env` | Path can change if the file exists and permissions are correct |
-| `Environment=PYTHONUNBUFFERED=1` | Sends Python logs to journal promptly | Recommended |
-| `ExecStart=...gunicorn...` | Actual application start command | Adjust virtualenv path, port, or module if the project changes |
-| `--worker-class eventlet` | Uses eventlet worker for Socket.IO long connections | Flask-SocketIO supports this; changing worker type requires re-testing |
-| `--workers 1` | Starts exactly one worker | Required for current in-memory room state; do not casually increase |
-| `--bind 127.0.0.1:8000` | Listens only on local port 8000 | Port can change, but Nginx `proxy_pass` must match |
-| `app:app` | Flask app object `app` inside `app.py` | Change if the file/object is renamed |
-| `Restart=always` | Restarts after crashes | Recommended |
-| `RestartSec=5` | Waits 5 seconds before restart | Adjustable |
-| `WantedBy=multi-user.target` | Enables normal boot auto-start | Keep it |
-
-Start and enable it:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable video-meeting
-sudo systemctl start video-meeting
-sudo systemctl status video-meeting
-```
-
-Command explanation:
-
-| Command | Meaning | Customizable |
-| --- | --- | --- |
-| `sudo systemctl daemon-reload` | Reloads systemd unit files | Required after editing `.service` |
-| `sudo systemctl enable video-meeting` | Enables auto-start on boot | Replace service name if changed |
-| `sudo systemctl start video-meeting` | Starts the service | Use `restart` for restarts |
-| `sudo systemctl status video-meeting` | Shows service status and recent logs | First troubleshooting step |
-
-Logs:
-
-```bash
-journalctl -u video-meeting -n 100 --no-pager
-journalctl -u video-meeting -f
-```
-
-Command explanation:
-
-| Command | Meaning | Customizable |
-| --- | --- | --- |
-| `journalctl -u video-meeting -n 100 --no-pager` | Shows latest 100 log lines without pager | Change `100` as needed |
-| `journalctl -u video-meeting -f` | Follows logs live | Use while reproducing an issue |
-
 ## 11. First Online Verification
 
-Check the service:
+Command-line checks:
 
 ```bash
 curl -I http://127.0.0.1:8000
 curl -I http://meeting.example.com
 curl -I https://meeting.example.com
+grep LIVEKIT /opt/video-meeting/.env
 ```
 
 Browser checks:
 
 - Home, login, and registration pages are reachable.
 - The admin account can log in.
-- A normal user can register, log in, and create a meeting.
+- Normal users can register, log in, and create meetings.
 - Room pages do not return `503` because of missing LiveKit config.
 - Two devices can join the same meeting and see remote media on first join.
 - Chat, attachment upload, preview, and download permissions work.
@@ -671,45 +800,19 @@ Browser checks:
 
 There are usually three sides:
 
-| Side | Role | Normal work |
-| --- | --- | --- |
-| Local computer | Edit and test code with `python app.py` | Change `app.py`, `templates/`, `static/`, and docs |
-| Git platform | Stores versions, such as GitHub or Gitee | Receives `git push` and becomes the sync center |
-| Cloud server | Runs production | Pulls confirmed code with `git pull`, then restarts the service |
+| Side | Role |
+| --- | --- |
+| Local computer | Edit code, run `python app.py`, test locally |
+| Git platform | Stores versions and acts as the sync center |
+| Cloud server | Pulls confirmed code and restarts the service |
 
 Recommended flow:
 
 ```text
-Edit locally
-  -> Run local checks
-  -> git commit
-  -> git push
-  -> SSH to the server
-  -> git pull
-  -> Restart systemd
+Edit locally -> test locally -> git commit -> git push -> SSH to server -> git pull -> restart systemd
 ```
 
-First create an empty repository on GitHub or Gitee:
-
-| Platform | Entry | Good for |
-| --- | --- | --- |
-| GitHub | https://github.com/new | International default, most English resources |
-| Gitee | https://gitee.com/projects/new | Often smoother access in China |
-
-Then run locally:
-
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git branch -M main
-git remote add origin https://github.com/jerryhuang392diandi/video-meeting.git
-git push -u origin main
-```
-
-Do not commit `venv/`, `instance/`, `.env`, databases, uploads, recordings, archives, or IDE cache files.
-
-Local change flow. This is the most common version for a small project or course assignment:
+Local commit:
 
 ```bash
 git status
@@ -720,17 +823,7 @@ git commit -m "Improve deployment documentation"
 git push origin main
 ```
 
-Explanation for beginners:
-
-- `git status` lists files that were modified, deleted, or newly created. Read it first and make sure runtime files are not included.
-- `python check_i18n.py` checks whether template text accidentally skipped the translation table.
-- `python -m py_compile ...` quickly checks Python syntax.
-- `git add .` means "stage all changes under the current project directory for this commit." It includes new, modified, and deleted files.
-- If `git status` shows files that should not be committed, add them to `.gitignore` first, or use `git add some-file` to stage only specific files.
-- `git commit -m "..."` gives this change a name. Replace the quoted text with a clear subject, such as `Fix quickstart layout` or `Update deployment docs`.
-- `git push origin main` sends your local commit to the `main` branch on GitHub / Gitee.
-
-Server update flow:
+Server update:
 
 ```bash
 ssh deploy@your_server_ip
@@ -747,6 +840,8 @@ If `git status` on the server shows local modifications, do not force `git pull`
 
 ## 13. Standard Server Update
 
+Normal update:
+
 ```bash
 cd /opt/video-meeting
 git status
@@ -758,26 +853,11 @@ sudo systemctl restart video-meeting
 sudo systemctl status video-meeting
 ```
 
-Notes:
-
-- Skip `pip install -r requirements.txt` if dependencies did not change.
-- If `gunicorn eventlet` is already installed in the server virtual environment, normal code-only updates do not need to reinstall it.
-- Do not run `git clean -fd` by default; it deletes untracked files and can remove runtime data.
-- Check `systemctl status` after restart, then continue with logs if needed.
-
 Code-only update:
 
 ```bash
 cd /opt/video-meeting
 git pull origin main
-sudo systemctl restart video-meeting
-sudo systemctl status video-meeting
-```
-
-After changing systemd:
-
-```bash
-sudo systemctl daemon-reload
 sudo systemctl restart video-meeting
 sudo systemctl status video-meeting
 ```
@@ -789,51 +869,53 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+After changing systemd:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart video-meeting
+sudo systemctl status video-meeting
+```
+
 ## 14. Backup and Migration
 
-SQLite and uploads are under `instance/` by default. Back up at least:
+SQLite and uploads live under `instance/`:
 
 ```bash
 cd /opt/video-meeting
 tar -czf /tmp/video-meeting-instance-$(date +%F).tar.gz instance
+cp /opt/video-meeting/.env /tmp/video-meeting-env-$(date +%F)
 ```
 
-For server migration:
+Migration:
 
 1. Deploy code and dependencies on the new server.
-2. Copy the old server's `instance/` directory.
-3. Copy `.env`, or recreate it while keeping `DATABASE_URL`, LiveKit, domain, and admin settings correct.
+2. Copy the old `instance/`.
+3. Copy or recreate `.env`.
 4. Point DNS to the new server IP.
 5. Restart systemd and run a two-device room test.
 
 ## 15. Local Commit Quick Reference
 
-Use this for normal changes:
-
 ```bash
 git status
 git pull --rebase origin main
+python check_i18n.py
 git add .
 git commit -m "Improve deployment documentation"
 git push origin main
 ```
 
-Before committing:
-
-- Do not commit `instance/`, databases, uploads, temporary recordings, or the local virtual environment.
-- `git add .` is the normal shortcut, but read `git status` first. If runtime files appear, fix `.gitignore` or stage specific files instead.
-- If template text changed, run `python check_i18n.py`.
-- If deployment behavior changed, update the root README, deployment guide, and stability notes together.
+Do not commit `venv/`, `instance/`, `.env`, databases, uploads, recordings, archives, or IDE caches.
 
 ## 16. Common Issues
 
 ### Room Returns 503
 
-Check first:
-
 ```bash
 grep LIVEKIT /opt/video-meeting/.env
 journalctl -u video-meeting -n 100 --no-pager
+sudo systemctl restart video-meeting
 ```
 
 Confirm:
@@ -841,11 +923,20 @@ Confirm:
 - `LIVEKIT_URL` is a browser-reachable `wss://...` URL.
 - `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` are correct.
 - systemd loads `/opt/video-meeting/.env`.
-- `video-meeting` was restarted after editing `.env`.
+- The service was restarted after `.env` changed.
 
 ### Page Opens but Socket.IO Fails
 
-Confirm Nginx preserves WebSocket headers:
+Check Nginx:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+grep -R "Upgrade\\|connection_upgrade" /etc/nginx/conf.d /etc/nginx/sites-available
+journalctl -u video-meeting -f
+```
+
+Required directives:
 
 ```nginx
 proxy_http_version 1.1;
@@ -854,27 +945,17 @@ proxy_set_header Connection $connection_upgrade;
 proxy_read_timeout 3600;
 ```
 
-Then check:
-
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
-journalctl -u video-meeting -f
-```
-
 ### Page Opens but Remote Media Is Missing
 
 Check first:
 
 - Whether the browser allowed camera and microphone.
-- Whether LiveKit is reachable.
+- Whether LiveKit Cloud or self-hosted LiveKit is reachable.
 - Whether `PUBLIC_HOST` / `PUBLIC_SCHEME` match the real public address.
-- Whether Cloudflare proxy affects WebSocket or LiveKit domain access.
-- Whether only one device fails or both sides fail.
+- If self-hosting LiveKit, whether cloud security group and `ufw` allow media ports.
+- Whether only one network fails. If campus/corporate/mobile networks fail, consider TURN.
 
 ### Attachment Upload Fails
-
-Check Nginx upload limits and directory permissions:
 
 ```bash
 grep client_max_body_size /etc/nginx/sites-available/video-meeting
@@ -894,56 +975,72 @@ Without `ffmpeg`, the app can still keep the browser's raw recording output, but
 
 ### 502 Bad Gateway
 
-This usually means the app service is down or Nginx points to the wrong port:
-
 ```bash
 sudo systemctl status video-meeting
 journalctl -u video-meeting -n 100 --no-pager
 ss -lntp | grep 8000
+sudo tail -n 80 /var/log/nginx/error.log
 ```
+
+This usually means the app service is down, Gunicorn failed, or Nginx `proxy_pass` does not match systemd `--bind`.
 
 ### `.env` Changes Do Not Apply
 
-systemd does not automatically reload `.env`:
-
 ```bash
 sudo systemctl restart video-meeting
+journalctl -u video-meeting -n 50 --no-pager
 ```
 
-If the service file changed:
+If `/etc/systemd/system/video-meeting.service` changed:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl restart video-meeting
 ```
 
+### SSH Login Issues
+
+| Symptom | Action |
+| --- | --- |
+| Password input shows nothing | Normal SSH behavior; type it and press Enter |
+| `Permission denied` | Check username, password, key, or reset credentials in the cloud console |
+| `Connection timed out` | Check public IP, port 22, security group, and local network firewall |
+| `REMOTE HOST IDENTIFICATION HAS CHANGED` | Common after reinstalling a server or reusing an IP; verify safety, then remove the old `known_hosts` entry |
+
 ## 17. References
 
-This guide combines the current project code with these official documents:
+This guide combines the current project code with these official or reliable documents:
 
-| Topic | Official docs | Adopted point |
-| --- | --- | --- |
-| Flask-SocketIO + Gunicorn | [Flask-SocketIO Deployment](https://flask-socketio.readthedocs.io/en/latest/deployment.html) | Use Gunicorn with `eventlet`, keeping `-w 1` / `--workers 1` |
-| Gunicorn arguments | [Gunicorn Settings](https://docs.gunicorn.org/en/stable/settings.html) | Meaning of `--bind`, `--workers`, and `--worker-class` |
-| Nginx WebSocket | [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html) | Forward `Upgrade` explicitly and use `map` for `Connection` |
-| Certbot | [Certbot install guide](https://eff-certbot.readthedocs.io/en/stable/install.html) | Use snap Certbot for Ubuntu/Nginx |
-| Cloudflare SSL | [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) | Full (strict) requires a valid origin certificate |
-| Cloudflare DNS | [Cloudflare DNS records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/) | Add an `A` record that points `meeting.example.com` to the server public IP |
-| Cloudflare Dashboard | [Cloudflare Dashboard](https://dash.cloudflare.com/) | Add sites, configure DNS, switch DNS only / Proxied, configure SSL/TLS |
-| Domain registrar examples | [Alibaba Cloud Domains](https://wanwang.aliyun.com/), [Tencent Cloud DNSPod](https://dnspod.cloud.tencent.com/), [Cloudflare Registrar](https://www.cloudflare.com/products/registrar/), [Namecheap](https://www.namecheap.com/) | Buy a domain; after purchase, you must be able to manage DNS or change nameservers |
-| systemd environment | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) | `EnvironmentFile=` loads variables from a file |
-| LiveKit self-hosting | [Deploying LiveKit](https://docs.livekit.io/home/self-hosting/deployment/) | Self-hosting needs domain, trusted SSL, reverse proxy/load balancer, UDP/TCP media ports, and TURN |
-| LiveKit Cloud | [LiveKit Cloud](https://cloud.livekit.io/) | Create hosted LiveKit projects and copy server URL, API key, and API secret |
-| LiveKit project config | [LiveKit CLI project commands](https://docs.livekit.io/reference/developer-tools/livekit-cli/projects/) | A LiveKit project is identified by URL, API key, and API secret, matching this app's `.env` values |
-| GitHub / Gitee | [GitHub](https://github.com/), [Gitee](https://gitee.com/) | Code hosting, version control, and the source for server `git pull` |
-| Local tools | [Python](https://www.python.org/downloads/), [Git](https://git-scm.com/downloads), [FFmpeg](https://ffmpeg.org/download.html), [VS Code](https://code.visualstudio.com/), [Homebrew](https://brew.sh/), [winget](https://learn.microsoft.com/windows/package-manager/winget/) | Tool entry points for local quick start and debugging |
-| Cloud server providers | [Alibaba Cloud ECS](https://www.aliyun.com/product/ecs), [Tencent Cloud CVM](https://cloud.tencent.com/product/cvm), [Huawei Cloud ECS](https://www.huaweicloud.com/product/ecs.html), [AWS EC2](https://aws.amazon.com/ec2/), [Azure VM](https://azure.microsoft.com/products/virtual-machines/), [DigitalOcean Droplets](https://www.digitalocean.com/products/droplets), [Vultr Cloud Compute](https://www.vultr.com/products/cloud-compute/) | Start with one ordinary Ubuntu server before adding managed databases, load balancers, or storage services |
+| Topic | Docs |
+| --- | --- |
+| Flask-SocketIO + Gunicorn | [Flask-SocketIO Deployment](https://flask-socketio.readthedocs.io/en/latest/deployment.html) |
+| Gunicorn arguments | [Gunicorn Settings](https://docs.gunicorn.org/en/stable/settings.html) |
+| Nginx WebSocket | [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html) |
+| Nginx HTTPS | [Configuring HTTPS servers](https://nginx.org/en/docs/http/configuring_https_servers.html) |
+| Nginx basics | [Beginner's Guide](https://nginx.org/en/docs/beginners_guide.html) |
+| Certbot / Nginx | [Certbot install guide](https://eff-certbot.readthedocs.io/en/stable/install.html) |
+| Let's Encrypt | [Let's Encrypt Documentation](https://letsencrypt.org/docs/) |
+| systemd environment | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html) |
+| LiveKit self-hosting | [LiveKit self-hosting deployment](https://docs.livekit.io/home/self-hosting/deployment/) |
+| LiveKit VM deployment | [LiveKit VM deployment](https://docs.livekit.io/home/self-hosting/vm/) |
+| LiveKit Docker | [LiveKit Docker image](https://github.com/livekit/livekit) |
+| LiveKit Cloud | [LiveKit Cloud](https://cloud.livekit.io/) |
+| Cloudflare DNS | [Create DNS records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/) |
+| Cloudflare SSL | [Full (strict) SSL mode](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) |
+| Windows OpenSSH | [Microsoft OpenSSH client](https://learn.microsoft.com/windows-server/administration/openssh/openssh_install_firstuse) |
+| macOS SSH | [Apple remote login guide](https://support.apple.com/guide/mac-help/allow-a-remote-computer-to-access-your-mac-mchlp1066/mac) |
+| Ubuntu SSH | [Ubuntu OpenSSH Server](https://documentation.ubuntu.com/server/how-to/security/openssh-server/) |
+| Mainland China ICP filing | [MIIT ICP/IP/domain filing system](https://beian.miit.gov.cn/) |
+| Alibaba Cloud ICP filing | [Alibaba Cloud ICP filing](https://help.aliyun.com/zh/icp-filing/) |
+| Tencent Cloud ICP filing | [Tencent Cloud ICP filing](https://cloud.tencent.com/document/product/243) |
+| Huawei Cloud ICP filing | [Huawei Cloud ICP filing](https://support.huaweicloud.com/icp/) |
+| FinalShell | [FinalShell official site](https://www.hostbuf.com/) |
 
 ## 18. Operations to Avoid
 
-- Do not run production service with the Flask debug server.
+- Do not run production with the Flask debug server.
 - Do not start multiple Gunicorn workers to "improve performance" unless runtime room state has moved to shared storage.
 - Do not habitually run `git clean -fd` in production directories.
-- Do not repeatedly restart the service without reading logs.
-- Do not commit runtime databases, uploads, or generated files.
+- Do not repeatedly restart services without reading logs.
+- Do not commit `.env`, databases, uploads, or recording files.
 - Do not only test page load; room media requires a two-client check.

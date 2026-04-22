@@ -223,7 +223,7 @@ Without LiveKit settings, login and normal pages can work, but meeting rooms ret
 2. Copy the server URL, API key, and API secret from that project.
 3. Create `.env` in the project root and paste the LiveKit values plus the local app settings.
 
-The detailed LiveKit Cloud flow, the reason Nginx does not proxy LiveKit, and the self-hosted LiveKit port checklist are covered in [LiveKit Options](docs/DEPLOYMENT_GUIDE.en.md#6-livekit-options). The full production environment variable table is in [Configure Environment Variables](docs/DEPLOYMENT_GUIDE.en.md#5-configure-environment-variables).
+The detailed LiveKit Cloud flow, the reason Nginx does not proxy LiveKit, and the self-hosted LiveKit port checklist are covered in [LiveKit Options](docs/DEPLOYMENT_GUIDE.en.md#7-livekit-options). The full production environment variable table is in [Configure Environment Variables](docs/DEPLOYMENT_GUIDE.en.md#5-configure-environment-variables).
 
 ```env
 SECRET_KEY=local-dev-secret-change-me
@@ -317,16 +317,16 @@ Common companion platform entry points:
 | GitHub | Code hosting and version control | https://github.com/ |
 | Gitee | Optional code hosting platform in China | https://gitee.com/ |
 
-See [docs/DEPLOYMENT_GUIDE.en.md](docs/DEPLOYMENT_GUIDE.en.md) for the full Linux cloud server procedure. The Chinese guide has the most beginner-oriented explanation for Nginx, HTTPS, LiveKit Cloud, and self-hosted LiveKit; the English guide keeps the same deployment shape and configuration names.
+See [docs/DEPLOYMENT_GUIDE.en.md](docs/DEPLOYMENT_GUIDE.en.md) for the full Linux cloud server procedure. It now follows the first-deployment order: server purchase, ICP filing notes for mainland China servers, Windows/macOS/FinalShell SSH login, project config, systemd, LiveKit, Nginx, and HTTPS.
 
 It includes:
 
-- Security groups, firewall, server users, and project directories after buying a server.
+- ICP filing checks, SSH login, password input behavior, security groups, firewall, server users, and project directories after buying a server.
 - Cloudflare or plain DNS records.
-- Python virtual environment, dependency installation, and `.env` configuration.
-- Nginx reverse proxy for WebSocket headers, upload size, and HTTPS.
-- systemd service files, auto-start, log inspection, and production updates.
-- LiveKit Cloud configuration and self-hosted LiveKit checks for TLS, ports, TURN/ICE, and API keys.
+- Python virtual environment, dependency installation, and EOF-based `.env` configuration.
+- Nginx reverse proxy for WebSocket headers, upload size, and a direct HTTPS config.
+- EOF-based systemd service files, auto-start, log inspection, and production updates.
+- LiveKit Cloud configuration and self-hosted LiveKit domains, Docker Compose, TLS, ports, TURN/ICE, and API keys.
 - Troubleshooting for missing LiveKit config, WebSocket failures, upload issues, and MP4 recording remux.
 
 ## Key Configuration
@@ -379,6 +379,7 @@ Deployment and runtime configuration mainly follow these official documents. See
 | Flask-SocketIO deployment | [Flask-SocketIO Deployment](https://flask-socketio.readthedocs.io/en/latest/deployment.html) |
 | Gunicorn settings | [Gunicorn Settings](https://docs.gunicorn.org/en/stable/settings.html) |
 | Nginx WebSocket proxying | [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html) |
+| Nginx HTTPS configuration | [Configuring HTTPS servers](https://nginx.org/en/docs/http/configuring_https_servers.html) |
 | Certbot / Let's Encrypt | [Certbot install guide](https://eff-certbot.readthedocs.io/en/stable/install.html) |
 | Let's Encrypt | [Let's Encrypt](https://letsencrypt.org/) |
 | Cloudflare entry | [Cloudflare](https://www.cloudflare.com/) / [Dashboard](https://dash.cloudflare.com/) |
@@ -387,6 +388,8 @@ Deployment and runtime configuration mainly follow these official documents. See
 | Domain registrar examples | [Alibaba Cloud Domains](https://wanwang.aliyun.com/) / [Tencent Cloud DNSPod](https://dnspod.cloud.tencent.com/) / [Cloudflare Registrar](https://www.cloudflare.com/products/registrar/) / [Namecheap](https://www.namecheap.com/) |
 | systemd environment variables | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) |
 | LiveKit | [LiveKit Docs](https://docs.livekit.io/) / [LiveKit Cloud](https://cloud.livekit.io/) |
+| SSH login | [Microsoft OpenSSH](https://learn.microsoft.com/windows-server/administration/openssh/openssh_install_firstuse) / [Ubuntu OpenSSH](https://documentation.ubuntu.com/server/how-to/security/openssh-server/) |
+| Mainland China ICP filing | [MIIT filing system](https://beian.miit.gov.cn/) / [Alibaba Cloud ICP filing](https://help.aliyun.com/zh/icp-filing/) / [Tencent Cloud ICP filing](https://cloud.tencent.com/document/product/243) |
 | GitHub / Gitee | [GitHub](https://github.com/) / [Gitee](https://gitee.com/) |
 | Local tools | [Python](https://www.python.org/downloads/) / [Git](https://git-scm.com/downloads) / [FFmpeg](https://ffmpeg.org/download.html) / [VS Code](https://code.visualstudio.com/) / [Homebrew](https://brew.sh/) / [winget](https://learn.microsoft.com/windows/package-manager/winget/) |
 
