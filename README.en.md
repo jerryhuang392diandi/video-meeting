@@ -146,16 +146,18 @@ Project repositories:
 | Platform | URL |
 | --- | --- |
 | GitHub | https://github.com/jerryhuang392diandi/video-meeting |
-| Gitee | https://gitee.com/jerryhqx/video-meeting/tree/main |
+| Gitee | https://gitee.com/jerryhqx/video-meeting |
 
-The examples below use GitHub. If GitHub is slow from your network, replace the clone URL with `https://gitee.com/jerryhqx/video-meeting.git`.
+The examples below use Gitee by default. Users can choose GitHub instead based on network access or hosting preference.
 
 Windows PowerShell:
 
 ```powershell
 mkdir D:\projects
 cd D:\projects
-git clone https://github.com/jerryhuang392diandi/video-meeting.git
+git clone https://gitee.com/jerryhqx/video-meeting.git
+# Choose GitHub if needed:
+# git clone https://github.com/jerryhuang392diandi/video-meeting.git
 cd video-meeting
 ```
 
@@ -164,7 +166,9 @@ Windows CMD:
 ```bat
 mkdir D:\projects
 cd /d D:\projects
-git clone https://github.com/jerryhuang392diandi/video-meeting.git
+git clone https://gitee.com/jerryhqx/video-meeting.git
+REM Choose GitHub if needed:
+REM git clone https://github.com/jerryhuang392diandi/video-meeting.git
 cd video-meeting
 ```
 
@@ -173,7 +177,9 @@ macOS / Linux:
 ```bash
 mkdir -p ~/projects
 cd ~/projects
-git clone https://github.com/jerryhuang392diandi/video-meeting.git
+git clone https://gitee.com/jerryhqx/video-meeting.git
+# Choose GitHub if needed:
+# git clone https://github.com/jerryhuang392diandi/video-meeting.git
 cd video-meeting
 ```
 
@@ -183,7 +189,7 @@ Command explanation:
 | --- | --- | --- |
 | `mkdir D:\projects` / `mkdir -p ~/projects` | Creates a parent folder for source code | Replace it with your preferred path |
 | `cd D:\projects` / `cd ~/projects` | Enters the parent folder so the clone lands there | Windows CMD needs `cd /d` when switching drives |
-| `git clone https://github.com/jerryhuang392diandi/video-meeting.git` | Downloads the GitHub repository and creates a `video-meeting` folder | If GitHub is slow, use `https://gitee.com/jerryhqx/video-meeting.git` |
+| `git clone https://gitee.com/jerryhqx/video-meeting.git` | Downloads the Gitee repository and creates a `video-meeting` folder | You can use GitHub instead: `https://github.com/jerryhuang392diandi/video-meeting.git` |
 | `cd video-meeting` | Enters the cloned project folder | If you clone into another folder name, use that name here |
 
 ### 3. Create a Virtual Environment

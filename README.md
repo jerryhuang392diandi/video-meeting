@@ -146,16 +146,18 @@ ffmpeg -version
 | 平台 | 地址 |
 | --- | --- |
 | GitHub | https://github.com/jerryhuang392diandi/video-meeting |
-| Gitee | https://gitee.com/jerryhqx/video-meeting/tree/main |
+| Gitee | https://gitee.com/jerryhqx/video-meeting |
 
-下面示例默认使用 GitHub。如果访问 GitHub 较慢，可以把 clone 地址换成 `https://gitee.com/jerryhqx/video-meeting.git`。
+下面示例默认使用 Gitee。用户也可以按网络环境或代码托管平台选择 GitHub。
 
 Windows PowerShell 示例：
 
 ```powershell
 mkdir D:\projects
 cd D:\projects
-git clone https://github.com/jerryhuang392diandi/video-meeting.git
+git clone https://gitee.com/jerryhqx/video-meeting.git
+# 按需选择 GitHub：
+# git clone https://github.com/jerryhuang392diandi/video-meeting.git
 cd video-meeting
 ```
 
@@ -164,7 +166,9 @@ Windows CMD 示例：
 ```bat
 mkdir D:\projects
 cd /d D:\projects
-git clone https://github.com/jerryhuang392diandi/video-meeting.git
+git clone https://gitee.com/jerryhqx/video-meeting.git
+REM 按需选择 GitHub：
+REM git clone https://github.com/jerryhuang392diandi/video-meeting.git
 cd video-meeting
 ```
 
@@ -173,7 +177,9 @@ macOS / Linux 示例：
 ```bash
 mkdir -p ~/projects
 cd ~/projects
-git clone https://github.com/jerryhuang392diandi/video-meeting.git
+git clone https://gitee.com/jerryhqx/video-meeting.git
+# 按需选择 GitHub：
+# git clone https://github.com/jerryhuang392diandi/video-meeting.git
 cd video-meeting
 ```
 
@@ -185,7 +191,7 @@ cd video-meeting
 | --- | --- | --- |
 | `mkdir D:\projects` / `mkdir -p ~/projects` | 创建一个专门放代码的父目录 | 可以换成你自己的路径 |
 | `cd D:\projects` / `cd ~/projects` | 进入父目录，后续 clone 会把项目放在这里 | Windows CMD 跨盘符要用 `cd /d` |
-| `git clone https://github.com/jerryhuang392diandi/video-meeting.git` | 从 GitHub 下载代码；默认会创建 `video-meeting` 文件夹 | 国内访问慢时可换成 `https://gitee.com/jerryhqx/video-meeting.git` |
+| `git clone https://gitee.com/jerryhqx/video-meeting.git` | 从 Gitee 下载代码；默认会创建 `video-meeting` 文件夹 | 也可按需换成 GitHub：`https://github.com/jerryhuang392diandi/video-meeting.git` |
 | `cd video-meeting` | 进入刚下载的项目目录 | 如果 clone 时指定了目录名，例如 `git clone ... my-folder`，这里也要改成 `cd my-folder` |
 
 ### 3. 创建 Python 虚拟环境并安装依赖
@@ -338,7 +344,7 @@ http://127.0.0.1:5000
 | Cloudflare 控制台 | 添加 DNS 记录、切换 DNS only / Proxied | https://dash.cloudflare.com/ |
 | LiveKit Cloud | 托管 LiveKit 媒体服务，复制 `LIVEKIT_URL`、API key、API secret | https://cloud.livekit.io/ |
 | GitHub 项目仓库 | 代码托管与版本管理 | https://github.com/jerryhuang392diandi/video-meeting |
-| Gitee 项目仓库 | 国内访问较快的项目镜像 | https://gitee.com/jerryhqx/video-meeting/tree/main |
+| Gitee 项目仓库 | 国内访问较快的项目镜像 | https://gitee.com/jerryhqx/video-meeting |
 
 完整 Linux 云服务器操作步骤见 [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)。这份部署手册已经按零基础顺序整理了购买服务器、国内备案、Windows/macOS/FinalShell 登录服务器、项目配置、systemd、LiveKit、Nginx 和 HTTPS，建议第一次部署时照着它从前往后做，不要直接跳到配置片段。
 

@@ -40,7 +40,7 @@ This guide often writes files with `cat <<'EOF' | sudo tee ...`. That is easier 
 | Cloud server | Runs Flask, Nginx, and systemd | Alibaba Cloud ECS, Tencent Cloud CVM, Huawei Cloud ECS, AWS EC2, Azure VM, DigitalOcean, Vultr |
 | Domain | Lets users open `meeting.example.com` | Alibaba Cloud Domains, Tencent DNSPod, Cloudflare Registrar, Namecheap, or another registrar |
 | ICP filing | Usually required for public domain access on mainland China servers | MIIT filing system or cloud provider filing console |
-| GitHub / Gitee | Code hosting for `git clone` / `git pull` | GitHub: https://github.com/jerryhuang392diandi/video-meeting; Gitee: https://gitee.com/jerryhqx/video-meeting/tree/main |
+| GitHub / Gitee | Code hosting for `git clone` / `git pull` | GitHub: https://github.com/jerryhuang392diandi/video-meeting; Gitee: https://gitee.com/jerryhqx/video-meeting |
 | Cloudflare | Optional DNS hosting, proxy, and SSL/TLS settings | https://www.cloudflare.com/ |
 | LiveKit Cloud | Easiest hosted LiveKit media service | https://cloud.livekit.io/ |
 | Let's Encrypt / Certbot | Free HTTPS certificates | https://letsencrypt.org/ / https://certbot.eff.org/ |
@@ -203,18 +203,14 @@ cd /opt/video-meeting
 Deploy from Git:
 
 ```bash
-git clone https://github.com/jerryhuang392diandi/video-meeting.git .
+git clone https://gitee.com/jerryhqx/video-meeting.git .
+# Choose GitHub if needed based on network access or hosting preference:
+# git clone https://github.com/jerryhuang392diandi/video-meeting.git .
 python3 -m venv venv
 source venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 pip install gunicorn eventlet
-```
-
-If GitHub is slow from your network, use Gitee instead:
-
-```bash
-git clone https://gitee.com/jerryhqx/video-meeting.git .
 ```
 
 Private repositories need SSH key or token setup.

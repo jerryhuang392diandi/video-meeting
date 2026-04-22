@@ -53,7 +53,7 @@ Nginx 代理的是本项目网站；LiveKit 承担摄像头、麦克风、屏幕
 | 云服务器 | 运行 Flask、Nginx、systemd | 阿里云 ECS、腾讯云 CVM、华为云 ECS、AWS EC2、Azure VM、DigitalOcean、Vultr |
 | 域名 | 让用户访问 `meeting.example.com` | 阿里云域名、腾讯云 DNSPod、Cloudflare Registrar、Namecheap 等 |
 | 备案入口 | 中国大陆服务器绑定域名时通常需要 ICP 备案 | 工信部备案系统、云厂商备案控制台 |
-| GitHub / Gitee | 托管代码，服务器 `git clone` / `git pull` | GitHub: https://github.com/jerryhuang392diandi/video-meeting；Gitee: https://gitee.com/jerryhqx/video-meeting/tree/main |
+| GitHub / Gitee | 托管代码，服务器 `git clone` / `git pull` | GitHub: https://github.com/jerryhuang392diandi/video-meeting；Gitee: https://gitee.com/jerryhqx/video-meeting |
 | Cloudflare | 可选 DNS 托管、代理、SSL/TLS 设置 | https://www.cloudflare.com/ |
 | LiveKit Cloud | 最省事的托管 LiveKit 媒体服务 | https://cloud.livekit.io/ |
 | Let's Encrypt / Certbot | 免费 HTTPS 证书 | https://letsencrypt.org/ / https://certbot.eff.org/ |
@@ -228,18 +228,14 @@ cd /opt/video-meeting
 从 Git 仓库部署：
 
 ```bash
-git clone https://github.com/jerryhuang392diandi/video-meeting.git .
+git clone https://gitee.com/jerryhqx/video-meeting.git .
+# 按网络环境或代码托管平台按需选择 GitHub：
+# git clone https://github.com/jerryhuang392diandi/video-meeting.git .
 python3 -m venv venv
 source venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 pip install gunicorn eventlet
-```
-
-如果访问 GitHub 较慢，可以改用 Gitee：
-
-```bash
-git clone https://gitee.com/jerryhqx/video-meeting.git .
 ```
 
 私有仓库需要先配置 SSH key 或 token。
