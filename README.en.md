@@ -289,6 +289,17 @@ By default the app uses `instance/app.db` as the SQLite database. On first run, 
 
 Meeting history timestamps use the current user's region/timezone preference from `/account`. The admin dashboard uses the current admin account's timezone preference for user registration times and meeting records.
 
+### 6. Local Common Issues
+
+| Symptom | Check first |
+| --- | --- |
+| `python` command is missing | Confirm Python is installed; on Windows, confirm Add Python to PATH was selected |
+| `git` command is missing | Confirm Git is installed, then reopen the terminal |
+| `pip install` is slow | Try a PyPI mirror or check the network; server setup details are in [Prepare Project Directory](docs/DEPLOYMENT_GUIDE.en.md#4-prepare-project-directory) |
+| `/room/<room_id>` returns `503` | `.env` is missing `LIVEKIT_URL`, `LIVEKIT_API_KEY`, or `LIVEKIT_API_SECRET`; see [Common Issues](docs/DEPLOYMENT_GUIDE.en.md#16-common-issues) |
+| MP4 recording remux fails | Confirm FFmpeg is installed and `ffmpeg -version` prints a version |
+| Virtual background fails to start | Turn the camera on first; after toggling the camera, wait for local video to recover before enabling it; this feature also depends on the browser loading the MediaPipe model |
+
 ## Cloud Server Deployment Overview
 
 For production or course demonstrations, use this deployment shape:
@@ -368,7 +379,8 @@ Optional settings include `TURN_PUBLIC_HOST`, `SESSION_COOKIE_SAMESITE`, `SESSIO
 - Online room state is primarily kept in single-process memory, so treat the default deployment as single-instance.
 - LiveKit is external media infrastructure and must be configured correctly.
 - MP4 recording export depends on server-side `ffmpeg`; without it, only the browser's raw recording output is kept.
-- Virtual background, screen sharing, and recording are resource-heavy; on weak devices, meeting stability should come first.
+- Virtual background depends on a live local camera track, the browser-side MediaPipe model, and canvas processing. Screen sharing and recording are also resource-heavy; on weak devices, meeting stability should come first.
+- Current refactor direction is tracked in [docs/REFACTOR_AUDIT.en.md](docs/REFACTOR_AUDIT.en.md): keep room state consistency first, then split the room script and `app.py` gradually.
 
 ## Pre-Submission Checks
 
@@ -415,6 +427,8 @@ Deployment and runtime configuration mainly follow these official documents. See
 - [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) / [English](docs/DEPLOYMENT_GUIDE.en.md): deployment, update, and troubleshooting
 
 - [docs/STABILITY_AUDIT.md](docs/STABILITY_AUDIT.md) / [English](docs/STABILITY_AUDIT.en.md): stability risks and evolution plan
+
+- [docs/REFACTOR_AUDIT.md](docs/REFACTOR_AUDIT.md) / [English](docs/REFACTOR_AUDIT.en.md): current refactor audit, priorities, and recommended split order
 
 - [docs/项目说明与代码索引.md](docs/%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](docs/PROJECT_GUIDE.en.md): project logic, core flows, code index, and presentation notes
 

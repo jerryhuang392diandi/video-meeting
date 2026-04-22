@@ -270,6 +270,7 @@
     let localState = createRemoteState();
     let shareProfile = normalizeShareProfile(initialShareProfile);
     let senderStatsCache = { bytesSent: null, timestamp: null };
+    let replacementCameraTrack = null;
     const remoteStates = new Map();
 
     function resolveRoomOptions() {
@@ -622,6 +623,10 @@
         ? nextEnabled
         : !(publication?.isMuted === false && publication?.track);
       await activeRoom.localParticipant.setCameraEnabled(enabled);
+      if (!enabled && replacementCameraTrack) {
+        try { replacementCameraTrack.stop(); } catch (_) {}
+        replacementCameraTrack = null;
+      }
       syncLocalStateFromPublications();
       syncLocalPreview();
       return enabled;
@@ -635,6 +640,10 @@
       if (!mediaTrack) return false;
       setMediaTrackContentHint(mediaTrack, 'motion');
       await localTrack.replaceTrack(mediaTrack);
+      if (replacementCameraTrack && replacementCameraTrack !== mediaTrack) {
+        try { replacementCameraTrack.stop(); } catch (_) {}
+      }
+      replacementCameraTrack = mediaTrack;
       syncLocalStateFromPublications();
       syncLocalPreview();
       return true;
@@ -688,6 +697,10 @@
       room = null;
       connected = false;
       resetScreenShareStatsCache();
+      if (replacementCameraTrack) {
+        try { replacementCameraTrack.stop(); } catch (_) {}
+        replacementCameraTrack = null;
+      }
       localState = createRemoteState();
       remoteStates.clear();
     }

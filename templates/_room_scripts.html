@@ -63,13 +63,14 @@ const TEXT_RECORD_SAVED = {{ ('录屏文件已保存' if lang == 'zh' else 'Reco
 const TEXT_RECORD_NOT_SUPPORTED = {{ ('当前浏览器不支持录屏' if lang == 'zh' else 'Screen recording is not supported in this browser')|tojson }};
 const TEXT_LIVEKIT_CONFIG_MISSING = {{ ('LiveKit 未配置完成，暂时无法启用 SFU 模式' if lang == 'zh' else 'LiveKit is not configured yet, so SFU mode is unavailable')|tojson }};
 const TEXT_LIVEKIT_CONNECT_FAILED = {{ ('连接 LiveKit 失败' if lang == 'zh' else 'Failed to connect to LiveKit')|tojson }};
-const TEXT_LIVEKIT_VBG_PENDING = {{ ('LiveKit 迁移阶段暂未接入虚拟背景，请先关闭 SFU 模式或等待下一步迁移。' if lang == 'zh' else 'Virtual background is not wired into LiveKit yet. Disable SFU mode or wait for the next migration step.')|tojson }};
 const TEXT_VIRTUAL_BG_PICK = {{ ('请选择一张背景图片，系统会开始做人像抠图并替换背景' if lang == 'zh' else 'Choose a background image and the app will start person segmentation with background replacement')|tojson }};
 const TEXT_VIRTUAL_BG_LOADING = {{ ('正在加载虚拟背景模型...' if lang == 'zh' else 'Loading virtual background model...')|tojson }};
 const TEXT_VIRTUAL_BG_READY = {{ ('虚拟背景已启用' if lang == 'zh' else 'Virtual background enabled')|tojson }};
 const TEXT_VIRTUAL_BG_FAILED = {{ ('虚拟背景启动失败' if lang == 'zh' else 'Failed to enable virtual background')|tojson }};
 const TEXT_VIRTUAL_BG_OFF = {{ ('虚拟背景已关闭' if lang == 'zh' else 'Virtual background disabled')|tojson }};
 const TEXT_VIRTUAL_BG_NEEDS_CAMERA = {{ ('请先开启摄像头，再启用虚拟背景。' if lang == 'zh' else 'Turn on the camera first, then enable virtual background.')|tojson }};
+const TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE = {{ ('摄像头画面不可用，请先关闭再重新开启摄像头。' if lang == 'zh' else 'Camera video is unavailable. Turn the camera off and on again first.')|tojson }};
+const TEXT_VIRTUAL_BG_PROCESSING_TIMEOUT = {{ ('虚拟背景处理超时，请稍后重试或换一张较小的背景图。' if lang == 'zh' else 'Virtual background processing timed out. Try again later or choose a smaller background image.')|tojson }};
 const TEXT_RECORD_CONVERTING = {{ ('正在转换为可拖动的 MP4，请稍候...' if lang == 'zh' else 'Converting to a seekable MP4, please wait...')|tojson }};
 const TEXT_RECORD_MP4_FAILED = {{ ('MP4 转换失败，已回退保存为 WebM' if lang == 'zh' else 'MP4 conversion failed, saved as WebM instead')|tojson }};
 const TEXT_RECORD_MP4_SERVER_ERROR = {{ ('服务器 MP4 转换失败' if lang == 'zh' else 'Server-side MP4 conversion failed')|tojson }};
@@ -1137,9 +1138,17 @@ function disableVirtualBackgroundState({ stopCanvas = false } = {}) {
   cleanupProcessedVideoStream({ stopCanvas });
 }
 
+function getLiveVideoTrack(stream) {
+  return stream?.getVideoTracks?.().find((track) => track && track.readyState === 'live' && track.enabled !== false) || null;
+}
+
+function hasLiveVideoTrack(stream) {
+  return !!getLiveVideoTrack(stream);
+}
+
 function getVirtualBackgroundSourceStream() {
-  if (rawCameraStream?.getVideoTracks?.().length) return rawCameraStream;
-  if (IS_LIVEKIT_MODE && !isSharingScreen && localStream?.getVideoTracks?.().length) {
+  if (hasLiveVideoTrack(rawCameraStream)) return rawCameraStream;
+  if (IS_LIVEKIT_MODE && !isSharingScreen && hasLiveVideoTrack(localStream)) {
     return localStream;
   }
   return null;
@@ -1149,7 +1158,7 @@ async function replaceLiveKitCameraTrackFromStream(stream) {
   if (!IS_LIVEKIT_MODE) return false;
   const controller = await ensureLiveKitConnected();
   if (!controller?.replaceCameraTrack) return false;
-  const sourceTrack = stream?.getVideoTracks?.().find((track) => track && track.readyState === 'live');
+  const sourceTrack = getLiveVideoTrack(stream);
   if (!sourceTrack) return false;
   setMediaTrackContentHint(sourceTrack, 'motion');
   return await controller.replaceCameraTrack(sourceTrack.clone());
@@ -1196,13 +1205,17 @@ function getScaledSize(width, height) {
 }
 
 async function waitForVideoReady(videoEl, timeoutMs = 2000) {
+  if (!videoEl?.srcObject || !hasLiveVideoTrack(videoEl.srcObject)) {
+    throw new Error(TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE);
+  }
   if (videoEl.readyState >= 2 && videoEl.videoWidth && videoEl.videoHeight) return true;
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error('Camera preview not ready'));
+      reject(new Error(TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE));
     }, timeoutMs);
     const onReady = () => {
+      if (!videoEl.videoWidth || !videoEl.videoHeight) return;
       cleanup();
       resolve(true);
     };
@@ -1220,6 +1233,10 @@ async function waitForVideoReady(videoEl, timeoutMs = 2000) {
 async function ensureProcessedCanvasStream() {
   if (processedCanvasStream && processedCanvasStream.getVideoTracks()[0] && processedCanvasStream.getVideoTracks()[0].readyState === 'live') {
     return processedCanvasStream;
+  }
+  if (processedCanvasStream) {
+    stopStreamTracks(processedCanvasStream);
+    processedCanvasStream = null;
   }
   if (!processingCanvas.width || !processingCanvas.height) throw new Error('Processed canvas is empty');
   processedCanvasStream = processingCanvas.captureStream(VBG_CAPTURE_FPS);
@@ -1687,10 +1704,16 @@ async function activateVirtualBackground() {
       bgImage.src = virtualBgImageDataUrl;
     });
 
+    if (!hasLiveVideoTrack(sourceStream)) {
+      throw new Error(TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE);
+    }
     rawCameraStream = sourceStream;
-    rawPreviewVideo.srcObject = sourceStream;
+    if (rawPreviewVideo.srcObject !== sourceStream) {
+      rawPreviewVideo.srcObject = sourceStream;
+      rawPreviewVideo.load?.();
+    }
     await rawPreviewVideo.play().catch(() => {});
-    await waitForVideoReady(rawPreviewVideo, 2500);
+    await waitForVideoReady(rawPreviewVideo, 4000);
 
     const startCount = processedFrameCount;
 
@@ -1699,10 +1722,10 @@ async function activateVirtualBackground() {
     updateVirtualBackgroundButtonState();
     await startSegmentationLoop();
 
-    const deadline = Date.now() + 3000;
+    const deadline = Date.now() + 5000;
     while (processedFrameCount < startCount + 2) {
       if (activationToken !== virtualBgActivationToken) return false;
-      if (Date.now() > deadline) throw new Error('Segmentation timeout');
+      if (Date.now() > deadline) throw new Error(TEXT_VIRTUAL_BG_PROCESSING_TIMEOUT);
       await new Promise(resolve => setTimeout(resolve, 60));
     }
 
@@ -1744,7 +1767,7 @@ async function activateVirtualBackground() {
       updateVirtualBackgroundButtonState();
       setStatus(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'), 'warning');
     } else {
-      await fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'));
+      await fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'), { stopCanvas: true });
     }
     return false;
   }
@@ -2469,12 +2492,12 @@ document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic
 document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-camera', async () => {
   const controller = await ensureLiveKitConnected();
   if (!controller) return;
+  if (virtualBgEnabled) {
+    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { clearImage: true, stopCanvas: true });
+  }
   const enabled = await controller.setCameraEnabled();
   const localCard = ensureCard('local', getDisplayName('local'), true);
   updatePlaceholder(localCard, !!enabled);
-  if (!enabled && virtualBgEnabled) {
-    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { clearImage: true, stopCanvas: true });
-  }
   setStatus(enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
 });
 shareProfileBtn && (shareProfileBtn.onclick = () => runMediaTask('share-profile-toggle', async () => {

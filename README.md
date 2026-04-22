@@ -302,6 +302,7 @@ http://127.0.0.1:5000
 | `pip install` 很慢 | 可以换国内 PyPI 镜像，或先确认网络；服务器安装说明见 [部署指南准备项目目录](docs/DEPLOYMENT_GUIDE.md#4-准备项目目录) |
 | `/room/<会议号>` 返回 `503` | `.env` 里缺少 `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET`；排查步骤见 [部署指南常见问题](docs/DEPLOYMENT_GUIDE.md#16-常见问题) |
 | 录屏转 MP4 失败 | 是否安装 FFmpeg，并且 `ffmpeg -version` 能输出版本 |
+| 虚拟背景启动失败 | 先确认摄像头已开启；如果刚关闭/重开过摄像头，等待本地画面恢复后再启用；该功能还依赖浏览器加载 MediaPipe 模型 |
 
 ## 云服务器部署概览
 
@@ -382,7 +383,8 @@ http://127.0.0.1:5000
 - 当前在线态主要保存在单进程内存中，默认应按单实例部署理解。
 - LiveKit 是外部媒体基础设施，必须正确配置后房间媒体才可用。
 - 录屏转 MP4 依赖服务端 `ffmpeg`；未安装时只能保留浏览器原始录制结果。
-- 虚拟背景、屏幕共享和录屏都比较消耗资源，弱设备上应优先保证会议可用性。
+- 虚拟背景依赖本地摄像头 live track、浏览器端 MediaPipe 模型和 canvas 处理；屏幕共享和录屏也比较消耗资源，弱设备上应优先保证会议可用性。
+- 当前主要重构方向见 [docs/REFACTOR_AUDIT.md](docs/REFACTOR_AUDIT.md)：优先保持房间状态一致性，再逐步拆分房间脚本和 `app.py`。
 
 ## 提交前检查
 
@@ -429,4 +431,5 @@ python check_i18n.py
 | [docs/README.md](docs/README.md) / [English](docs/README.en.md) | 文档地图 |
 | [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) / [English](docs/DEPLOYMENT_GUIDE.en.md) | 部署、更新和排障 |
 | [docs/STABILITY_AUDIT.md](docs/STABILITY_AUDIT.md) / [English](docs/STABILITY_AUDIT.en.md) | 稳定性风险和后续演进建议 |
+| [docs/REFACTOR_AUDIT.md](docs/REFACTOR_AUDIT.md) / [English](docs/REFACTOR_AUDIT.en.md) | 当前重构巡检结论、优先级和推荐拆分顺序 |
 | [docs/项目说明与代码索引.md](docs/%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](docs/PROJECT_GUIDE.en.md) | 项目逻辑、核心流程、代码索引和展示讲解口径 |

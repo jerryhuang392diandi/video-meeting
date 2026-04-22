@@ -118,6 +118,7 @@ At minimum, check whether the change affects:
 - `docs/STABILITY_AUDIT.md`
 - `docs/DEPLOYMENT_GUIDE.md`
 - `docs/项目说明与代码索引.md`
+- `docs/REFACTOR_AUDIT.md`
 - `AGENTS.md`
 
 Do not leave `AGENTS.md` describing old mesh/P2P behavior after the code and README have moved on.
