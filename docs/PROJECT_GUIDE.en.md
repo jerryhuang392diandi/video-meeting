@@ -54,6 +54,8 @@ These entries match the "User-Facing Pages" table in the root README.
 | Media layer | LiveKit SFU | Camera, microphone, screen sharing, and remote media tracks |
 | Persistence layer | SQLite / SQLAlchemy | Users, meetings, participation records, password reset requests |
 
+The current refactor audit is in [REFACTOR_AUDIT.en.md](REFACTOR_AUDIT.en.md). Maintenance should keep room state consistency first, then gradually split `app.py` and the room frontend script.
+
 ## 5. Why LiveKit Instead of Browser Mesh
 
 If every browser directly connects to every other browser, connection count and each user's upload bandwidth grow quickly as the room gets larger. In a five-person meeting, each browser must maintain several connections, which increases browser load, network pressure, and debugging complexity.
@@ -316,6 +318,8 @@ If the browser records MP4 directly, the frontend downloads it. If it records We
 
 Virtual background is an enhancement feature, not a requirement for baseline meeting stability. It depends on browser-side video processing and may increase CPU usage, heat, and delay on weak devices.
 
+The room page sends the raw camera stream into MediaPipe Selfie Segmentation, draws the segmented output to a canvas, and replaces the LiveKit camera track with the canvas output track. To reduce startup failures, the code only uses camera tracks that are still `live`; on failure it falls back to the raw camera and cleans up the failed processing stream. Common causes include a camera that was just turned off or restarted, local preview not being ready yet, model asset loading failure, and weak device performance.
+
 ## 11. Chat, Attachments, Emoji, and @ Mentions
 
 Attachments are not sent as Socket.IO binary payloads. The flow is:
@@ -483,7 +487,7 @@ Current limits:
 
 - Online state is mainly single-process memory, so restart loses online state and multi-instance deployment is unsafe.
 - `app.py` is large and should eventually be split by domain.
-- Virtual background, screen sharing, and recording are resource-heavy.
+- Virtual background depends on a live local camera track, browser-side model loading, and canvas processing. Screen sharing and recording are also resource-heavy.
 - MP4 recording export depends on server-side `ffmpeg`.
 - LiveKit must be correctly configured with `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`.
 
@@ -492,7 +496,7 @@ Future improvements:
 - Move `rooms`, `sid_to_user`, and other runtime state to Redis for multi-instance deployment.
 - Split `app.py` into modules for auth, meetings, chat attachments, admin, and recording.
 - Add automated tests for login, room creation, join validation, attachment upload, and admin actions.
-- Add clearer frontend messages for LiveKit connection failure, mobile screen sharing limits, and recording remux failures.
+- Add clearer frontend messages for LiveKit connection failure, mobile screen sharing limits, virtual background model loading failures, and recording remux failures.
 
 ## 16. Common Q&A
 

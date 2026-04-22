@@ -78,6 +78,8 @@ Confirm:
 - Camera toggling still works.
 - Microphone toggling still works.
 - Local video can still publish after virtual background is enabled.
+- After the camera is turned off and on again, virtual background does not reuse an ended old camera track.
+- If virtual background startup fails, it falls back to the raw camera and cleans up the failed canvas processing stream.
 - Screen sharing and virtual background do not fight over the same local video replacement path.
 - Browser recording can generate the raw result.
 - Servers with `ffmpeg` can still remux to MP4.
@@ -102,6 +104,10 @@ Long term:
 - Add fuller automated and end-to-end tests.
 - Add deployment health checks, structured logs, and monitoring.
 - Introduce a task queue for heavy jobs if real usage requires it.
+
+## Refactor Link
+
+Concrete split recommendations from the current code audit are tracked in [REFACTOR_AUDIT.en.md](REFACTOR_AUDIT.en.md). Stability has higher priority than file splitting itself: keep room state, screen sharing, and LiveKit media lifecycle consistent first, then gradually split `templates/_room_scripts.html` and `app.py`.
 
 ## Avoid Wrong Conclusions
 
