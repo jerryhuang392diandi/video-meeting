@@ -286,6 +286,9 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 | `LIVEKIT_API_KEY` | Flask 后端签发 LiveKit token 用的 key | 是 |
 | `LIVEKIT_API_SECRET` | Flask 后端签发 LiveKit token 用的 secret | 是 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 初始管理员账号和密码 | 推荐 |
+| `TURN_PUBLIC_HOST` | 自动生成 TURN/STUN 地址时使用的公网主机名 | 可选 |
+| `TURN_URLS` | 自定义 TURN/STUN URL，多个地址用逗号分隔 | 可选 |
+| `TURN_USERNAME` / `TURN_PASSWORD` | TURN 中继账号和密码；设置 `TURN_URLS` 时通常需要 | 可选 |
 | `SESSION_COOKIE_SECURE` / `REMEMBER_COOKIE_SECURE` | Cookie 仅 HTTPS 发送 | HTTPS 推荐 |
 
 注意：

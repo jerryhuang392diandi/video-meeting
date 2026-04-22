@@ -261,6 +261,9 @@ Configuration:
 | `LIVEKIT_API_KEY` | Backend key for signing LiveKit tokens | Yes |
 | `LIVEKIT_API_SECRET` | Backend secret for signing LiveKit tokens | Yes |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Initial admin account | Recommended |
+| `TURN_PUBLIC_HOST` | Public host used when generating TURN/STUN addresses | Optional |
+| `TURN_URLS` | Custom TURN/STUN URLs, comma-separated | Optional |
+| `TURN_USERNAME` / `TURN_PASSWORD` | TURN relay credentials; usually required when `TURN_URLS` is set | Optional |
 | `SESSION_COOKIE_SECURE` / `REMEMBER_COOKIE_SECURE` | Send cookies over HTTPS only | Recommended for HTTPS |
 
 Notes:

@@ -50,6 +50,25 @@ Time display rules:
 | Storage | SQLite by default, override with `DATABASE_URL` | Users, meetings, history, password reset requests |
 | Frontend | Jinja2 + vanilla JavaScript | Page rendering, room interactions, media controls, diagnostics |
 
+## i18n and Device Adaptation Status
+
+The UI is maintained in both Chinese and English:
+
+- `translations.py` contains both `zh` and `en` translation tables, and the two key sets currently match.
+- Templates prefer `t('key')`; a small number of runtime prompts use explicit `lang == 'zh'` Chinese/English branches.
+- `python check_i18n.py` currently passes and checks templates for missed hardcoded Chinese text.
+- `/set-language/<lang>`, the page language switch, `/account` language preference, and session language together control the rendered language.
+
+Mobile and desktop have separate adaptations instead of only scaling the desktop page:
+
+- The home page shows mobile QR join on phones through browser `BarcodeDetector` and the rear camera; desktop keeps room ID, password, and invite-link workflows.
+- The room page uses `viewport-fit=cover`. Desktop uses the meeting grid plus a right chat column; mobile reflows chat into a draggable/scrollable bottom area so it does not cover video or the send button.
+- `static/room_livekit.js` uses `matchMedia('(max-width: 768px)')` and mobile user-agent detection to choose more conservative camera, microphone, and screen-share publish settings for heat, battery, and weak networks.
+- `templates/_room_scripts.html` has separate handling for mobile fullscreen, iOS Safari native video fullscreen, landscape orientation lock, touch playback recovery, and screen-share viewing.
+- `static/style.css` and `static/room.css` keep rules for desktop paged grids, desktop chat column, mobile chat bottom panel, and mobile screen-share fullscreen.
+
+Before submitting, verify Chinese and English pages, desktop and phone browsers, same-account two-device join, mobile QR join, and mobile viewing of remote screen share.
+
 ## Project Structure
 
 ```text
@@ -372,7 +391,7 @@ LiveKit configuration is required. If it is missing, room media is unavailable a
 | `ADMIN_PASSWORD` | Initial admin password; generated if not set |
 | `DEBUG_ROOM=1` | Enables room debug logging |
 
-Optional settings include `TURN_PUBLIC_HOST`, `SESSION_COOKIE_SAMESITE`, `SESSION_COOKIE_SECURE`, `REMEMBER_COOKIE_SAMESITE`, and `REMEMBER_COOKIE_SECURE`.
+Optional settings include `TURN_PUBLIC_HOST`, `TURN_URLS`, `TURN_USERNAME`, `TURN_PASSWORD`, `SESSION_COOKIE_SAMESITE`, `SESSION_COOKIE_SECURE`, `REMEMBER_COOKIE_SAMESITE`, and `REMEMBER_COOKIE_SECURE`.
 
 ## Runtime Limits
 

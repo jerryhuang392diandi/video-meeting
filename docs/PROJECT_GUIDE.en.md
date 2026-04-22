@@ -56,6 +56,23 @@ These entries match the "User-Facing Pages" table in the root README.
 
 The current refactor audit is in [REFACTOR_AUDIT.en.md](REFACTOR_AUDIT.en.md). Maintenance should keep room state consistency first, then gradually split `app.py` and the room frontend script.
 
+## 4.1 i18n and Mobile/Desktop Adaptation
+
+i18n:
+
+- `translations.py` is the main translation table, and the `zh` and `en` key sets currently match.
+- Templates prefer `t('key')`; some in-room runtime and browser-capability prompts use explicit Chinese/English branches.
+- `check_i18n.py` checks templates for missed hardcoded Chinese and should be run before submitting.
+- Users can change the page language through the language switch or the default language preference in `/account`.
+
+Mobile and desktop:
+
+- The home page has mobile QR join on phones, while desktop keeps room ID, password, and invite-link copy workflows.
+- The room page uses a meeting grid plus right chat column on desktop; on phones, chat reflows into a bottom panel with touch scrolling and input visibility handling.
+- `room_livekit.js` selects different media publishing settings for mobile and desktop, with more conservative settings on phones.
+- `_room_scripts.html` handles mobile fullscreen, iOS video fullscreen, landscape orientation lock, touch playback recovery, and screen-share viewing.
+- `style.css` and `room.css` keep responsive layout rules for general pages and the meeting room.
+
 ## 5. Why LiveKit Instead of Browser Mesh
 
 If every browser directly connects to every other browser, connection count and each user's upload bandwidth grow quickly as the room gets larger. In a five-person meeting, each browser must maintain several connections, which increases browser load, network pressure, and debugging complexity.
@@ -95,7 +112,7 @@ Suitable for room creation, join validation, LiveKit token retrieval, uploads, t
 | Upload media attachment | `/api/chat_upload_media` |
 | Upload document attachment | `/api/chat_upload_doc` |
 | Remux recording to MP4 | `/api/remux-recording` |
-| Translate chat message | `/api/translate-message`, `/api/translate-to-english` |
+| Translate chat message | `/api/translate_message`, `/api/translate_to_english` |
 
 ### 6.3 Socket.IO Real-Time Events
 
@@ -104,7 +121,7 @@ Suitable for room actions that should not refresh the page.
 | Feature | Socket event |
 | --- | --- |
 | Actually join the room | `join_room` |
-| Update display name | `update_display_name` |
+| Update display name | `update_profile` |
 | Send chat | `meeting_chat_send` |
 | Clear chat | `meeting_chat_clear` |
 | Retract chat | `meeting_chat_retract` |

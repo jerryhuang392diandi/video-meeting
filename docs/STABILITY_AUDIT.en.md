@@ -52,6 +52,12 @@ When changing `app.py`, `templates/_room_scripts.html`, `static/room_livekit.js`
 - Same account online on multiple devices
 - Host ending the meeting
 
+Also confirm desktop and mobile paths do not drift into conflicting state flows:
+
+- Desktop meeting grid, pagination, right chat column, and chat collapsed state.
+- Mobile QR join, chat bottom panel, touch scrolling, input visibility, and screen-share fullscreen.
+- Phone media defaults should remain more conservative and should not be overwritten by desktop high-bitrate settings.
+
 Principles:
 
 - Prefer one authoritative update path for each state domain.

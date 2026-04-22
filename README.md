@@ -50,6 +50,25 @@
 | 数据存储 | SQLite 默认，可用 `DATABASE_URL` 覆盖 | 用户、会议、历史记录、密码重置等持久化数据 |
 | 前端 | Jinja2 + vanilla JavaScript | 页面渲染、房间交互、媒体控制、诊断展示 |
 
+## 中英文和双端适配状态
+
+当前界面按中英文双语维护：
+
+- `translations.py` 同时包含 `zh` 和 `en` 两套翻译表，当前两边 key 数一致。
+- 模板优先使用 `t('key')`，少量运行时提示使用 `lang == 'zh'` 的中英文分支。
+- `python check_i18n.py` 当前可通过，用来检查模板里遗漏的硬编码中文。
+- `/set-language/<lang>`、页面右上角语言切换、`/account` 默认语言偏好和会话语言会共同决定页面语言。
+
+移动端和桌面端都已有独立适配，不是单纯缩放桌面页面：
+
+- 首页在移动端显示“扫码入会”，通过浏览器 `BarcodeDetector` 和后置摄像头扫描会议二维码；桌面端保留会议号、密码、复制邀请链接等主流程。
+- 房间页使用 `viewport-fit=cover`，桌面端是会议网格 + 右侧聊天栏；移动端聊天会重排为可拖动/可滚动的底部区域，避免遮挡视频和发送按钮。
+- `static/room_livekit.js` 根据 `matchMedia('(max-width: 768px)')` 和移动设备 UA 选择更保守的摄像头、麦克风和屏幕共享发布参数，降低手机发热、耗电和弱网压力。
+- `templates/_room_scripts.html` 对移动端全屏、iOS Safari 原生视频全屏、横屏锁定、触摸播放恢复和共享屏幕观看做了单独处理。
+- `static/style.css` 和 `static/room.css` 保留桌面分页网格、桌面聊天栏、移动端聊天底部面板、移动端屏幕共享全屏等规则。
+
+提交前建议同时验证：中文和英文页面、桌面浏览器和手机浏览器、同一账号双设备、手机扫码入会、移动端观看远端屏幕共享。
+
 ## 项目结构
 
 ```text
@@ -376,7 +395,7 @@ http://127.0.0.1:5000
 | `ADMIN_PASSWORD` | 初始管理员密码；未设置时自动生成 |
 | `DEBUG_ROOM=1` | 输出房间相关调试日志 |
 
-可选项包括 `TURN_PUBLIC_HOST`、`SESSION_COOKIE_SAMESITE`、`SESSION_COOKIE_SECURE`、`REMEMBER_COOKIE_SAMESITE`、`REMEMBER_COOKIE_SECURE`。
+可选项包括 `TURN_PUBLIC_HOST`、`TURN_URLS`、`TURN_USERNAME`、`TURN_PASSWORD`、`SESSION_COOKIE_SAMESITE`、`SESSION_COOKIE_SECURE`、`REMEMBER_COOKIE_SAMESITE`、`REMEMBER_COOKIE_SECURE`。
 
 ## 运行限制
 
