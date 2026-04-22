@@ -827,7 +827,7 @@ git init
 git add .
 git commit -m "Initial commit"
 git branch -M main
-git remote add origin https://github.com/jerryhuangqingxuan/video-meeting-replace.git
+git remote add origin https://github.com/jerryhuang392diandi/video-meeting.git
 git push -u origin main
 ```
 

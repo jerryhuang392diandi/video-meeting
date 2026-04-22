@@ -92,7 +92,7 @@ Windows 建议安装：
 | --- | --- | --- |
 | Python 3.10+ | 运行 Flask 项目 | https://www.python.org/downloads/ |
 | Git | 下载代码、版本管理 | https://git-scm.com/downloads |
-| FFmpeg | 录屏导出 MP4 时使用；不装也能启动项目 | https://ffmpeg.org/download.html 或 `winget install Gyan.FFmpeg` |
+| FFmpeg | 录屏导出 MP4 时使用；不装也能启动项目 | https://ffmpeg.org/download.html |
 | VS Code | 编辑代码，可选 | https://code.visualstudio.com/ |
 
 如果 Windows 的 `winget` 可用，也可以在 PowerShell 里安装：
@@ -147,7 +147,7 @@ Windows PowerShell 示例：
 mkdir D:\projects
 cd D:\projects
 git clone https://github.com/jerryhuang392diandi/video-meeting.git
-cd video-meeting-replace
+cd video-meeting
 ```
 
 Windows CMD 示例：
@@ -156,7 +156,7 @@ Windows CMD 示例：
 mkdir D:\projects
 cd /d D:\projects
 git clone https://github.com/jerryhuang392diandi/video-meeting.git
-cd video-meeting-replace
+cd video-meeting
 ```
 
 macOS / Linux 示例：
@@ -165,10 +165,19 @@ macOS / Linux 示例：
 mkdir -p ~/projects
 cd ~/projects
 git clone https://github.com/jerryhuang392diandi/video-meeting.git
-cd video-meeting-replace
+cd video-meeting
 ```
 
 如果你没有 Git 仓库，也可以把压缩包解压到一个固定目录，然后在终端 `cd` 进入项目目录。
+
+命令解释：
+
+| 命令 | 含义 | 可自定义项 |
+| --- | --- | --- |
+| `mkdir D:\projects` / `mkdir -p ~/projects` | 创建一个专门放代码的父目录 | 可以换成你自己的路径 |
+| `cd D:\projects` / `cd ~/projects` | 进入父目录，后续 clone 会把项目放在这里 | Windows CMD 跨盘符要用 `cd /d` |
+| `git clone https://github.com/jerryhuang392diandi/video-meeting.git` | 从当前 GitHub 仓库下载代码；默认会创建 `video-meeting` 文件夹 | 如果以后仓库迁移，替换成新的仓库 URL |
+| `cd video-meeting` | 进入刚下载的项目目录 | 如果 clone 时指定了目录名，例如 `git clone ... my-folder`，这里也要改成 `cd my-folder` |
 
 ### 3. 创建 Python 虚拟环境并安装依赖
 
@@ -201,11 +210,26 @@ pip install -r requirements.txt
 
 以后每次重新打开终端，都要先进入项目目录并激活虚拟环境。
 
+命令解释：
+
+| 命令 | 含义 | 可自定义项 |
+| --- | --- | --- |
+| `python -m venv venv` / `python3 -m venv venv` | 在项目目录创建独立 Python 环境，避免污染系统 Python | `venv` 名字可以换，但后续激活命令要同步 |
+| `venv\Scripts\activate` / `source venv/bin/activate` | 激活虚拟环境；激活后安装的包只进当前项目 | Windows CMD 使用 `activate.bat` |
+| `python -m pip install --upgrade pip` | 升级包管理器 pip，减少安装依赖时的兼容问题 | 如果网络慢可以先跳过，但推荐执行 |
+| `pip install -r requirements.txt` | 按项目清单安装 Flask、Socket.IO、SQLAlchemy、LiveKit API、Pillow、psutil 等依赖 | 如果很慢，可以临时加镜像参数，例如 `-i https://pypi.tuna.tsinghua.edu.cn/simple` |
+
 ### 4. 配置本地 `.env`
 
 如果只想看登录、注册、首页、帮助页，可以先不写 LiveKit 配置；但进入会议房间会返回 `503`，这是正常的保护逻辑。
 
-如果要本地测试会议音视频，建议先用 LiveKit Cloud，创建项目后把三项配置写入项目根目录 `.env`：
+如果要本地测试会议音视频，建议先用 LiveKit Cloud。最短步骤是：
+
+1. 打开 [LiveKit Cloud](https://cloud.livekit.io/) 并创建一个 project。
+2. 在项目设置里复制 server URL、API key、API secret。
+3. 在项目根目录新建 `.env`，把三项 LiveKit 配置和本地基础配置写进去。
+
+更细的 LiveKit Cloud 操作、为什么 Nginx 不代理 LiveKit、自建 LiveKit 要检查哪些端口，已经写在 [docs/DEPLOYMENT_GUIDE.md 的 LiveKit 选项](docs/DEPLOYMENT_GUIDE.md#6-livekit-选项) 里。生产环境变量的完整说明见 [docs/DEPLOYMENT_GUIDE.md 的配置环境变量](docs/DEPLOYMENT_GUIDE.md#5-配置环境变量)。
 
 ```env
 SECRET_KEY=local-dev-secret-change-me
@@ -221,6 +245,22 @@ ADMIN_PASSWORD=root1234
 ```
 
 `.env` 不要提交到 Git。
+
+配置项说明：
+
+| 配置项 | 用途 | 本地建议 |
+| --- | --- | --- |
+| `SECRET_KEY` | Flask 会话和安全签名密钥 | 本地可以用示例值，部署时必须换成长随机字符串 |
+| `PUBLIC_SCHEME` | 浏览器访问应用时使用的协议 | 本地通常是 `http`，线上 HTTPS 是 `https` |
+| `PUBLIC_HOST` | 浏览器访问应用时使用的主机和端口 | 本地默认 `127.0.0.1:5000` |
+| `LIVEKIT_URL` | 浏览器直接连接的 LiveKit 服务地址 | LiveKit Cloud 项目页提供，通常是 `wss://...livekit.cloud` |
+| `LIVEKIT_API_KEY` | 后端签发 LiveKit token 使用的 API key | 从 LiveKit Cloud 项目设置复制 |
+| `LIVEKIT_API_SECRET` | 后端签发 LiveKit token 使用的 API secret | 从 LiveKit Cloud 项目设置复制，不要公开 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 管理后台初始登录账号 | 本地可用简单值，线上必须改强密码 |
+
+LiveKit 的三项配置必须来自同一个 LiveKit 项目。Flask 只负责校验用户并签发 token，浏览器拿到 token 后会直接连 `LIVEKIT_URL`；所以这个地址必须能被你的浏览器访问。
+
+如果房间返回 `503`、修改 `.env` 后不生效、或进入房间但看不到对方，先看 [docs/DEPLOYMENT_GUIDE.md 的常见问题](docs/DEPLOYMENT_GUIDE.md#16-常见问题)。本地运行通常重启 `python app.py` 即可重新读取 `.env`；线上 systemd 服务还需要重启服务。
 
 ### 5. 启动项目
 
@@ -244,8 +284,8 @@ http://127.0.0.1:5000
 | --- | --- |
 | `python` 命令不存在 | Python 是否安装；Windows 安装时是否勾选 Add Python to PATH |
 | `git` 命令不存在 | Git 是否安装；重新打开终端 |
-| `pip install` 很慢 | 可以换国内 PyPI 镜像，或先确认网络 |
-| `/room/<会议号>` 返回 `503` | `.env` 里缺少 `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` |
+| `pip install` 很慢 | 可以换国内 PyPI 镜像，或先确认网络；服务器安装说明见 [部署指南准备项目目录](docs/DEPLOYMENT_GUIDE.md#4-准备项目目录) |
+| `/room/<会议号>` 返回 `503` | `.env` 里缺少 `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET`；排查步骤见 [部署指南常见问题](docs/DEPLOYMENT_GUIDE.md#16-常见问题) |
 | 录屏转 MP4 失败 | 是否安装 FFmpeg，并且 `ffmpeg -version` 能输出版本 |
 
 ## 云服务器部署概览

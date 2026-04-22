@@ -147,7 +147,7 @@ Windows PowerShell:
 mkdir D:\projects
 cd D:\projects
 git clone https://github.com/jerryhuang392diandi/video-meeting.git
-cd video-meeting-replace
+cd video-meeting
 ```
 
 Windows CMD:
@@ -156,7 +156,7 @@ Windows CMD:
 mkdir D:\projects
 cd /d D:\projects
 git clone https://github.com/jerryhuang392diandi/video-meeting.git
-cd video-meeting-replace
+cd video-meeting
 ```
 
 macOS / Linux:
@@ -165,8 +165,17 @@ macOS / Linux:
 mkdir -p ~/projects
 cd ~/projects
 git clone https://github.com/jerryhuang392diandi/video-meeting.git
-cd video-meeting-replace
+cd video-meeting
 ```
+
+Command explanation:
+
+| Command | Meaning | Customizable |
+| --- | --- | --- |
+| `mkdir D:\projects` / `mkdir -p ~/projects` | Creates a parent folder for source code | Replace it with your preferred path |
+| `cd D:\projects` / `cd ~/projects` | Enters the parent folder so the clone lands there | Windows CMD needs `cd /d` when switching drives |
+| `git clone https://github.com/jerryhuang392diandi/video-meeting.git` | Downloads the current GitHub repository and creates a `video-meeting` folder | Replace the URL if the repository moves |
+| `cd video-meeting` | Enters the cloned project folder | If you clone into another folder name, use that name here |
 
 ### 3. Create a Virtual Environment
 
@@ -197,9 +206,24 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+Command explanation:
+
+| Command | Meaning | Customizable |
+| --- | --- | --- |
+| `python -m venv venv` / `python3 -m venv venv` | Creates an isolated Python environment inside the project | The folder name can change, but activation commands must match |
+| `venv\Scripts\activate` / `source venv/bin/activate` | Activates the virtual environment so packages install into this project | Windows CMD uses `activate.bat` |
+| `python -m pip install --upgrade pip` | Upgrades pip to reduce dependency installation issues | Optional, but recommended |
+| `pip install -r requirements.txt` | Installs Flask, Socket.IO, SQLAlchemy, LiveKit API, Pillow, psutil, and other project dependencies | If it is slow, use a PyPI mirror such as `-i https://pypi.tuna.tsinghua.edu.cn/simple` |
+
 ### 4. Configure Local `.env`
 
-Without LiveKit settings, login and normal pages can work, but meeting rooms return `503`. To test audio/video locally, use LiveKit Cloud and create `.env`:
+Without LiveKit settings, login and normal pages can work, but meeting rooms return `503`. To test audio/video locally, use LiveKit Cloud first. The shortest path is:
+
+1. Open [LiveKit Cloud](https://cloud.livekit.io/) and create a project.
+2. Copy the server URL, API key, and API secret from that project.
+3. Create `.env` in the project root and paste the LiveKit values plus the local app settings.
+
+The detailed LiveKit Cloud flow, the reason Nginx does not proxy LiveKit, and the self-hosted LiveKit port checklist are covered in [LiveKit Options](docs/DEPLOYMENT_GUIDE.en.md#6-livekit-options). The full production environment variable table is in [Configure Environment Variables](docs/DEPLOYMENT_GUIDE.en.md#5-configure-environment-variables).
 
 ```env
 SECRET_KEY=local-dev-secret-change-me
@@ -215,6 +239,22 @@ ADMIN_PASSWORD=root1234
 ```
 
 Do not commit `.env`.
+
+Configuration explanation:
+
+| Variable | Purpose | Local recommendation |
+| --- | --- | --- |
+| `SECRET_KEY` | Flask session and signing secret | The sample is fine locally; use a long random value in production |
+| `PUBLIC_SCHEME` | Browser-facing scheme for the app | Usually `http` locally and `https` in production |
+| `PUBLIC_HOST` | Browser-facing host and port | Default local value is `127.0.0.1:5000` |
+| `LIVEKIT_URL` | Browser-reachable LiveKit service URL | Copy it from LiveKit Cloud; usually `wss://...livekit.cloud` |
+| `LIVEKIT_API_KEY` | API key used by the backend to sign LiveKit tokens | Copy from the same LiveKit project |
+| `LIVEKIT_API_SECRET` | API secret used by the backend to sign LiveKit tokens | Copy from the same LiveKit project and keep private |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Initial admin login | Simple values are fine locally; use a strong password in production |
+
+The three LiveKit values must come from the same LiveKit project. Flask only checks meeting permission and issues a token; the browser connects directly to `LIVEKIT_URL`, so that URL must be reachable from your browser.
+
+If rooms return `503`, `.env` changes do not apply, or users can join but cannot see each other, start with [Common Issues](docs/DEPLOYMENT_GUIDE.en.md#16-common-issues). Local development usually only needs restarting `python app.py`; production systemd services must be restarted after `.env` changes.
 
 ### 5. Start the App
 
