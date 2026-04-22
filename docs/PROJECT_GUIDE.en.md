@@ -25,7 +25,25 @@ This is not just a "camera can display" demo. It connects the common workflow of
 
 For presentation, emphasize that it is a complete web application, not a single WebRTC experiment page.
 
-## 3. Technical Architecture
+## 3. Main Page Entry Points
+
+| Path | Page | Code location |
+| --- | --- | --- |
+| `/` | Home / create meeting / join meeting | `templates/index.html`, `index()` |
+| `/login` | Login | `templates/login.html`, `login()` |
+| `/register` | Registration | `templates/register.html`, `register()` |
+| `/forgot-password` | Password reset request | `templates/forgot_password.html`, `forgot_password_page()` |
+| `/quickstart` | Quickstart | `templates/quickstart.html`, `quickstart_page()` |
+| `/help` | User Guide | `templates/help.html`, `help_page()` |
+| `/support` | Support | `templates/support.html`, `support_page()` |
+| `/account` | Account and preferences | `templates/account.html`, `account_page()` |
+| `/history` | Meeting history | `templates/history.html`, `history()` |
+| `/room/<room_id>` | Meeting room | `templates/room.html`, `room_page()` |
+| `/admin` | Admin dashboard | `templates/admin.html`, `admin_dashboard()` |
+
+These entries match the "User-Facing Pages" table in the root README.
+
+## 4. Technical Architecture
 
 | Layer | Main technology / file | Responsibility |
 | --- | --- | --- |
@@ -36,7 +54,7 @@ For presentation, emphasize that it is a complete web application, not a single 
 | Media layer | LiveKit SFU | Camera, microphone, screen sharing, and remote media tracks |
 | Persistence layer | SQLite / SQLAlchemy | Users, meetings, participation records, password reset requests |
 
-## 4. Why LiveKit Instead of Browser Mesh
+## 5. Why LiveKit Instead of Browser Mesh
 
 If every browser directly connects to every other browser, connection count and each user's upload bandwidth grow quickly as the room gets larger. In a five-person meeting, each browser must maintain several connections, which increases browser load, network pressure, and debugging complexity.
 
@@ -46,11 +64,11 @@ Presentation wording:
 
 > I use LiveKit for media transport so the project can focus on meeting business logic, permission control, and system integration instead of implementing a multi-party media server from scratch.
 
-## 5. How Frontend and Backend Communicate
+## 6. How Frontend and Backend Communicate
 
 The project uses four communication paths.
 
-### 5.1 HTML Form Submission
+### 6.1 HTML Form Submission
 
 Suitable for account and admin pages.
 
@@ -63,7 +81,7 @@ Suitable for account and admin pages.
 
 Forms use `method="post"`, Flask reads `request.form`, and the server returns a new page or redirect.
 
-### 5.2 `fetch` Calls to Flask APIs
+### 6.2 `fetch` Calls to Flask APIs
 
 Suitable for room creation, join validation, LiveKit token retrieval, uploads, translation, and recording remux.
 
@@ -77,7 +95,7 @@ Suitable for room creation, join validation, LiveKit token retrieval, uploads, t
 | Remux recording to MP4 | `/api/remux-recording` |
 | Translate chat message | `/api/translate-message`, `/api/translate-to-english` |
 
-### 5.3 Socket.IO Real-Time Events
+### 6.3 Socket.IO Real-Time Events
 
 Suitable for room actions that should not refresh the page.
 
@@ -94,7 +112,7 @@ Suitable for room actions that should not refresh the page.
 
 Socket.IO owns membership, chat, host actions, and UI-level room state.
 
-### 5.4 LiveKit Media Connection
+### 6.4 LiveKit Media Connection
 
 Camera, microphone, and screen sharing media are not forwarded by the Flask application.
 
@@ -107,7 +125,7 @@ Camera, microphone, and screen sharing media are not forwarded by the Flask appl
 
 Flask authenticates the user and issues a LiveKit token. The browser then connects directly to the LiveKit service.
 
-## 6. Key File Index
+## 7. Key File Index
 
 ### Backend Core
 
@@ -145,7 +163,7 @@ Flask authenticates the user and issues a LiveKit token. The browser then connec
 | `static/room.css` | Meeting page styles |
 | `static/style.css` | Shared page styles |
 
-## 7. Data Storage
+## 8. Data Storage
 
 ### Database Storage
 
@@ -170,9 +188,9 @@ The database stores persistent data. Real-time room state during meetings is mai
 
 This means the current project is best treated as single-instance. Multi-instance deployment requires moving runtime state to Redis or another shared store.
 
-## 8. Core Flows
+## 9. Core Flows
 
-### 8.1 Registration and Login
+### 9.1 Registration and Login
 
 Registration:
 
@@ -197,7 +215,7 @@ Presentation wording:
 
 > Registration and login do not let the frontend modify the database directly. Flask validates input, passwords are stored as hashes, Flask-Login maintains the login state, and `session_version` invalidates old sessions.
 
-### 8.2 Creating a Meeting
+### 9.2 Creating a Meeting
 
 1. The user clicks "Create meeting" on the home page.
 2. The frontend calls `POST /api/create_room`.
@@ -209,7 +227,7 @@ Presentation wording:
 
 Key point: `Meeting` is persistent; `rooms[room_id]` is runtime state.
 
-### 8.3 Joining a Meeting
+### 9.3 Joining a Meeting
 
 Joining has three steps.
 
@@ -246,7 +264,7 @@ Presentation wording:
 
 > Entering a meeting is not a single step. HTTP validates the room password, Socket.IO joins the real-time room, and only then does the client receive a LiveKit token for media.
 
-## 9. Audio/Video and Meeting Features
+## 10. Audio/Video and Meeting Features
 
 ### Camera and Microphone
 
@@ -298,7 +316,7 @@ If the browser records MP4 directly, the frontend downloads it. If it records We
 
 Virtual background is an enhancement feature, not a requirement for baseline meeting stability. It depends on browser-side video processing and may increase CPU usage, heat, and delay on weak devices.
 
-## 10. Chat, Attachments, Emoji, and @ Mentions
+## 11. Chat, Attachments, Emoji, and @ Mentions
 
 Attachments are not sent as Socket.IO binary payloads. The flow is:
 
@@ -334,7 +352,7 @@ Presentation wording:
 
 > Large files are uploaded by HTTP first. The real-time chat channel only broadcasts text and attachment metadata, which keeps Socket.IO responsive and allows permission checks.
 
-## 11. Admin Dashboard
+## 12. Admin Dashboard
 
 | Item | Location |
 | --- | --- |
@@ -378,7 +396,7 @@ Typical meeting management routes:
 
 Admin routes use both `@login_required` and `@admin_required`.
 
-## 12. `app.py` Core Function Index
+## 13. `app.py` Core Function Index
 
 Line numbers may change; remember function names and responsibilities first.
 
@@ -412,7 +430,7 @@ Line numbers may change; remember function names and responsibilities first.
 | `on_host_end_meeting()` | Host ends meeting |
 | `on_leave_room()` | User leaves meeting |
 
-## 13. Code Walkthrough Pointers
+## 14. Code Walkthrough Pointers
 
 ### Create Meeting
 
@@ -459,7 +477,7 @@ The browser records with `getDisplayMedia` and `MediaRecorder`. If the output is
 
 The frontend uploads the file, receives metadata, then sends that metadata with `meeting_chat_send`. `_api_chat_upload_impl()` stores files; `on_meeting_chat_send()` writes chat history and broadcasts the message.
 
-## 14. Current Limits and Future Improvements
+## 15. Current Limits and Future Improvements
 
 Current limits:
 
@@ -476,7 +494,7 @@ Future improvements:
 - Add automated tests for login, room creation, join validation, attachment upload, and admin actions.
 - Add clearer frontend messages for LiveKit connection failure, mobile screen sharing limits, and recording remux failures.
 
-## 15. Common Q&A
+## 16. Common Q&A
 
 ### Why Not Use C?
 
@@ -511,7 +529,7 @@ The frontend uploads the attachment over HTTP to `/api/chat_upload_media` or `/a
 
 The admin visits `/admin`. The backend aggregates system status, users, meetings, and password reset requests, then renders `admin.html`. Operations are mostly POST forms protected by `@admin_required`.
 
-## 16. Final Presentation Summary
+## 17. Final Presentation Summary
 
 Do not describe the project as only "a frontend video meeting page." A more accurate summary is:
 

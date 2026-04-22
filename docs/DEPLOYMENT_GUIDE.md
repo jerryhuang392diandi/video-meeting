@@ -50,6 +50,26 @@
 
 如果只是课程展示，建议尽量保持示例里的目录、用户名和服务名，减少排障变量。
 
+## 0.1 部署前先准备哪些账号
+
+第一次部署前，建议先把下面这些账号或入口准备好。不是每一项都必须马上用，但文档后面会反复提到。
+
+| 类型 | 用途 | 官方入口 |
+| --- | --- | --- |
+| GitHub | 托管代码、`git clone`、`git push` | https://github.com/ |
+| Gitee | 国内可选代码托管平台 | https://gitee.com/ |
+| Cloudflare | DNS 托管、可选代理、SSL/TLS 设置 | https://www.cloudflare.com/ |
+| Cloudflare 控制台 | 添加域名、添加 DNS 记录、切换 DNS only / Proxied | https://dash.cloudflare.com/ |
+| LiveKit Cloud | 最省事的 LiveKit 托管媒体服务 | https://cloud.livekit.io/ |
+| Let's Encrypt | 免费 HTTPS 证书签发机构，通常通过 Certbot 使用 | https://letsencrypt.org/ |
+| Certbot | 在服务器上自动申请和续期 Let's Encrypt 证书 | https://certbot.eff.org/ |
+| Python | 本地和服务器 Python 运行环境 | https://www.python.org/downloads/ |
+| Git | 本地和服务器代码版本管理工具 | https://git-scm.com/downloads |
+| FFmpeg | 录屏导出 MP4 时使用 | https://ffmpeg.org/download.html |
+| VS Code | 可选代码编辑器 | https://code.visualstudio.com/ |
+
+如果你还没有域名，可以在阿里云、腾讯云、华为云、Cloudflare Registrar、Namecheap 等域名服务商购买。域名在哪里买都可以，关键是你要能进入 DNS 管理页面，把 `meeting.example.com` 解析到云服务器公网 IP。
+
 ## 1. 推荐部署架构
 
 ```text
@@ -296,7 +316,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 
 操作步骤：
 
-1. 打开 LiveKit Cloud 控制台并创建一个 project。
+1. 打开 LiveKit Cloud 控制台 https://cloud.livekit.io/ 并创建一个 project。
 2. 进入项目的 settings 或 keys 页面。
 3. 复制 Server URL，格式通常类似 `wss://your-project.livekit.cloud`。
 4. 创建或复制 API key 和 API secret。
@@ -381,6 +401,13 @@ sudo systemctl status video-meeting
 
 ## 7. 域名、Cloudflare 与 DNS
 
+本项目需要一个用户能访问的域名，例如 `meeting.example.com`。域名有两件事要分清：
+
+1. 域名注册商：你在哪里买域名，例如阿里云、腾讯云、Cloudflare Registrar、Namecheap。
+2. DNS 托管商：谁负责解析域名到服务器 IP，例如 Cloudflare、阿里云 DNS、腾讯云 DNS。
+
+两者可以是同一家，也可以不是同一家。使用 Cloudflare 时，通常是在域名注册商那里把 nameserver 改成 Cloudflare 给你的 nameserver，然后在 Cloudflare 控制台管理 DNS 记录。
+
 ### 7.1 普通 DNS
 
 在域名服务商添加 A 记录：
@@ -398,7 +425,15 @@ TTL: 自动或 600
 dig meeting.example.com
 ```
 
+如果服务器没有 `dig`，可以安装：
+
+```bash
+sudo apt install -y dnsutils
+```
+
 ### 7.2 使用 Cloudflare
+
+Cloudflare 官网是 https://www.cloudflare.com/ ，控制台是 https://dash.cloudflare.com/ 。
 
 如果域名托管在 Cloudflare：
 
@@ -406,6 +441,25 @@ dig meeting.example.com
 2. 代理状态可以先设为 DNS only，确认服务器部署正常后再打开 Proxied。
 3. SSL/TLS 模式建议使用 `Full (strict)`，并在服务器上安装有效证书。
 4. 如果先用 Cloudflare 代理，确认 WebSocket 没有被拦截；本项目 Socket.IO 需要 WebSocket 或轮询连接稳定可用。
+
+Cloudflare 新手操作顺序：
+
+1. 打开 https://dash.cloudflare.com/ 并登录。
+2. 点击 Add a site，输入你的根域名，例如 `example.com`。
+3. 按 Cloudflare 提示去域名注册商处修改 nameserver。
+4. 等 Cloudflare 显示域名 Active。
+5. 进入 DNS 页面，添加 `A` 记录：
+
+```text
+Type: A
+Name: meeting
+IPv4 address: your_server_ip
+Proxy status: DNS only
+TTL: Auto
+```
+
+6. 先保持 DNS only，等 Nginx 和 HTTPS 都跑通后，再考虑打开 Proxied。
+7. 打开 Proxied 后，重新测试登录、聊天、双端入房和 LiveKit 媒体。
 
 课程演示最稳妥路径：
 
@@ -759,7 +813,14 @@ curl -I https://meeting.example.com
 
 ### 12.1 第一次建立 Git 仓库
 
-如果项目还没有远程仓库，可以在 GitHub 或 Gitee 新建一个仓库，然后在本地执行：
+如果项目还没有远程仓库，可以在 GitHub 或 Gitee 新建一个仓库：
+
+| 平台 | 入口 | 适合情况 |
+| --- | --- | --- |
+| GitHub | https://github.com/new | 国际通用，英文资料最多 |
+| Gitee | https://gitee.com/projects/new | 国内访问通常更顺畅 |
+
+新建空仓库后，在本地执行：
 
 ```bash
 git init
@@ -782,20 +843,26 @@ git push -u origin main
 
 ### 12.2 本地每次改代码的流程
 
+这是最通用、最适合小项目和课程作业的流程：
+
 ```bash
 git status
 python check_i18n.py
 python -m py_compile app.py translations.py
-git add README.md docs/ app.py templates/ static/ translations.py
+git add .
 git commit -m "Improve deployment documentation"
 git push origin main
 ```
 
 说明：
 
-- `git status` 先看自己改了什么，避免把无关文件一起提交。
+- `git status` 会列出当前改过、删除过、新增过的文件。先看一眼，确认没有把数据库、上传文件、虚拟环境等乱七八糟的东西带进去。
 - `python check_i18n.py` 用来检查模板里是否混入未翻译中文。
 - `python -m py_compile ...` 用来快速检查 Python 语法。
+- `git add .` 表示“把当前项目目录下所有改动加入本次提交”。它会包含新增、修改和删除的文件，是最常用的写法。
+- 如果 `git status` 里出现了不该提交的文件，先把它加入 `.gitignore`，或者改用 `git add 某个文件名` 只添加你确定要提交的文件。
+- `git commit -m "..."` 是给这次改动起一个名字。引号里的英文可以换，例如 `Fix quickstart layout`、`Update deployment docs`。
+- `git push origin main` 是把本地提交推送到 GitHub / Gitee 的 `main` 分支。
 - commit 标题要写清楚这次改了什么，例如 `Fix mobile quickstart layout`、`Improve deployment guide`。
 
 ### 12.3 云服务器如何更新代码
@@ -888,10 +955,12 @@ tar -czf /tmp/video-meeting-instance-$(date +%F).tar.gz instance
 
 ## 15. 本地提交速查
 
+普通情况直接用这一版：
+
 ```bash
 git status
 git pull --rebase origin main
-git add README.md docs/ app.py templates/ static/ translations.py
+git add .
 git commit -m "Improve deployment documentation"
 git push origin main
 ```
@@ -899,7 +968,7 @@ git push origin main
 提交前检查：
 
 - 不要提交 `instance/`、数据库、上传文件、临时录屏或本地虚拟环境。
-- 不要无脑 `git add .`；先用 `git status` 看清楚改动，再只添加需要提交的文件。
+- `git add .` 是通用写法，但执行前要先看 `git status`。如果里面出现了不该提交的运行时文件，就先处理 `.gitignore` 或改用精确添加。
 - 如果改了模板文案，运行 `python check_i18n.py`。
 - 如果改了部署行为，同步更新根 README、部署指南和稳定性说明。
 
@@ -1006,9 +1075,15 @@ sudo systemctl restart video-meeting
 | Nginx WebSocket | [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html) | 显式转发 `Upgrade`，并使用 `map` 设置 `Connection` |
 | Certbot | [Certbot install guide](https://eff-certbot.readthedocs.io/en/stable/install.html) | Ubuntu/Nginx 推荐使用 snap 版 Certbot |
 | Cloudflare SSL | [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) | 使用 Full (strict) 时源站需要有效证书 |
+| Cloudflare DNS | [Cloudflare DNS records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/) | 添加 `A` 记录，把 `meeting.example.com` 指向服务器公网 IP |
+| Cloudflare 控制台 | [Cloudflare Dashboard](https://dash.cloudflare.com/) | 添加站点、配置 DNS、切换 DNS only / Proxied、配置 SSL/TLS |
+| 域名注册商示例 | [阿里云域名](https://wanwang.aliyun.com/)、[腾讯云域名](https://dnspod.cloud.tencent.com/)、[Cloudflare Registrar](https://www.cloudflare.com/products/registrar/)、[Namecheap](https://www.namecheap.com/) | 购买域名；购买后要能管理 DNS 或修改 nameserver |
 | systemd 环境变量 | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) | systemd 可通过 `EnvironmentFile=` 从文件加载环境变量 |
 | LiveKit 自建部署 | [Deploying LiveKit](https://docs.livekit.io/home/self-hosting/deployment/) | 自建 LiveKit 需要域名、可信 SSL 证书、反向代理/负载均衡、UDP/TCP 媒体端口和 TURN |
+| LiveKit Cloud | [LiveKit Cloud](https://cloud.livekit.io/) | 创建托管 LiveKit 项目，复制 server URL、API key、API secret |
 | LiveKit 项目配置 | [LiveKit CLI project commands](https://docs.livekit.io/reference/developer-tools/livekit-cli/projects/) | LiveKit 项目由 URL、API key 和 API secret 组成，本项目 `.env` 也使用这三项 |
+| GitHub / Gitee | [GitHub](https://github.com/)、[Gitee](https://gitee.com/) | 代码托管、版本管理、服务器 `git pull` 的来源 |
+| 本地开发工具 | [Python](https://www.python.org/downloads/)、[Git](https://git-scm.com/downloads)、[FFmpeg](https://ffmpeg.org/download.html)、[VS Code](https://code.visualstudio.com/)、[Homebrew](https://brew.sh/)、[winget](https://learn.microsoft.com/windows/package-manager/winget/) | 本地快速开始和调试所需工具入口 |
 | 云服务器入口 | [阿里云 ECS](https://www.aliyun.com/product/ecs)、[腾讯云 CVM](https://cloud.tencent.com/product/cvm)、[华为云 ECS](https://www.huaweicloud.com/product/ecs.html)、[AWS EC2](https://aws.amazon.com/ec2/)、[Azure VM](https://azure.microsoft.com/products/virtual-machines/)、[DigitalOcean Droplets](https://www.digitalocean.com/products/droplets)、[Vultr Cloud Compute](https://www.vultr.com/products/cloud-compute/) | 购买云服务器时优先选一台普通 Ubuntu 服务器，不要一开始购买复杂附加服务 |
 
 ## 18. 不建议的操作

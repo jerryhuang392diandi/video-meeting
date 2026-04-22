@@ -37,6 +37,26 @@ The examples use these placeholders:
 
 For a course demo, keeping the example directory, username, and service name reduces troubleshooting variables.
 
+## 0.1 Accounts and Websites to Prepare
+
+Before the first deployment, prepare the following accounts or entry points. Not every item is required immediately, but the guide refers to them later.
+
+| Type | Purpose | Official entry |
+| --- | --- | --- |
+| GitHub | Code hosting, `git clone`, `git push` | https://github.com/ |
+| Gitee | Optional code hosting platform in China | https://gitee.com/ |
+| Cloudflare | DNS hosting, optional proxy, SSL/TLS settings | https://www.cloudflare.com/ |
+| Cloudflare Dashboard | Add domains, DNS records, DNS only / Proxied settings | https://dash.cloudflare.com/ |
+| LiveKit Cloud | Easiest hosted LiveKit media service | https://cloud.livekit.io/ |
+| Let's Encrypt | Free HTTPS certificate authority, usually used through Certbot | https://letsencrypt.org/ |
+| Certbot | Requests and renews Let's Encrypt certificates on the server | https://certbot.eff.org/ |
+| Python | Local and server runtime | https://www.python.org/downloads/ |
+| Git | Local and server version control | https://git-scm.com/downloads |
+| FFmpeg | MP4 recording export | https://ffmpeg.org/download.html |
+| VS Code | Optional code editor | https://code.visualstudio.com/ |
+
+If you do not have a domain yet, you can buy one from Alibaba Cloud, Tencent Cloud, Huawei Cloud, Cloudflare Registrar, Namecheap, or another registrar. The registrar does not matter as long as you can manage DNS and point `meeting.example.com` to the cloud server public IP.
+
 ## 1. Recommended Architecture
 
 ```text
@@ -281,7 +301,7 @@ This app uses LiveKit for the actual media path. Flask checks meeting permission
 
 The simplest path is LiveKit Cloud:
 
-1. Create a LiveKit Cloud project.
+1. Open the LiveKit Cloud dashboard at https://cloud.livekit.io/ and create a project.
 2. Copy the server URL, usually `wss://...livekit.cloud`.
 3. Create an API key and API secret.
 4. Put them into `.env` as `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`.
@@ -320,6 +340,13 @@ Minimum self-hosted checklist:
 
 ## 7. Domain, Cloudflare, and DNS
 
+A public deployment needs a domain that users can open, such as `meeting.example.com`. Separate two concepts:
+
+1. Domain registrar: where you bought the domain, such as Alibaba Cloud, Tencent Cloud, Cloudflare Registrar, or Namecheap.
+2. DNS host: who manages DNS records, such as Cloudflare, Alibaba Cloud DNS, or Tencent Cloud DNS.
+
+They can be the same provider or different providers. With Cloudflare, you usually change the domain's nameservers at the registrar, then manage DNS records in the Cloudflare Dashboard.
+
 ### 7.1 Plain DNS
 
 Add an A record at your DNS provider:
@@ -337,7 +364,15 @@ Check propagation:
 dig meeting.example.com
 ```
 
+If `dig` is missing:
+
+```bash
+sudo apt install -y dnsutils
+```
+
 ### 7.2 Cloudflare
+
+Cloudflare website: https://www.cloudflare.com/ . Dashboard: https://dash.cloudflare.com/ .
 
 If the domain is on Cloudflare:
 
@@ -345,6 +380,25 @@ If the domain is on Cloudflare:
 2. Start with DNS only, then enable Proxied after the server works.
 3. Use SSL/TLS mode `Full (strict)` with a valid server-side certificate.
 4. If Cloudflare proxy is enabled, confirm WebSocket is not blocked; this app needs stable Socket.IO WebSocket or polling.
+
+Beginner Cloudflare flow:
+
+1. Open https://dash.cloudflare.com/ and sign in.
+2. Click Add a site, then enter the root domain, for example `example.com`.
+3. Follow Cloudflare's instructions to change nameservers at the domain registrar.
+4. Wait until Cloudflare shows the domain as Active.
+5. Open DNS and add an `A` record:
+
+```text
+Type: A
+Name: meeting
+IPv4 address: your_server_ip
+Proxy status: DNS only
+TTL: Auto
+```
+
+6. Keep DNS only until Nginx and HTTPS work.
+7. After enabling Proxied, re-test login, chat, two-device room join, and LiveKit media.
 
 Stable demo path:
 
@@ -635,7 +689,14 @@ Edit locally
   -> Restart systemd
 ```
 
-First repository setup:
+First create an empty repository on GitHub or Gitee:
+
+| Platform | Entry | Good for |
+| --- | --- | --- |
+| GitHub | https://github.com/new | International default, most English resources |
+| Gitee | https://gitee.com/projects/new | Often smoother access in China |
+
+Then run locally:
 
 ```bash
 git init
@@ -648,16 +709,26 @@ git push -u origin main
 
 Do not commit `venv/`, `instance/`, `.env`, databases, uploads, recordings, archives, or IDE cache files.
 
-Local change flow:
+Local change flow. This is the most common version for a small project or course assignment:
 
 ```bash
 git status
 python check_i18n.py
 python -m py_compile app.py translations.py
-git add README.md docs/ app.py templates/ static/ translations.py
+git add .
 git commit -m "Improve deployment documentation"
 git push origin main
 ```
+
+Explanation for beginners:
+
+- `git status` lists files that were modified, deleted, or newly created. Read it first and make sure runtime files are not included.
+- `python check_i18n.py` checks whether template text accidentally skipped the translation table.
+- `python -m py_compile ...` quickly checks Python syntax.
+- `git add .` means "stage all changes under the current project directory for this commit." It includes new, modified, and deleted files.
+- If `git status` shows files that should not be committed, add them to `.gitignore` first, or use `git add some-file` to stage only specific files.
+- `git commit -m "..."` gives this change a name. Replace the quoted text with a clear subject, such as `Fix quickstart layout` or `Update deployment docs`.
+- `git push origin main` sends your local commit to the `main` branch on GitHub / Gitee.
 
 Server update flow:
 
@@ -737,10 +808,12 @@ For server migration:
 
 ## 15. Local Commit Quick Reference
 
+Use this for normal changes:
+
 ```bash
 git status
 git pull --rebase origin main
-git add README.md docs/ app.py templates/ static/ translations.py
+git add .
 git commit -m "Improve deployment documentation"
 git push origin main
 ```
@@ -748,7 +821,7 @@ git push origin main
 Before committing:
 
 - Do not commit `instance/`, databases, uploads, temporary recordings, or the local virtual environment.
-- Do not blindly use `git add .`; inspect `git status` first and add only intended files.
+- `git add .` is the normal shortcut, but read `git status` first. If runtime files appear, fix `.gitignore` or stage specific files instead.
 - If template text changed, run `python check_i18n.py`.
 - If deployment behavior changed, update the root README, deployment guide, and stability notes together.
 
@@ -855,9 +928,15 @@ This guide combines the current project code with these official documents:
 | Nginx WebSocket | [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html) | Forward `Upgrade` explicitly and use `map` for `Connection` |
 | Certbot | [Certbot install guide](https://eff-certbot.readthedocs.io/en/stable/install.html) | Use snap Certbot for Ubuntu/Nginx |
 | Cloudflare SSL | [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) | Full (strict) requires a valid origin certificate |
+| Cloudflare DNS | [Cloudflare DNS records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/) | Add an `A` record that points `meeting.example.com` to the server public IP |
+| Cloudflare Dashboard | [Cloudflare Dashboard](https://dash.cloudflare.com/) | Add sites, configure DNS, switch DNS only / Proxied, configure SSL/TLS |
+| Domain registrar examples | [Alibaba Cloud Domains](https://wanwang.aliyun.com/), [Tencent Cloud DNSPod](https://dnspod.cloud.tencent.com/), [Cloudflare Registrar](https://www.cloudflare.com/products/registrar/), [Namecheap](https://www.namecheap.com/) | Buy a domain; after purchase, you must be able to manage DNS or change nameservers |
 | systemd environment | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) | `EnvironmentFile=` loads variables from a file |
 | LiveKit self-hosting | [Deploying LiveKit](https://docs.livekit.io/home/self-hosting/deployment/) | Self-hosting needs domain, trusted SSL, reverse proxy/load balancer, UDP/TCP media ports, and TURN |
+| LiveKit Cloud | [LiveKit Cloud](https://cloud.livekit.io/) | Create hosted LiveKit projects and copy server URL, API key, and API secret |
 | LiveKit project config | [LiveKit CLI project commands](https://docs.livekit.io/reference/developer-tools/livekit-cli/projects/) | A LiveKit project is identified by URL, API key, and API secret, matching this app's `.env` values |
+| GitHub / Gitee | [GitHub](https://github.com/), [Gitee](https://gitee.com/) | Code hosting, version control, and the source for server `git pull` |
+| Local tools | [Python](https://www.python.org/downloads/), [Git](https://git-scm.com/downloads), [FFmpeg](https://ffmpeg.org/download.html), [VS Code](https://code.visualstudio.com/), [Homebrew](https://brew.sh/), [winget](https://learn.microsoft.com/windows/package-manager/winget/) | Tool entry points for local quick start and debugging |
 | Cloud server providers | [Alibaba Cloud ECS](https://www.aliyun.com/product/ecs), [Tencent Cloud CVM](https://cloud.tencent.com/product/cvm), [Huawei Cloud ECS](https://www.huaweicloud.com/product/ecs.html), [AWS EC2](https://aws.amazon.com/ec2/), [Azure VM](https://azure.microsoft.com/products/virtual-machines/), [DigitalOcean Droplets](https://www.digitalocean.com/products/droplets), [Vultr Cloud Compute](https://www.vultr.com/products/cloud-compute/) | Start with one ordinary Ubuntu server before adding managed databases, load balancers, or storage services |
 
 ## 18. Operations to Avoid
