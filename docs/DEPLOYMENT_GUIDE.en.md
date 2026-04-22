@@ -53,7 +53,19 @@ The current app keeps online room state mainly in single-process memory, so depl
 
 ## 2. Buying a Server and Base Setup
 
-Cloud providers can include Alibaba Cloud, Tencent Cloud, Huawei Cloud, AWS, Azure, DigitalOcean, Vultr, and similar vendors. For course demos or small demos:
+Cloud providers can include Alibaba Cloud, Tencent Cloud, Huawei Cloud, AWS, Azure, DigitalOcean, Vultr, and similar vendors. For a first deployment, buy one normal cloud server first; do not buy load balancers, managed databases, object storage, or other add-ons until the basic app works.
+
+| Provider | Official entry | Notes |
+| --- | --- | --- |
+| Alibaba Cloud ECS | https://www.aliyun.com/product/ecs | Chinese console, good for mainland China users |
+| Tencent Cloud CVM | https://cloud.tencent.com/product/cvm | Chinese console |
+| Huawei Cloud ECS | https://www.huaweicloud.com/product/ecs.html | Chinese console |
+| AWS EC2 | https://aws.amazon.com/ec2/ | International cloud provider |
+| Azure Virtual Machines | https://azure.microsoft.com/products/virtual-machines/ | International cloud provider |
+| DigitalOcean Droplets | https://www.digitalocean.com/products/droplets | Simple English dashboard |
+| Vultr Cloud Compute | https://www.vultr.com/products/cloud-compute/ | Simple English dashboard |
+
+For course demos or small demos:
 
 | Item | Recommendation |
 | --- | --- |
@@ -68,6 +80,13 @@ In the cloud console:
 
 1. Allow `80/tcp` and `443/tcp` in the security group or firewall.
 2. Restrict SSH to your own public IP if possible; otherwise use a strong password or SSH key.
+
+Buying notes:
+
+- Choose a region close to your main users.
+- Choose Ubuntu 22.04 LTS or 24.04 LTS.
+- For temporary demos, short-term monthly billing or pay-as-you-go is fine. Release the server after the demo if you no longer need it.
+- If you later self-host LiveKit, additional LiveKit media ports must be opened.
 
 First login:
 
@@ -594,7 +613,68 @@ Browser checks:
 - Camera, microphone, and screen sharing can start and stop.
 - `/admin` opens and common admin actions work.
 
-## 12. Standard Server Update
+## 12. Three-Side Code Changes and Git Version Control
+
+There are usually three sides:
+
+| Side | Role | Normal work |
+| --- | --- | --- |
+| Local computer | Edit and test code with `python app.py` | Change `app.py`, `templates/`, `static/`, and docs |
+| Git platform | Stores versions, such as GitHub or Gitee | Receives `git push` and becomes the sync center |
+| Cloud server | Runs production | Pulls confirmed code with `git pull`, then restarts the service |
+
+Recommended flow:
+
+```text
+Edit locally
+  -> Run local checks
+  -> git commit
+  -> git push
+  -> SSH to the server
+  -> git pull
+  -> Restart systemd
+```
+
+First repository setup:
+
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git branch -M main
+git remote add origin https://github.com/your-name/video-meeting-replace.git
+git push -u origin main
+```
+
+Do not commit `venv/`, `instance/`, `.env`, databases, uploads, recordings, archives, or IDE cache files.
+
+Local change flow:
+
+```bash
+git status
+python check_i18n.py
+python -m py_compile app.py translations.py
+git add README.md docs/ app.py templates/ static/ translations.py
+git commit -m "Improve deployment documentation"
+git push origin main
+```
+
+Server update flow:
+
+```bash
+ssh deploy@your_server_ip
+cd /opt/video-meeting
+git status
+git pull origin main
+source /opt/video-meeting/venv/bin/activate
+pip install -r requirements.txt
+sudo systemctl restart video-meeting
+sudo systemctl status video-meeting
+```
+
+If `git status` on the server shows local modifications, do not force `git pull`. Someone may have edited files directly on the server.
+
+## 13. Standard Server Update
 
 ```bash
 cd /opt/video-meeting
@@ -638,7 +718,7 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-## 13. Backup and Migration
+## 14. Backup and Migration
 
 SQLite and uploads are under `instance/` by default. Back up at least:
 
@@ -655,12 +735,12 @@ For server migration:
 4. Point DNS to the new server IP.
 5. Restart systemd and run a two-device room test.
 
-## 14. Local Commit Flow
+## 15. Local Commit Quick Reference
 
 ```bash
 git status
 git pull --rebase origin main
-git add .
+git add README.md docs/ app.py templates/ static/ translations.py
 git commit -m "Improve deployment documentation"
 git push origin main
 ```
@@ -668,10 +748,11 @@ git push origin main
 Before committing:
 
 - Do not commit `instance/`, databases, uploads, temporary recordings, or the local virtual environment.
+- Do not blindly use `git add .`; inspect `git status` first and add only intended files.
 - If template text changed, run `python check_i18n.py`.
 - If deployment behavior changed, update the root README, deployment guide, and stability notes together.
 
-## 15. Common Issues
+## 16. Common Issues
 
 ### Room Returns 503
 
@@ -763,7 +844,7 @@ sudo systemctl daemon-reload
 sudo systemctl restart video-meeting
 ```
 
-## 16. References
+## 17. References
 
 This guide combines the current project code with these official documents:
 
@@ -777,8 +858,9 @@ This guide combines the current project code with these official documents:
 | systemd environment | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) | `EnvironmentFile=` loads variables from a file |
 | LiveKit self-hosting | [Deploying LiveKit](https://docs.livekit.io/home/self-hosting/deployment/) | Self-hosting needs domain, trusted SSL, reverse proxy/load balancer, UDP/TCP media ports, and TURN |
 | LiveKit project config | [LiveKit CLI project commands](https://docs.livekit.io/reference/developer-tools/livekit-cli/projects/) | A LiveKit project is identified by URL, API key, and API secret, matching this app's `.env` values |
+| Cloud server providers | [Alibaba Cloud ECS](https://www.aliyun.com/product/ecs), [Tencent Cloud CVM](https://cloud.tencent.com/product/cvm), [Huawei Cloud ECS](https://www.huaweicloud.com/product/ecs.html), [AWS EC2](https://aws.amazon.com/ec2/), [Azure VM](https://azure.microsoft.com/products/virtual-machines/), [DigitalOcean Droplets](https://www.digitalocean.com/products/droplets), [Vultr Cloud Compute](https://www.vultr.com/products/cloud-compute/) | Start with one ordinary Ubuntu server before adding managed databases, load balancers, or storage services |
 
-## 17. Operations to Avoid
+## 18. Operations to Avoid
 
 - Do not run production service with the Flask debug server.
 - Do not start multiple Gunicorn workers to "improve performance" unless runtime room state has moved to shared storage.

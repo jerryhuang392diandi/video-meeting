@@ -21,11 +21,24 @@
 
 ## 使用入口
 
-- `/quickstart`: 给第一次使用者的快速开始页，只保留最短路径：切换语言、注册登录、创建或加入会议、授权设备、聊天附件和共享屏幕。
-- `/help`: 更完整的用户指南，展开说明个人账户偏好、地区/时区、翻译默认语言、会议内设备控制、共享屏幕音频、聊天附件权限和主持人收尾操作。
-- `/support`: 客服支持页，用于登录、设备权限、入会或文件上传异常时联系平台支持。
+| 路径 | 页面 | 适合谁看 |
+| --- | --- | --- |
+| `/` | 首页 / 创建会议 / 加入会议 | 登录后的普通用户 |
+| `/login` | 登录页 | 已有账号的用户 |
+| `/register` | 注册页 | 第一次使用的用户 |
+| `/forgot-password` | 找回密码申请页 | 忘记密码的用户 |
+| `/quickstart` | 快速开始页 | 第一次开会的人，中英双语最短流程 |
+| `/help` | 用户指南 | 想了解账户偏好、设备、聊天附件、屏幕共享、主持人操作的人 |
+| `/support` | 支持页 | 登录、入会、设备权限、文件上传异常时查看 |
+| `/account` | 个人账户与偏好 | 修改昵称、语言、地区/时区、附件权限、默认设备开关 |
+| `/history` | 历史会议 | 查看自己创建或参加过的会议 |
+| `/room/<会议号>` | 会议房间 | 参会者实际开会页面，通常通过邀请链接进入 |
+| `/admin` | 管理员后台 | root / 管理员处理用户、会议、密码重置、系统统计 |
 
-历史会议时间会按当前用户在账户页保存的地区/时区显示。管理员后台也按当前管理员账号的地区/时区统一显示时间，适合 root 管理员在 `/account` 里先设置后台查看口径。
+时间显示规则：
+
+- 普通用户查看 `/history` 时，会议时间按该用户在 `/account` 保存的地区/时区显示。
+- 管理员查看 `/admin` 时，用户注册时间、当前会议和历史会议时间按当前管理员账号的地区/时区显示。
 
 ## 技术架构
 
@@ -61,13 +74,74 @@
 
 ## 本地运行
 
-Windows:
+下面写的是零基础本地运行步骤。本地运行适合改代码和课堂演示前自测；真正让别人从公网访问，仍然要看后面的云服务器部署。
+
+### 1. 先安装基础软件
+
+Windows 建议安装：
+
+| 软件 | 用途 | 获取方式 |
+| --- | --- | --- |
+| Python 3.10+ | 运行 Flask 项目 | https://www.python.org/downloads/ |
+| Git | 下载代码、版本管理 | https://git-scm.com/downloads |
+| FFmpeg | 录屏导出 MP4 时使用；不装也能启动项目 | https://ffmpeg.org/download.html 或 `winget install Gyan.FFmpeg` |
+| VS Code | 编辑代码，可选 | https://code.visualstudio.com/ |
+
+macOS 建议安装：
+
+| 软件 | 用途 | 获取方式 |
+| --- | --- | --- |
+| Homebrew | 安装命令行工具 | https://brew.sh/ |
+| Python 3.10+ | 运行 Flask 项目 | `brew install python` |
+| Git | 下载代码、版本管理 | `brew install git` |
+| FFmpeg | 录屏导出 MP4 时使用；不装也能启动项目 | `brew install ffmpeg` |
+| VS Code | 编辑代码，可选 | https://code.visualstudio.com/ |
+
+安装后检查版本：
+
+```bash
+python --version
+git --version
+ffmpeg -version
+```
+
+macOS 如果 `python` 指向系统旧版本，可以用：
+
+```bash
+python3 --version
+```
+
+### 2. 创建本地项目文件夹
+
+Windows PowerShell 示例：
+
+```powershell
+mkdir D:\projects
+cd D:\projects
+git clone https://github.com/your-name/video-meeting-replace.git
+cd video-meeting-replace
+```
+
+macOS / Linux 示例：
+
+```bash
+mkdir -p ~/projects
+cd ~/projects
+git clone https://github.com/your-name/video-meeting-replace.git
+cd video-meeting-replace
+```
+
+如果你没有 Git 仓库，也可以把压缩包解压到一个固定目录，然后在终端 `cd` 进入项目目录。
+
+### 3. 创建 Python 虚拟环境并安装依赖
+
+Windows PowerShell:
 
 ```powershell
 python -m venv venv
 venv\Scripts\activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
-python app.py
 ```
 
 macOS / Linux:
@@ -75,11 +149,58 @@ macOS / Linux:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+以后每次重新打开终端，都要先进入项目目录并激活虚拟环境。
+
+### 4. 配置本地 `.env`
+
+如果只想看登录、注册、首页、帮助页，可以先不写 LiveKit 配置；但进入会议房间会返回 `503`，这是正常的保护逻辑。
+
+如果要本地测试会议音视频，建议先用 LiveKit Cloud，创建项目后把三项配置写入项目根目录 `.env`：
+
+```env
+SECRET_KEY=local-dev-secret-change-me
+PUBLIC_SCHEME=http
+PUBLIC_HOST=127.0.0.1:5000
+
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=replace-with-livekit-api-key
+LIVEKIT_API_SECRET=replace-with-livekit-api-secret
+
+ADMIN_USERNAME=root
+ADMIN_PASSWORD=root1234
+```
+
+`.env` 不要提交到 Git。
+
+### 5. 启动项目
+
+Windows / macOS / Linux 激活虚拟环境后都执行：
+
+```bash
 python app.py
 ```
 
+浏览器打开：
+
+```text
+http://127.0.0.1:5000
+```
+
 默认会使用 `instance/app.db` 作为 SQLite 数据库。首次运行时如果没有设置管理员密码，应用会生成初始密码并写入 `instance/admin_password.txt`。
+
+### 6. 本地常见问题
+
+| 现象 | 优先检查 |
+| --- | --- |
+| `python` 命令不存在 | Python 是否安装；Windows 安装时是否勾选 Add Python to PATH |
+| `git` 命令不存在 | Git 是否安装；重新打开终端 |
+| `pip install` 很慢 | 可以换国内 PyPI 镜像，或先确认网络 |
+| `/room/<会议号>` 返回 `503` | `.env` 里缺少 `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` |
+| 录屏转 MP4 失败 | 是否安装 FFmpeg，并且 `ffmpeg -version` 能输出版本 |
 
 ## 云服务器部署概览
 
@@ -101,6 +222,18 @@ python app.py
 - 开放 `80`、`443` 端口；SSH 端口按云厂商安全组配置。
 - 准备一个域名，例如 `meeting.example.com`。
 - LiveKit 建议优先使用 LiveKit Cloud；如果自建 LiveKit，需要额外准备 LiveKit 服务、TLS、UDP/TCP 可达性和 TURN/ICE 配置。
+
+常见云服务器入口：
+
+| 厂商 | 链接 |
+| --- | --- |
+| 阿里云 ECS | https://www.aliyun.com/product/ecs |
+| 腾讯云 CVM | https://cloud.tencent.com/product/cvm |
+| 华为云 ECS | https://www.huaweicloud.com/product/ecs.html |
+| AWS EC2 | https://aws.amazon.com/ec2/ |
+| Azure Virtual Machines | https://azure.microsoft.com/products/virtual-machines/ |
+| DigitalOcean Droplets | https://www.digitalocean.com/products/droplets |
+| Vultr Cloud Compute | https://www.vultr.com/products/cloud-compute/ |
 
 完整 Linux 云服务器操作步骤见 [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)。这份部署手册已经按零基础顺序重写了 Nginx 和 LiveKit 相关内容，建议第一次部署时照着它从前往后做，不要直接跳到配置片段。
 
@@ -171,12 +304,9 @@ python check_i18n.py
 
 ## 文档
 
-- [docs/README.md](docs/README.md) / [English](docs/README.en.md): 文档地图
-
-- [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) / [English](docs/DEPLOYMENT_GUIDE.en.md): 部署、更新和排障
-
-- [docs/STABILITY_AUDIT.md](docs/STABILITY_AUDIT.md) / [English](docs/STABILITY_AUDIT.en.md): 稳定性风险和后续演进建议
-
-- [docs/项目说明与代码索引.md](docs/%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](docs/PROJECT_GUIDE.en.md): 项目逻辑、核心流程、代码索引和展示讲解口径
-
-	
+| 文档 | 用途 |
+| --- | --- |
+| [docs/README.md](docs/README.md) / [English](docs/README.en.md) | 文档地图 |
+| [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) / [English](docs/DEPLOYMENT_GUIDE.en.md) | 部署、更新和排障 |
+| [docs/STABILITY_AUDIT.md](docs/STABILITY_AUDIT.md) / [English](docs/STABILITY_AUDIT.en.md) | 稳定性风险和后续演进建议 |
+| [docs/项目说明与代码索引.md](docs/%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](docs/PROJECT_GUIDE.en.md) | 项目逻辑、核心流程、代码索引和展示讲解口径 |

@@ -66,7 +66,19 @@
 
 ## 2. 购买服务器与基础准备
 
-云厂商可以选择阿里云、腾讯云、华为云、AWS、Azure、DigitalOcean、Vultr 等。课程展示或小规模演示推荐：
+云厂商可以选择阿里云、腾讯云、华为云、AWS、Azure、DigitalOcean、Vultr 等。下面是官方入口，第一次购买建议只买一台普通云服务器，不要同时买负载均衡、对象存储、云数据库等附加产品。
+
+| 厂商 | 官方入口 | 备注 |
+| --- | --- | --- |
+| 阿里云 ECS | https://www.aliyun.com/product/ecs | 国内访问方便，控制台中文，对新手友好 |
+| 腾讯云 CVM | https://cloud.tencent.com/product/cvm | 国内访问方便，控制台中文 |
+| 华为云 ECS | https://www.huaweicloud.com/product/ecs.html | 国内访问方便，控制台中文 |
+| AWS EC2 | https://aws.amazon.com/ec2/ | 国际云厂商，英文资料多 |
+| Azure Virtual Machines | https://azure.microsoft.com/products/virtual-machines/ | 国际云厂商，适合已有微软账号/资源的人 |
+| DigitalOcean Droplets | https://www.digitalocean.com/products/droplets | 面板简单，英文界面 |
+| Vultr Cloud Compute | https://www.vultr.com/products/cloud-compute/ | 面板简单，英文界面 |
+
+课程展示或小规模演示推荐：
 
 | 项 | 建议 |
 | --- | --- |
@@ -81,6 +93,13 @@
 
 1. 在安全组或防火墙中放行 `80/tcp` 和 `443/tcp`。
 2. SSH 端口只对自己的公网 IP 开放更安全；如果做不到，至少使用强密码或 SSH key。
+
+购买时注意：
+
+- 地域选择离主要用户近的机房，例如中国大陆用户优先选国内或香港，新加坡用户优先选新加坡。
+- 镜像选择 Ubuntu 22.04 LTS 或 Ubuntu 24.04 LTS，不建议新手选 CentOS、Debian minimal、自定义镜像。
+- 计费方式选按量或短期包月都可以，课程演示结束后记得释放资源，避免继续扣费。
+- 安全组至少放行 `22/tcp`、`80/tcp`、`443/tcp`。如果后续自建 LiveKit，还要额外放行 LiveKit 媒体端口。
 
 首次登录服务器：
 
@@ -716,7 +735,97 @@ curl -I https://meeting.example.com
 - 摄像头、麦克风、屏幕共享开始和停止可用。
 - `/admin` 能打开，常用管理动作正常。
 
-## 12. 标准服务器更新
+## 12. 三端改代码与 Git 版本管理
+
+实际维护时通常有“三端”：
+
+| 端 | 作用 | 平时做什么 |
+| --- | --- | --- |
+| 本地电脑 | 写代码、调试、运行 `python app.py` | 改 `app.py`、`templates/`、`static/`、文档，跑本地检查 |
+| Git 平台 | 保存代码版本，例如 GitHub / Gitee | 接收 `git push`，作为本地和服务器之间的同步中心 |
+| 云服务器 | 线上运行项目 | 用 `git pull` 拉取已经确认过的代码，然后重启服务 |
+
+推荐流程：
+
+```text
+本地电脑改代码
+  -> 本地运行和检查
+  -> git commit
+  -> git push 到 Git 平台
+  -> SSH 登录云服务器
+  -> git pull
+  -> 重启 systemd 服务
+```
+
+### 12.1 第一次建立 Git 仓库
+
+如果项目还没有远程仓库，可以在 GitHub 或 Gitee 新建一个仓库，然后在本地执行：
+
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git branch -M main
+git remote add origin https://github.com/your-name/video-meeting-replace.git
+git push -u origin main
+```
+
+如果你已经是从 Git 克隆下来的项目，不需要再 `git init`，直接使用已有仓库即可。
+
+不要提交这些内容：
+
+- `venv/`
+- `instance/`
+- `.env`
+- 数据库文件、上传文件、录屏文件
+- 临时压缩包或 IDE 缓存
+
+### 12.2 本地每次改代码的流程
+
+```bash
+git status
+python check_i18n.py
+python -m py_compile app.py translations.py
+git add README.md docs/ app.py templates/ static/ translations.py
+git commit -m "Improve deployment documentation"
+git push origin main
+```
+
+说明：
+
+- `git status` 先看自己改了什么，避免把无关文件一起提交。
+- `python check_i18n.py` 用来检查模板里是否混入未翻译中文。
+- `python -m py_compile ...` 用来快速检查 Python 语法。
+- commit 标题要写清楚这次改了什么，例如 `Fix mobile quickstart layout`、`Improve deployment guide`。
+
+### 12.3 云服务器如何更新代码
+
+云服务器不建议直接手改代码。推荐只做拉取和重启：
+
+```bash
+ssh deploy@your_server_ip
+cd /opt/video-meeting
+git status
+git pull origin main
+source /opt/video-meeting/venv/bin/activate
+pip install -r requirements.txt
+sudo systemctl restart video-meeting
+sudo systemctl status video-meeting
+```
+
+如果 `git status` 显示服务器上有未提交改动，先不要强行 `git pull`。这通常说明有人在服务器直接改过文件，需要先确认这些改动是否要保留。
+
+### 12.4 多人或多电脑同时改代码
+
+简单规则：
+
+- 开始改之前先 `git pull`。
+- 改完后先本地测试，再 `git commit`。
+- 推送前如果提示远程有新提交，先 `git pull --rebase origin main`。
+- 冲突文件要人工打开解决，解决后再提交。
+- 不要用 `git reset --hard` 处理不懂的冲突，它会丢掉本地改动。
+
+## 13. 标准服务器更新
 
 ```bash
 cd /opt/video-meeting
@@ -760,7 +869,7 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-## 13. 备份与迁移
+## 14. 备份与迁移
 
 SQLite 和上传文件默认在 `instance/` 下，至少备份：
 
@@ -777,12 +886,12 @@ tar -czf /tmp/video-meeting-instance-$(date +%F).tar.gz instance
 4. 更新 DNS 到新服务器 IP。
 5. 重启 systemd 服务并做双端入房验证。
 
-## 14. 本地提交流程
+## 15. 本地提交速查
 
 ```bash
 git status
 git pull --rebase origin main
-git add .
+git add README.md docs/ app.py templates/ static/ translations.py
 git commit -m "Improve deployment documentation"
 git push origin main
 ```
@@ -790,10 +899,11 @@ git push origin main
 提交前检查：
 
 - 不要提交 `instance/`、数据库、上传文件、临时录屏或本地虚拟环境。
+- 不要无脑 `git add .`；先用 `git status` 看清楚改动，再只添加需要提交的文件。
 - 如果改了模板文案，运行 `python check_i18n.py`。
 - 如果改了部署行为，同步更新根 README、部署指南和稳定性说明。
 
-## 15. 常见问题
+## 16. 常见问题
 
 ### 房间返回 503
 
@@ -885,7 +995,7 @@ sudo systemctl daemon-reload
 sudo systemctl restart video-meeting
 ```
 
-## 16. 参考依据
+## 17. 参考依据
 
 本文部署命令结合了项目当前代码和以下官方文档整理：
 
@@ -899,8 +1009,9 @@ sudo systemctl restart video-meeting
 | systemd 环境变量 | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) | systemd 可通过 `EnvironmentFile=` 从文件加载环境变量 |
 | LiveKit 自建部署 | [Deploying LiveKit](https://docs.livekit.io/home/self-hosting/deployment/) | 自建 LiveKit 需要域名、可信 SSL 证书、反向代理/负载均衡、UDP/TCP 媒体端口和 TURN |
 | LiveKit 项目配置 | [LiveKit CLI project commands](https://docs.livekit.io/reference/developer-tools/livekit-cli/projects/) | LiveKit 项目由 URL、API key 和 API secret 组成，本项目 `.env` 也使用这三项 |
+| 云服务器入口 | [阿里云 ECS](https://www.aliyun.com/product/ecs)、[腾讯云 CVM](https://cloud.tencent.com/product/cvm)、[华为云 ECS](https://www.huaweicloud.com/product/ecs.html)、[AWS EC2](https://aws.amazon.com/ec2/)、[Azure VM](https://azure.microsoft.com/products/virtual-machines/)、[DigitalOcean Droplets](https://www.digitalocean.com/products/droplets)、[Vultr Cloud Compute](https://www.vultr.com/products/cloud-compute/) | 购买云服务器时优先选一台普通 Ubuntu 服务器，不要一开始购买复杂附加服务 |
 
-## 17. 不建议的操作
+## 18. 不建议的操作
 
 - 不要把生产服务跑在 Flask debug server 上。
 - 不要启动多个 Gunicorn worker 来“提升性能”，除非先把房间运行态迁移到共享存储。

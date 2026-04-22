@@ -21,9 +21,24 @@ An online meeting system built with `Flask + Flask-SocketIO + LiveKit`. The curr
 
 ## User-Facing Pages
 
-- `/quickstart`: A short first-use path covering language switching, sign-in, meeting creation or join, device permission, chat attachments, and screen sharing.
-- `/help`: The full User Guide, with details for account preferences, region/time zone, translation defaults, in-room device controls, shared screen audio, attachment permissions, and host wrap-up actions.
-- `/support`: Support page for login, device permission, meeting entry, or file upload issues.
+| Path | Page | Audience |
+| --- | --- | --- |
+| `/` | Home / create meeting / join meeting | Signed-in users |
+| `/login` | Login | Existing users |
+| `/register` | Registration | First-time users |
+| `/forgot-password` | Password reset request | Users who forgot passwords |
+| `/quickstart` | Quickstart | First-time meeting users |
+| `/help` | User Guide | Users who need account, device, chat, screen share, or host guidance |
+| `/support` | Support | Login, device permission, meeting entry, or upload issues |
+| `/account` | Account and preferences | Name, language, timezone, attachment permission, and default device settings |
+| `/history` | Meeting history | Meetings created or joined by the current user |
+| `/room/<room_id>` | Meeting room | Actual in-meeting page, usually opened from an invite link |
+| `/admin` | Admin dashboard | Root/admin users managing users, meetings, reset requests, and stats |
+
+Time display rules:
+
+- `/history` uses the current user's timezone preference from `/account`.
+- `/admin` uses the current admin account's timezone preference for registration times and meeting records.
 
 ## Architecture
 
@@ -59,13 +74,66 @@ Room frontend files:
 
 ## Local Development
 
+These steps are written for first-time local setup. Local development is for editing code and testing before a course demo; public access still needs cloud deployment.
+
+### 1. Install Basic Tools
+
 Windows:
+
+| Tool | Purpose | Source |
+| --- | --- | --- |
+| Python 3.10+ | Runs the Flask app | https://www.python.org/downloads/ |
+| Git | Downloads code and manages versions | https://git-scm.com/downloads |
+| FFmpeg | MP4 recording export; optional for basic startup | https://ffmpeg.org/download.html or `winget install Gyan.FFmpeg` |
+| VS Code | Code editor, optional | https://code.visualstudio.com/ |
+
+macOS:
+
+| Tool | Purpose | Source |
+| --- | --- | --- |
+| Homebrew | Installs command-line tools | https://brew.sh/ |
+| Python 3.10+ | Runs the Flask app | `brew install python` |
+| Git | Downloads code and manages versions | `brew install git` |
+| FFmpeg | MP4 recording export; optional for basic startup | `brew install ffmpeg` |
+| VS Code | Code editor, optional | https://code.visualstudio.com/ |
+
+Check versions:
+
+```bash
+python --version
+git --version
+ffmpeg -version
+```
+
+### 2. Create a Project Folder
+
+Windows PowerShell:
+
+```powershell
+mkdir D:\projects
+cd D:\projects
+git clone https://github.com/your-name/video-meeting-replace.git
+cd video-meeting-replace
+```
+
+macOS / Linux:
+
+```bash
+mkdir -p ~/projects
+cd ~/projects
+git clone https://github.com/your-name/video-meeting-replace.git
+cd video-meeting-replace
+```
+
+### 3. Create a Virtual Environment
+
+Windows PowerShell:
 
 ```powershell
 python -m venv venv
 venv\Scripts\activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
-python app.py
 ```
 
 macOS / Linux:
@@ -73,8 +141,41 @@ macOS / Linux:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+### 4. Configure Local `.env`
+
+Without LiveKit settings, login and normal pages can work, but meeting rooms return `503`. To test audio/video locally, use LiveKit Cloud and create `.env`:
+
+```env
+SECRET_KEY=local-dev-secret-change-me
+PUBLIC_SCHEME=http
+PUBLIC_HOST=127.0.0.1:5000
+
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=replace-with-livekit-api-key
+LIVEKIT_API_SECRET=replace-with-livekit-api-secret
+
+ADMIN_USERNAME=root
+ADMIN_PASSWORD=root1234
+```
+
+Do not commit `.env`.
+
+### 5. Start the App
+
+After activating the virtual environment:
+
+```bash
 python app.py
+```
+
+Open:
+
+```text
+http://127.0.0.1:5000
 ```
 
 By default the app uses `instance/app.db` as the SQLite database. On first run, if no admin password is configured, the app generates one and writes it to `instance/admin_password.txt`.
@@ -101,6 +202,18 @@ Minimum server recommendation:
 - Open ports `80` and `443`; configure SSH in the cloud provider security group.
 - Prepare a domain such as `meeting.example.com`.
 - Prefer LiveKit Cloud for the media service. If self-hosting LiveKit, also prepare LiveKit service deployment, TLS, UDP/TCP reachability, and TURN/ICE settings.
+
+Common cloud server entry points:
+
+| Provider | Link |
+| --- | --- |
+| Alibaba Cloud ECS | https://www.aliyun.com/product/ecs |
+| Tencent Cloud CVM | https://cloud.tencent.com/product/cvm |
+| Huawei Cloud ECS | https://www.huaweicloud.com/product/ecs.html |
+| AWS EC2 | https://aws.amazon.com/ec2/ |
+| Azure Virtual Machines | https://azure.microsoft.com/products/virtual-machines/ |
+| DigitalOcean Droplets | https://www.digitalocean.com/products/droplets |
+| Vultr Cloud Compute | https://www.vultr.com/products/cloud-compute/ |
 
 See [docs/DEPLOYMENT_GUIDE.en.md](docs/DEPLOYMENT_GUIDE.en.md) for the full Linux cloud server procedure. The Chinese guide has the most beginner-oriented explanation for Nginx, HTTPS, LiveKit Cloud, and self-hosted LiveKit; the English guide keeps the same deployment shape and configuration names.
 
