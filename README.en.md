@@ -146,7 +146,7 @@ Windows PowerShell:
 ```powershell
 mkdir D:\projects
 cd D:\projects
-git clone https://github.com/jerryhuangqingxuan/video-meeting.git
+git clone https://github.com/jerryhuang392diandi/video-meeting.git
 cd video-meeting-replace
 ```
 
@@ -155,7 +155,7 @@ Windows CMD:
 ```bat
 mkdir D:\projects
 cd /d D:\projects
-git clone https://github.com/jerryhuangqingxuan/video-meeting.git
+git clone https://github.com/jerryhuang392diandi/video-meeting.git
 cd video-meeting-replace
 ```
 
@@ -164,7 +164,7 @@ macOS / Linux:
 ```bash
 mkdir -p ~/projects
 cd ~/projects
-git clone https://github.com/jerryhuangqingxuan/video-meeting.git
+git clone https://github.com/jerryhuang392diandi/video-meeting.git
 cd video-meeting-replace
 ```
 
