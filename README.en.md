@@ -141,6 +141,15 @@ ffmpeg -version
 
 ### 2. Create a Project Folder
 
+Project repositories:
+
+| Platform | URL |
+| --- | --- |
+| GitHub | https://github.com/jerryhuang392diandi/video-meeting |
+| Gitee | https://gitee.com/jerryhqx/video-meeting/tree/main |
+
+The examples below use GitHub. If GitHub is slow from your network, replace the clone URL with `https://gitee.com/jerryhqx/video-meeting.git`.
+
 Windows PowerShell:
 
 ```powershell
@@ -174,7 +183,7 @@ Command explanation:
 | --- | --- | --- |
 | `mkdir D:\projects` / `mkdir -p ~/projects` | Creates a parent folder for source code | Replace it with your preferred path |
 | `cd D:\projects` / `cd ~/projects` | Enters the parent folder so the clone lands there | Windows CMD needs `cd /d` when switching drives |
-| `git clone https://github.com/jerryhuang392diandi/video-meeting.git` | Downloads the current GitHub repository and creates a `video-meeting` folder | Replace the URL if the repository moves |
+| `git clone https://github.com/jerryhuang392diandi/video-meeting.git` | Downloads the GitHub repository and creates a `video-meeting` folder | If GitHub is slow, use `https://gitee.com/jerryhqx/video-meeting.git` |
 | `cd video-meeting` | Enters the cloned project folder | If you clone into another folder name, use that name here |
 
 ### 3. Create a Virtual Environment

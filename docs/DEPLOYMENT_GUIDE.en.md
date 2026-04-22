@@ -40,7 +40,7 @@ This guide often writes files with `cat <<'EOF' | sudo tee ...`. That is easier 
 | Cloud server | Runs Flask, Nginx, and systemd | Alibaba Cloud ECS, Tencent Cloud CVM, Huawei Cloud ECS, AWS EC2, Azure VM, DigitalOcean, Vultr |
 | Domain | Lets users open `meeting.example.com` | Alibaba Cloud Domains, Tencent DNSPod, Cloudflare Registrar, Namecheap, or another registrar |
 | ICP filing | Usually required for public domain access on mainland China servers | MIIT filing system or cloud provider filing console |
-| GitHub / Gitee | Code hosting for `git clone` / `git pull` | https://github.com/ / https://gitee.com/ |
+| GitHub / Gitee | Code hosting for `git clone` / `git pull` | GitHub: https://github.com/jerryhuang392diandi/video-meeting; Gitee: https://gitee.com/jerryhqx/video-meeting/tree/main |
 | Cloudflare | Optional DNS hosting, proxy, and SSL/TLS settings | https://www.cloudflare.com/ |
 | LiveKit Cloud | Easiest hosted LiveKit media service | https://cloud.livekit.io/ |
 | Let's Encrypt / Certbot | Free HTTPS certificates | https://letsencrypt.org/ / https://certbot.eff.org/ |
@@ -115,35 +115,15 @@ ICP filing requirements change. Use MIIT and cloud provider documentation as the
 
 The cloud provider usually gives you a public IP, username, and either a password or SSH private key. Ubuntu usernames are often `root`, `ubuntu`, or a user created in the console.
 
-Windows PowerShell or CMD:
+Common login commands:
 
-```powershell
-ssh root@your_server_ip
-```
-
-macOS Terminal or Linux shell:
-
-```bash
-ssh root@your_server_ip
-```
-
-If the username is not `root`:
-
-```bash
-ssh ubuntu@your_server_ip
-```
-
-If you received a private key:
-
-```bash
-ssh -i /path/to/your-key.pem root@your_server_ip
-```
-
-Windows private key example:
-
-```powershell
-ssh -i C:\Users\yourname\.ssh\server.pem root@your_server_ip
-```
+| Scenario | Command |
+| --- | --- |
+| Windows PowerShell / CMD | `ssh root@your_server_ip` |
+| macOS Terminal / Linux shell | `ssh root@your_server_ip` |
+| Username is not `root` | `ssh ubuntu@your_server_ip` |
+| macOS / Linux private key | `ssh -i /path/to/your-key.pem root@your_server_ip` |
+| Windows private key | `ssh -i C:\Users\yourname\.ssh\server.pem root@your_server_ip` |
 
 First connection often asks:
 
@@ -155,11 +135,14 @@ If the IP is your server, type `yes` and press Enter. When typing a password, th
 
 FinalShell is fine. It is an SSH client with a graphical connection manager:
 
-1. Create a new SSH connection.
-2. Host: `your_server_ip`; port: `22`.
-3. Username: `root`, `ubuntu`, or the provider username.
-4. Choose password or private-key authentication.
-5. After connecting, run the same Linux commands in its terminal.
+| Field | Value |
+| --- | --- |
+| Host | `your_server_ip` |
+| Port | `22` |
+| Username | `root`, `ubuntu`, or the provider username |
+| Authentication | Password or private key |
+
+After connecting, run the same Linux commands in the FinalShell terminal.
 
 CMD, PowerShell, macOS Terminal, Linux shell, and FinalShell all connect to the same server-side Linux shell, so the later commands are the same.
 
@@ -170,7 +153,6 @@ As root or a sudo-capable user:
 ```bash
 apt update
 apt upgrade -y
-timedatectl set-timezone Asia/Shanghai
 ```
 
 If you are not root:
@@ -178,7 +160,6 @@ If you are not root:
 ```bash
 sudo apt update
 sudo apt upgrade -y
-sudo timedatectl set-timezone Asia/Shanghai
 ```
 
 Create a dedicated runtime user:
@@ -230,7 +211,13 @@ pip install -r requirements.txt
 pip install gunicorn eventlet
 ```
 
-Replace the Git URL if your repository is on Gitee or a private GitHub repo. Private repos need SSH key or token setup.
+If GitHub is slow from your network, use Gitee instead:
+
+```bash
+git clone https://gitee.com/jerryhqx/video-meeting.git .
+```
+
+Private repositories need SSH key or token setup.
 
 ## 5. Configure Environment Variables
 
