@@ -79,6 +79,8 @@ python app.py
 
 By default the app uses `instance/app.db` as the SQLite database. On first run, if no admin password is configured, the app generates one and writes it to `instance/admin_password.txt`.
 
+Meeting history timestamps use the current user's region/timezone preference from `/account`. The admin dashboard uses the current admin account's timezone preference for user registration times and meeting records.
+
 ## Cloud Server Deployment Overview
 
 For production or course demonstrations, use this deployment shape:
@@ -100,13 +102,16 @@ Minimum server recommendation:
 - Prepare a domain such as `meeting.example.com`.
 - Prefer LiveKit Cloud for the media service. If self-hosting LiveKit, also prepare LiveKit service deployment, TLS, UDP/TCP reachability, and TURN/ICE settings.
 
-See [docs/DEPLOYMENT_GUIDE.en.md](docs/DEPLOYMENT_GUIDE.en.md) for the full Linux cloud server procedure, including:
+See [docs/DEPLOYMENT_GUIDE.en.md](docs/DEPLOYMENT_GUIDE.en.md) for the full Linux cloud server procedure. The Chinese guide has the most beginner-oriented explanation for Nginx, HTTPS, LiveKit Cloud, and self-hosted LiveKit; the English guide keeps the same deployment shape and configuration names.
+
+It includes:
 
 - Security groups, firewall, server users, and project directories after buying a server.
 - Cloudflare or plain DNS records.
 - Python virtual environment, dependency installation, and `.env` configuration.
-- Nginx reverse proxy for WebSocket, upload size, and HTTPS.
+- Nginx reverse proxy for WebSocket headers, upload size, and HTTPS.
 - systemd service files, auto-start, log inspection, and production updates.
+- LiveKit Cloud configuration and self-hosted LiveKit checks for TLS, ports, TURN/ICE, and API keys.
 - Troubleshooting for missing LiveKit config, WebSocket failures, upload issues, and MP4 recording remux.
 
 ## Key Configuration

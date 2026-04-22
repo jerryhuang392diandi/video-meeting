@@ -4,7 +4,7 @@
 <header class="topbar compact">
   <div>
     <div class="brand">{{ t('admin_dashboard') }}</div>
-    <div class="muted">{{ t('root_admin_console') }}</div>
+    <div class="muted">{{ t('root_admin_console') }} · {{ t('time_display_timezone') }}: {{ display_timezone_label }} ({{ display_timezone }})</div>
   </div>
   <div class="top-actions">
     {% include '_language_switch.html' %}

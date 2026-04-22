@@ -4,6 +4,31 @@
 
 这份文档给出从购买 Linux 云服务器到上线运行的完整路径。示例默认使用 Ubuntu 22.04 / 24.04、Nginx、systemd、Gunicorn + eventlet、SQLite 和外部 LiveKit 服务。路径、域名和服务名可以按实际情况替换。
 
+## 先给零基础读者的结论
+
+如果你只是想把课程展示跑起来，不要一开始就同时折腾 Nginx、HTTPS、自建 LiveKit、TURN、Cloudflare 代理和多服务器。最稳妥的顺序是：
+
+1. 先在本地 Windows 跑通：`python app.py`，确认注册、登录、创建会议页面都能打开。
+2. 再买一台 Ubuntu 云服务器，只部署 Flask 应用、Nginx、HTTPS。
+3. LiveKit 先用 LiveKit Cloud，把它给你的 `wss://...livekit.cloud`、API key、API secret 填进 `.env`。
+4. 用两个设备测试会议。这个时候能成功，说明应用、Nginx、HTTPS、Socket.IO 和 LiveKit Cloud 已经打通。
+5. 最后如果确实需要自建 LiveKit，再单独准备 `livekit.example.com` 和 `turn.example.com` 两个域名，并开放 LiveKit 需要的媒体端口。
+
+这份文档后面的章节按这个顺序写。第一次部署时，建议不要跳步骤；每完成一节都做一次验证，出问题时就知道是哪一层出了问题。
+
+## 常见名词先说明白
+
+| 名词 | 在本项目里是什么意思 | 出问题时常见现象 |
+| --- | --- | --- |
+| Flask 应用 | `app.py` 运行出来的网站和接口 | 页面打不开、登录失败、接口 500 |
+| Gunicorn | Linux 服务器上真正启动 Flask 的进程管理器 | `systemctl status video-meeting` 报错 |
+| Socket.IO | 聊天、成员列表、主持人操作、房间状态同步 | 页面能打开但聊天/成员状态不同步 |
+| WebSocket | Socket.IO 常用的长连接通道 | 浏览器控制台出现 socket 连接失败 |
+| Nginx | 对外入口，负责 HTTPS、反向代理、上传限制、WebSocket 头 | 502、上传失败、WebSocket 断开 |
+| HTTPS 证书 | 浏览器信任网站所需证书 | 摄像头权限异常、页面提示不安全 |
+| LiveKit | 真正传输摄像头、麦克风、屏幕共享的媒体服务器 | 房间页 503，或进房后没有远端音视频 |
+| TURN | 弱网、公司/校园网、防火墙环境下帮助 WebRTC 连通的中继服务 | 同一网络能用，换网络或手机流量失败 |
+
 ## 0. 如何阅读命令块
 
 本文里的命令默认在服务器 Linux shell 中执行，除非特别说明。命令块下面会解释：
@@ -239,28 +264,101 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 
 ## 6. LiveKit 配置选择
 
+本项目的房间媒体链路依赖 LiveKit。Flask 只负责判断“这个用户能不能进入这个会议”，然后签发一个 LiveKit token；浏览器拿到 token 后会直接连接 LiveKit。也就是说：
+
+- Nginx 代理的是本项目网站，不代理 LiveKit Cloud。
+- `LIVEKIT_URL` 必须是浏览器能访问的 `wss://...` 地址。
+- `LIVEKIT_API_KEY` 和 `LIVEKIT_API_SECRET` 只给 Flask 后端签 token 用，不应该暴露在前端页面或 Git 仓库里。
+- 如果三项 LiveKit 配置缺失，`/room/<room_id>` 返回 `503` 是正常保护逻辑，表示媒体服务没配好。
+
 ### 6.1 使用 LiveKit Cloud
 
-最省事的方式是使用 LiveKit Cloud：
+最省事、最适合零基础课程展示的方式是 LiveKit Cloud。你不用自己维护媒体服务器，也不用先理解 UDP、ICE、TURN。
 
-1. 创建 LiveKit Cloud 项目。
-2. 获取 server URL，通常是 `wss://...livekit.cloud`。
-3. 创建 API key 和 API secret。
-4. 把三项写入 `.env`：`LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET`。
+操作步骤：
 
-应用只负责签发 token，浏览器会直接连接 LiveKit。Nginx 不需要代理 LiveKit Cloud。
+1. 打开 LiveKit Cloud 控制台并创建一个 project。
+2. 进入项目的 settings 或 keys 页面。
+3. 复制 Server URL，格式通常类似 `wss://your-project.livekit.cloud`。
+4. 创建或复制 API key 和 API secret。
+5. 在服务器 `/opt/video-meeting/.env` 里填写：
+
+```env
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=你的 LiveKit API key
+LIVEKIT_API_SECRET=你的 LiveKit API secret
+```
+
+6. 重启应用：
+
+```bash
+sudo systemctl restart video-meeting
+sudo systemctl status video-meeting
+```
+
+7. 浏览器打开会议房间。如果之前是 `503`，配置正确后应该不再返回 `503`。
+
+为什么 LiveKit Cloud 不需要写进 Nginx：
+
+```text
+浏览器 -> https://meeting.example.com -> Nginx -> Flask
+浏览器 -> wss://your-project.livekit.cloud -> LiveKit Cloud
+```
+
+这两条连接是分开的。Nginx 只管你的 Flask 网站；LiveKit Cloud 有自己的域名、HTTPS/WSS 和媒体服务。
 
 ### 6.2 自建 LiveKit
 
-自建 LiveKit 适合需要完全控制媒体服务的场景，但复杂度更高。至少要处理：
+自建 LiveKit 适合需要完全控制媒体服务、内网部署、或不想使用云托管媒体服务的场景。它比 LiveKit Cloud 复杂很多，建议等网站和 LiveKit Cloud 跑通后再做。
+
+自建时建议拆成两个域名：
+
+| 域名 | 用途 | 示例 |
+| --- | --- | --- |
+| 网站域名 | 访问本项目 Flask 页面 | `meeting.example.com` |
+| LiveKit 域名 | 浏览器连接媒体服务器 | `livekit.example.com` |
+
+最少要准备这些内容：
 
 - LiveKit 服务进程或容器部署。
-- LiveKit 自己的 HTTPS / WSS 入口。
+- LiveKit 自己的 HTTPS / WSS 入口，通常用 `wss://livekit.example.com`。
 - UDP 媒体端口、TCP fallback、TURN/ICE 可达性。
 - 云厂商安全组和系统防火墙放行 LiveKit 所需端口。
 - LiveKit API key / secret 与 Flask `.env` 保持一致。
 
-如果课程展示时间有限，建议先用 LiveKit Cloud 跑通主流程，再考虑自建。
+一个容易理解的自建结构是：
+
+```text
+用户浏览器
+  -> https://meeting.example.com 访问 Flask 网站
+  -> wss://livekit.example.com 连接 LiveKit 信令
+  -> UDP/TCP 媒体端口传输音视频
+```
+
+自建 LiveKit 时，不要只检查网页能不能打开，还要检查媒体端口是否放行。很多“页面能进房但看不到对方”的问题，实际是 LiveKit 媒体端口、云安全组、系统防火墙或 TURN 没配好。
+
+### 6.3 自建 LiveKit 的最小检查清单
+
+| 检查项 | 应该是什么样 |
+| --- | --- |
+| `LIVEKIT_URL` | `wss://livekit.example.com`，不是 `http://` |
+| API key / secret | LiveKit 服务配置里的 key/secret 与 Flask `.env` 完全一致 |
+| DNS | `livekit.example.com` 解析到 LiveKit 服务器公网 IP |
+| HTTPS/WSS | 浏览器能信任证书，不能是过期证书或自签证书 |
+| 安全组 | 云厂商控制台放行 LiveKit 使用的 TCP/UDP 端口 |
+| 服务器防火墙 | `ufw` 或其他防火墙也放行同样端口 |
+| NAT/公网 IP | LiveKit 配置知道自己的公网 IP 或公网域名 |
+| TURN | 复杂网络环境下建议配置 TURN，否则部分用户可能连不上媒体 |
+
+### 6.4 LiveKit 配好后的验证方法
+
+1. 打开 `/account`，确认两个测试用户可以登录。
+2. 用户 A 创建会议，用户 B 用邀请链接加入。
+3. 两边浏览器都允许摄像头和麦克风。
+4. A 能看到 B，B 能看到 A。
+5. 关闭摄像头再打开，确认远端画面能恢复。
+6. 测试屏幕共享开始和停止。
+7. 手机流量和电脑宽带各测一次，因为 WebRTC 在不同网络下连通性不同。
 
 ## 7. 域名、Cloudflare 与 DNS
 
@@ -298,7 +396,21 @@ dig meeting.example.com
 
 ## 8. Nginx 反向代理
 
-Socket.IO 需要 WebSocket 或长轮询。Nginx 官方 WebSocket 代理示例建议根据请求是否带 `Upgrade` 头来设置 `Connection`，所以这里先创建一个全局 map。
+Nginx 是公网入口。用户访问 `https://meeting.example.com` 时，请求先到 Nginx，再由 Nginx 转发到本机 `127.0.0.1:8000` 上的 Gunicorn。
+
+这一步负责三件事：
+
+1. 把公网 `80/443` 请求转发给 Flask。
+2. 让 Socket.IO 的 WebSocket 长连接能穿过 Nginx。
+3. 控制上传体积，避免大附件被 Nginx 提前拦截。
+
+Nginx 不负责启动 Flask，也不负责 LiveKit Cloud。它只是反向代理本项目网站。
+
+### 8.1 为什么要写 WebSocket map
+
+普通 HTTP 请求是“一问一答”；WebSocket 是浏览器和服务器之间保持不断开的长连接。Socket.IO 会优先使用 WebSocket，所以 Nginx 需要把浏览器发来的 `Upgrade` 头原样转给后端。
+
+Nginx 官方 WebSocket 代理示例建议根据请求是否带 `Upgrade` 头来设置 `Connection`，所以这里先创建一个全局 map。
 
 创建 WebSocket map：
 
@@ -323,13 +435,15 @@ map $http_upgrade $connection_upgrade {
 | `default upgrade;` | 有 `Upgrade` 头时，把连接升级为 WebSocket | 不建议改 |
 | `'' close;` | 没有 `Upgrade` 头时，普通 HTTP 请求使用关闭连接语义 | 不建议改 |
 
+### 8.2 创建网站反向代理配置
+
 创建站点配置：
 
 ```bash
 sudo nano /etc/nginx/sites-available/video-meeting
 ```
 
-先使用 HTTP 配置，拿到证书后再自动升级到 HTTPS：
+先使用 HTTP 配置，拿到证书后 Certbot 会自动升级到 HTTPS：
 
 ```nginx
 server {
@@ -353,6 +467,16 @@ server {
 }
 ```
 
+这段配置的请求路径是：
+
+```text
+浏览器访问 http://meeting.example.com
+  -> Nginx 监听 80
+  -> location / 命中所有路径
+  -> proxy_pass 转发到 http://127.0.0.1:8000
+  -> Gunicorn 把请求交给 Flask app.py
+```
+
 配置项解释：
 
 | 指令 | 含义 | 可自定义项 |
@@ -371,6 +495,8 @@ server {
 | `proxy_read_timeout 3600;` | 后端长连接 3600 秒无数据才超时 | 可按需要调大或调小 |
 | `proxy_send_timeout 3600;` | 向后端发送数据的超时时间 | 可按网络情况调整 |
 
+### 8.3 启用配置并检查语法
+
 启用站点：
 
 ```bash
@@ -379,7 +505,57 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-`client_max_body_size 150m` 要大于视频附件限制。当前项目视频附件上限是 120 MB，所以这里给 150 MB。
+命令解释：
+
+| 命令 | 含义 |
+| --- | --- |
+| `ln -s ...` | 把 `sites-available` 里的配置启用到 `sites-enabled` |
+| `nginx -t` | 检查 Nginx 配置语法，没通过不要 reload |
+| `systemctl reload nginx` | 平滑重新加载 Nginx，不中断已有连接 |
+
+`client_max_body_size 150m` 要大于视频附件限制。当前项目视频附件上限是 120 MB，所以这里给 150 MB。如果以后把应用上传限制调大，Nginx 这里也要同步调大。
+
+### 8.4 Nginx 配好后怎么判断是否正常
+
+先看本机服务是否在监听：
+
+```bash
+ss -lntp | grep 8000
+```
+
+再看 Nginx 是否能转发：
+
+```bash
+curl -I http://127.0.0.1:8000
+curl -I http://meeting.example.com
+```
+
+正常情况下：
+
+- `http://127.0.0.1:8000` 能返回 Flask 页面状态。
+- `http://meeting.example.com` 能通过 Nginx 返回页面状态。
+- 如果 `127.0.0.1:8000` 正常但域名不正常，优先查 Nginx、DNS、防火墙。
+- 如果 `127.0.0.1:8000` 都不正常，优先查 systemd/Gunicorn/Flask 日志。
+
+### 8.5 Nginx 和 LiveKit 的关系
+
+如果使用 LiveKit Cloud：
+
+```text
+meeting.example.com -> Nginx -> Flask
+your-project.livekit.cloud -> LiveKit Cloud
+```
+
+Nginx 不代理 LiveKit Cloud。
+
+如果自建 LiveKit，有两种常见做法：
+
+| 做法 | 说明 | 适合情况 |
+| --- | --- | --- |
+| LiveKit 自己处理 TLS/WSS | `livekit.example.com` 直接指向 LiveKit 服务 | 配置简单，按 LiveKit 官方部署方式走 |
+| Nginx/Caddy 代理 LiveKit 信令 | 代理 LiveKit 的 WebSocket 信令入口，但媒体端口仍要直通 | 已有统一网关经验的人 |
+
+零基础不建议一开始让同一个 Nginx 同时代理 Flask 和 LiveKit。先让 `meeting.example.com` 跑 Flask，让 LiveKit Cloud 或单独的 `livekit.example.com` 跑媒体，排障会简单很多。
 
 ## 9. HTTPS 证书
 
@@ -721,6 +897,8 @@ sudo systemctl restart video-meeting
 | Certbot | [Certbot install guide](https://eff-certbot.readthedocs.io/en/stable/install.html) | Ubuntu/Nginx 推荐使用 snap 版 Certbot |
 | Cloudflare SSL | [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) | 使用 Full (strict) 时源站需要有效证书 |
 | systemd 环境变量 | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) | systemd 可通过 `EnvironmentFile=` 从文件加载环境变量 |
+| LiveKit 自建部署 | [Deploying LiveKit](https://docs.livekit.io/home/self-hosting/deployment/) | 自建 LiveKit 需要域名、可信 SSL 证书、反向代理/负载均衡、UDP/TCP 媒体端口和 TURN |
+| LiveKit 项目配置 | [LiveKit CLI project commands](https://docs.livekit.io/reference/developer-tools/livekit-cli/projects/) | LiveKit 项目由 URL、API key 和 API secret 组成，本项目 `.env` 也使用这三项 |
 
 ## 17. 不建议的操作
 

@@ -349,6 +349,12 @@ The admin dashboard shows:
 3. Current and historical meetings: end meetings, delete records, bulk operations.
 4. Password reset requests: mark resolved or rejected.
 
+Time display rules:
+
+- A regular user's meeting history uses that user's region/timezone preference from `/account`.
+- The admin dashboard uses the current admin account's region/timezone preference for user registration times and meeting records.
+- The page header shows the active display timezone to avoid confusion during cross-region troubleshooting.
+
 Most admin actions are traditional POST forms.
 
 Typical user management routes:

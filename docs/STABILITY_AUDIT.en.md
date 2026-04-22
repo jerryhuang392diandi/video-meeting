@@ -87,6 +87,7 @@ Confirm:
 Short term:
 
 - Keep single-instance deployment stated clearly in documentation.
+- Keep deployment docs explicit that Nginx proxies the Flask website while LiveKit carries media transport; do not describe them as one service.
 - Run two-client manual verification for every room change.
 - Cover refresh and reconnect for every screen share change.
 

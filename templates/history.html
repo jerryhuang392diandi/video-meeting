@@ -4,7 +4,7 @@
 <header class="topbar compact">
   <div>
     <div class="brand">{{ t('meeting_history') }}</div>
-    <div class="muted">{{ t('meeting_duration_limit') }}</div>
+    <div class="muted">{{ t('meeting_duration_limit') }} · {{ t('time_display_timezone') }}: {{ display_timezone_label }} ({{ display_timezone }})</div>
   </div>
   <div class="top-actions">
     {% include '_language_switch.html' %}

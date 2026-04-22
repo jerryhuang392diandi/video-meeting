@@ -322,6 +322,13 @@ def localized_timezone_label(value: str, lang: str) -> str:
     return labels.get(value, value)
 
 
+def preferred_timezone(user=None) -> str:
+    region = getattr(user, "region", None) if user else None
+    if region in REGION_TIMEZONE_OPTIONS:
+        return region
+    return "Asia/Tokyo"
+
+
 def preferred_display_name(user):
     if not user:
         return "Guest"
@@ -348,7 +355,16 @@ def build_livekit_room_name(room_id: str) -> str:
 @app.context_processor
 def inject_globals():
     lang = session.get("lang", "zh")
-    return {"t": t, "lang": lang, "supported_langs": ["zh", "en"], "utc_iso": utc_iso, "asset_version": asset_version}
+    timezone = preferred_timezone(current_user) if current_user.is_authenticated else "Asia/Tokyo"
+    return {
+        "t": t,
+        "lang": lang,
+        "supported_langs": ["zh", "en"],
+        "utc_iso": utc_iso,
+        "asset_version": asset_version,
+        "display_timezone": timezone,
+        "display_timezone_label": localized_timezone_label(timezone, lang),
+    }
 
 
 def ensure_user_columns():

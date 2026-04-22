@@ -4,6 +4,18 @@
 
 This guide covers the full path from buying a Linux cloud server to running the app online. Examples assume Ubuntu 22.04 / 24.04, Nginx, systemd, Gunicorn + eventlet, SQLite, and an external LiveKit service. Replace paths, domains, and service names as needed.
 
+## Beginner Path
+
+If you only need a reliable course demo, do not start by self-hosting everything. Use this order:
+
+1. Run the app locally first with `python app.py`.
+2. Deploy the Flask app, Nginx, HTTPS, and systemd on one Ubuntu server.
+3. Use LiveKit Cloud first and put its `wss://...livekit.cloud` URL, API key, and API secret into `.env`.
+4. Test with two real devices.
+5. Consider self-hosted LiveKit only after the main flow works.
+
+The important split is: Nginx proxies this Flask website, while LiveKit carries camera, microphone, and screen-share media. With LiveKit Cloud, Nginx does not proxy LiveKit.
+
 ## 0. How to Read Command Blocks
 
 Commands in this guide run in a Linux shell on the server unless stated otherwise. After important command blocks, the guide explains:
@@ -239,6 +251,13 @@ Important:
 
 ## 6. LiveKit Options
 
+This app uses LiveKit for the actual media path. Flask checks meeting permissions and issues a LiveKit token; the browser then connects directly to LiveKit.
+
+- Nginx proxies the Flask website, not LiveKit Cloud.
+- `LIVEKIT_URL` must be a browser-reachable `wss://...` URL.
+- `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` are backend secrets for token signing.
+- If these values are missing, `/room/<room_id>` returning `503` is expected.
+
 ### 6.1 LiveKit Cloud
 
 The simplest path is LiveKit Cloud:
@@ -249,6 +268,13 @@ The simplest path is LiveKit Cloud:
 4. Put them into `.env` as `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`.
 
 The Flask app only issues tokens. Browsers connect directly to LiveKit, so Nginx does not proxy LiveKit Cloud.
+
+Connection shape:
+
+```text
+Browser -> https://meeting.example.com -> Nginx -> Flask
+Browser -> wss://your-project.livekit.cloud -> LiveKit Cloud
+```
 
 ### 6.2 Self-Hosted LiveKit
 
@@ -261,6 +287,17 @@ Self-hosting LiveKit gives more control but adds operational work. You must hand
 - Matching LiveKit API key / secret values in Flask `.env`.
 
 For a course demo, use LiveKit Cloud first, then consider self-hosting after the core flow works.
+
+Minimum self-hosted checklist:
+
+| Check | Expected |
+| --- | --- |
+| `LIVEKIT_URL` | `wss://livekit.example.com` |
+| API key / secret | Same values in LiveKit config and Flask `.env` |
+| DNS | LiveKit hostname points to the LiveKit server |
+| TLS/WSS | Browser trusts the certificate |
+| Firewall | Cloud security group and OS firewall allow required LiveKit TCP/UDP ports |
+| TURN | Recommended for restrictive networks |
 
 ## 7. Domain, Cloudflare, and DNS
 
@@ -297,6 +334,14 @@ Stable demo path:
 3. Re-test login, room join, chat, and two-device media.
 
 ## 8. Nginx Reverse Proxy
+
+Nginx is the public entry point for this Flask website. It listens on public `80/443`, then forwards requests to Gunicorn on `127.0.0.1:8000`.
+
+It is responsible for:
+
+1. Forwarding public traffic to Flask.
+2. Preserving WebSocket headers for Socket.IO.
+3. Setting upload size limits before requests reach Flask.
 
 Socket.IO needs WebSocket or long polling. The official Nginx WebSocket proxy pattern maps the client `Upgrade` header to a connection variable, so create this map first.
 
@@ -380,6 +425,15 @@ sudo systemctl reload nginx
 ```
 
 `client_max_body_size 150m` is larger than the current 120 MB video attachment limit.
+
+Nginx and LiveKit are separate when using LiveKit Cloud:
+
+```text
+meeting.example.com -> Nginx -> Flask
+your-project.livekit.cloud -> LiveKit Cloud
+```
+
+If `curl -I http://127.0.0.1:8000` works but `curl -I http://meeting.example.com` fails, check Nginx, DNS, and firewall. If `127.0.0.1:8000` fails too, check systemd/Gunicorn/Flask logs first.
 
 ## 9. HTTPS Certificate
 
@@ -721,6 +775,8 @@ This guide combines the current project code with these official documents:
 | Certbot | [Certbot install guide](https://eff-certbot.readthedocs.io/en/stable/install.html) | Use snap Certbot for Ubuntu/Nginx |
 | Cloudflare SSL | [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) | Full (strict) requires a valid origin certificate |
 | systemd environment | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) | `EnvironmentFile=` loads variables from a file |
+| LiveKit self-hosting | [Deploying LiveKit](https://docs.livekit.io/home/self-hosting/deployment/) | Self-hosting needs domain, trusted SSL, reverse proxy/load balancer, UDP/TCP media ports, and TURN |
+| LiveKit project config | [LiveKit CLI project commands](https://docs.livekit.io/reference/developer-tools/livekit-cli/projects/) | A LiveKit project is identified by URL, API key, and API secret, matching this app's `.env` values |
 
 ## 17. Operations to Avoid
 

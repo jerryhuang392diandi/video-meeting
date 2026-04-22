@@ -14,16 +14,17 @@
     {% block content %}{% endblock %}
   </div>
   <script>
+    window.APP_TIMEZONE = {{ display_timezone|tojson }};
     window.renderLocalDateTimes = function () {
       const nodes = document.querySelectorAll('.local-datetime[data-utc]');
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      const timezone = window.APP_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone || '';
       nodes.forEach((node) => {
         const raw = node.getAttribute('data-utc');
         if (!raw) return;
         const date = new Date(raw);
         if (Number.isNaN(date.getTime())) return;
         const lang = document.documentElement.lang === 'zh' ? 'zh-CN' : 'en-US';
-        const formatted = new Intl.DateTimeFormat(lang, {
+        const options = {
           year: 'numeric',
           month: '2-digit',
           day: '2-digit',
@@ -31,8 +32,18 @@
           minute: '2-digit',
           second: '2-digit',
           hour12: false,
-        }).format(date);
-        node.textContent = timezone ? `${formatted} (${timezone})` : formatted;
+        };
+        let activeTimezone = timezone;
+        if (activeTimezone) options.timeZone = activeTimezone;
+        let formatted;
+        try {
+          formatted = new Intl.DateTimeFormat(lang, options).format(date);
+        } catch (_) {
+          activeTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+          delete options.timeZone;
+          formatted = new Intl.DateTimeFormat(lang, options).format(date);
+        }
+        node.textContent = activeTimezone ? `${formatted} (${activeTimezone})` : formatted;
         node.title = `UTC: ${raw}`;
       });
     };

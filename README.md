@@ -25,6 +25,8 @@
 - `/help`: 更完整的用户指南，展开说明个人账户偏好、地区/时区、翻译默认语言、会议内设备控制、共享屏幕音频、聊天附件权限和主持人收尾操作。
 - `/support`: 客服支持页，用于登录、设备权限、入会或文件上传异常时联系平台支持。
 
+历史会议时间会按当前用户在账户页保存的地区/时区显示。管理员后台也按当前管理员账号的地区/时区统一显示时间，适合 root 管理员在 `/account` 里先设置后台查看口径。
+
 ## 技术架构
 
 | 层级 | 技术 | 职责 |
@@ -100,13 +102,16 @@ python app.py
 - 准备一个域名，例如 `meeting.example.com`。
 - LiveKit 建议优先使用 LiveKit Cloud；如果自建 LiveKit，需要额外准备 LiveKit 服务、TLS、UDP/TCP 可达性和 TURN/ICE 配置。
 
-完整 Linux 云服务器操作步骤见 [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)，包括：
+完整 Linux 云服务器操作步骤见 [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)。这份部署手册已经按零基础顺序重写了 Nginx 和 LiveKit 相关内容，建议第一次部署时照着它从前往后做，不要直接跳到配置片段。
+
+里面包括：
 
 - 购买服务器后的安全组、防火墙、系统用户和目录准备。
 - Cloudflare 或普通 DNS 解析配置。
 - Python 虚拟环境、依赖安装和 `.env` 配置。
-- Nginx 反向代理 WebSocket、上传体积和 HTTPS。
+- Nginx 为什么需要反向代理、WebSocket 头、上传体积限制和 HTTPS。
 - systemd 服务文件、开机自启、日志查看和线上更新。
+- LiveKit Cloud 的最短接入步骤，以及自建 LiveKit 时域名、证书、媒体端口、TURN/ICE 的检查清单。
 - LiveKit 缺失、WebSocket 失败、附件上传、录屏转 MP4 等常见排障。
 
 ## 关键配置
