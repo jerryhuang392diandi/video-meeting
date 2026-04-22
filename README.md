@@ -72,9 +72,17 @@
 - `static/room_diagnostics.js`: RTC/LiveKit 诊断摘要
 - `static/room_utils.js`: 共享工具函数
 
-## 本地运行
+## 快速开始
 
-下面写的是零基础本地运行步骤。本地运行适合改代码和课堂演示前自测；真正让别人从公网访问，仍然要看后面的云服务器部署。
+下面写的是零基础本地运行步骤，适合改代码和课堂演示前自测；真正让别人从公网访问，仍然要看后面的云服务器部署。
+
+你需要先会打开命令行：
+
+| 系统 | 推荐打开方式 | 说明 |
+| --- | --- | --- |
+| Windows | PowerShell 或 CMD | 开始菜单搜索 `PowerShell` 或 `cmd`；下面优先写 PowerShell，也补充 CMD 差异 |
+| macOS | Terminal 终端 | 默认 shell 通常是 `zsh`，可以直接执行本文的 bash 风格命令 |
+| Linux | Terminal 终端 | 通常自带 `bash`；如果是极简系统，先安装 `bash`、`python3`、`git` |
 
 ### 1. 先安装基础软件
 
@@ -87,6 +95,15 @@ Windows 建议安装：
 | FFmpeg | 录屏导出 MP4 时使用；不装也能启动项目 | https://ffmpeg.org/download.html 或 `winget install Gyan.FFmpeg` |
 | VS Code | 编辑代码，可选 | https://code.visualstudio.com/ |
 
+如果 Windows 的 `winget` 可用，也可以在 PowerShell 里安装：
+
+```powershell
+winget install Python.Python.3.12
+winget install Git.Git
+winget install Gyan.FFmpeg
+winget install Microsoft.VisualStudioCode
+```
+
 macOS 建议安装：
 
 | 软件 | 用途 | 获取方式 |
@@ -97,18 +114,29 @@ macOS 建议安装：
 | FFmpeg | 录屏导出 MP4 时使用；不装也能启动项目 | `brew install ffmpeg` |
 | VS Code | 编辑代码，可选 | https://code.visualstudio.com/ |
 
-安装后检查版本：
+Linux Ubuntu / Debian 建议安装：
 
 ```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip git ffmpeg bash
+```
+
+安装后检查版本：
+
+Windows PowerShell / CMD：
+
+```powershell
 python --version
 git --version
 ffmpeg -version
 ```
 
-macOS 如果 `python` 指向系统旧版本，可以用：
+macOS / Linux：
 
 ```bash
 python3 --version
+git --version
+ffmpeg -version
 ```
 
 ### 2. 创建本地项目文件夹
@@ -118,7 +146,16 @@ Windows PowerShell 示例：
 ```powershell
 mkdir D:\projects
 cd D:\projects
-git clone https://github.com/your-name/video-meeting-replace.git
+git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git
+cd video-meeting-replace
+```
+
+Windows CMD 示例：
+
+```bat
+mkdir D:\projects
+cd /d D:\projects
+git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git
 cd video-meeting-replace
 ```
 
@@ -127,7 +164,7 @@ macOS / Linux 示例：
 ```bash
 mkdir -p ~/projects
 cd ~/projects
-git clone https://github.com/your-name/video-meeting-replace.git
+git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git
 cd video-meeting-replace
 ```
 
@@ -140,6 +177,15 @@ Windows PowerShell:
 ```powershell
 python -m venv venv
 venv\Scripts\activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Windows CMD:
+
+```bat
+python -m venv venv
+venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
@@ -235,6 +281,16 @@ http://127.0.0.1:5000
 | DigitalOcean Droplets | https://www.digitalocean.com/products/droplets |
 | Vultr Cloud Compute | https://www.vultr.com/products/cloud-compute/ |
 
+常见配套平台入口：
+
+| 平台 | 用途 | 链接 |
+| --- | --- | --- |
+| Cloudflare | DNS 托管、可选 CDN/代理、SSL/TLS 设置 | https://www.cloudflare.com/ |
+| Cloudflare 控制台 | 添加 DNS 记录、切换 DNS only / Proxied | https://dash.cloudflare.com/ |
+| LiveKit Cloud | 托管 LiveKit 媒体服务，复制 `LIVEKIT_URL`、API key、API secret | https://cloud.livekit.io/ |
+| GitHub | 代码托管与版本管理 | https://github.com/ |
+| Gitee | 国内可选代码托管平台 | https://gitee.com/ |
+
 完整 Linux 云服务器操作步骤见 [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)。这份部署手册已经按零基础顺序重写了 Nginx 和 LiveKit 相关内容，建议第一次部署时照着它从前往后做，不要直接跳到配置片段。
 
 里面包括：
@@ -298,9 +354,15 @@ python check_i18n.py
 | Gunicorn 参数 | [Gunicorn Settings](https://docs.gunicorn.org/en/stable/settings.html) |
 | Nginx WebSocket 代理 | [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html) |
 | Certbot / Let's Encrypt | [Certbot install guide](https://eff-certbot.readthedocs.io/en/stable/install.html) |
+| Let's Encrypt | [Let's Encrypt](https://letsencrypt.org/) |
+| Cloudflare 入口 | [Cloudflare](https://www.cloudflare.com/) / [Dashboard](https://dash.cloudflare.com/) |
+| Cloudflare DNS 记录 | [Create DNS records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/) |
 | Cloudflare SSL 模式 | [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) |
+| 域名注册商示例 | [阿里云域名](https://wanwang.aliyun.com/) / [腾讯云 DNSPod](https://dnspod.cloud.tencent.com/) / [Cloudflare Registrar](https://www.cloudflare.com/products/registrar/) / [Namecheap](https://www.namecheap.com/) |
 | systemd 环境变量 | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) |
-| LiveKit | [LiveKit Docs](https://docs.livekit.io/) |
+| LiveKit | [LiveKit Docs](https://docs.livekit.io/) / [LiveKit Cloud](https://cloud.livekit.io/) |
+| GitHub / Gitee | [GitHub](https://github.com/) / [Gitee](https://gitee.com/) |
+| 本地工具 | [Python](https://www.python.org/downloads/) / [Git](https://git-scm.com/downloads) / [FFmpeg](https://ffmpeg.org/download.html) / [VS Code](https://code.visualstudio.com/) / [Homebrew](https://brew.sh/) / [winget](https://learn.microsoft.com/windows/package-manager/winget/) |
 
 ## 文档
 

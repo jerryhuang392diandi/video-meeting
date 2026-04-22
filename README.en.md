@@ -72,9 +72,17 @@ Room frontend files:
 - `static/room_diagnostics.js`: RTC/LiveKit diagnostic summary
 - `static/room_utils.js`: shared helpers
 
-## Local Development
+## Quick Start
 
-These steps are written for first-time local setup. Local development is for editing code and testing before a course demo; public access still needs cloud deployment.
+These steps are written for first-time local setup. They are for editing code and testing before a course demo; public access still needs cloud deployment.
+
+Open a command line first:
+
+| System | Recommended terminal | Notes |
+| --- | --- | --- |
+| Windows | PowerShell or CMD | Search `PowerShell` or `cmd` in the Start menu; PowerShell is used first below, with CMD differences noted |
+| macOS | Terminal | The default shell is usually `zsh`, and the bash-style commands below work |
+| Linux | Terminal | Most distributions include `bash`; minimal systems may need `bash`, `python3`, and `git` installed first |
 
 ### 1. Install Basic Tools
 
@@ -87,6 +95,15 @@ Windows:
 | FFmpeg | MP4 recording export; optional for basic startup | https://ffmpeg.org/download.html or `winget install Gyan.FFmpeg` |
 | VS Code | Code editor, optional | https://code.visualstudio.com/ |
 
+If `winget` is available on Windows, you can install from PowerShell:
+
+```powershell
+winget install Python.Python.3.12
+winget install Git.Git
+winget install Gyan.FFmpeg
+winget install Microsoft.VisualStudioCode
+```
+
 macOS:
 
 | Tool | Purpose | Source |
@@ -97,10 +114,27 @@ macOS:
 | FFmpeg | MP4 recording export; optional for basic startup | `brew install ffmpeg` |
 | VS Code | Code editor, optional | https://code.visualstudio.com/ |
 
-Check versions:
+Linux Ubuntu / Debian:
 
 ```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip git ffmpeg bash
+```
+
+Check versions:
+
+Windows PowerShell / CMD:
+
+```powershell
 python --version
+git --version
+ffmpeg -version
+```
+
+macOS / Linux:
+
+```bash
+python3 --version
 git --version
 ffmpeg -version
 ```
@@ -112,7 +146,16 @@ Windows PowerShell:
 ```powershell
 mkdir D:\projects
 cd D:\projects
-git clone https://github.com/your-name/video-meeting-replace.git
+git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git
+cd video-meeting-replace
+```
+
+Windows CMD:
+
+```bat
+mkdir D:\projects
+cd /d D:\projects
+git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git
 cd video-meeting-replace
 ```
 
@@ -121,7 +164,7 @@ macOS / Linux:
 ```bash
 mkdir -p ~/projects
 cd ~/projects
-git clone https://github.com/your-name/video-meeting-replace.git
+git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git
 cd video-meeting-replace
 ```
 
@@ -132,6 +175,15 @@ Windows PowerShell:
 ```powershell
 python -m venv venv
 venv\Scripts\activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Windows CMD:
+
+```bat
+python -m venv venv
+venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
@@ -215,6 +267,16 @@ Common cloud server entry points:
 | DigitalOcean Droplets | https://www.digitalocean.com/products/droplets |
 | Vultr Cloud Compute | https://www.vultr.com/products/cloud-compute/ |
 
+Common companion platform entry points:
+
+| Platform | Purpose | Link |
+| --- | --- | --- |
+| Cloudflare | DNS hosting, optional CDN/proxy, SSL/TLS settings | https://www.cloudflare.com/ |
+| Cloudflare Dashboard | Add DNS records, switch DNS only / Proxied | https://dash.cloudflare.com/ |
+| LiveKit Cloud | Hosted LiveKit media service; copy `LIVEKIT_URL`, API key, and API secret | https://cloud.livekit.io/ |
+| GitHub | Code hosting and version control | https://github.com/ |
+| Gitee | Optional code hosting platform in China | https://gitee.com/ |
+
 See [docs/DEPLOYMENT_GUIDE.en.md](docs/DEPLOYMENT_GUIDE.en.md) for the full Linux cloud server procedure. The Chinese guide has the most beginner-oriented explanation for Nginx, HTTPS, LiveKit Cloud, and self-hosted LiveKit; the English guide keeps the same deployment shape and configuration names.
 
 It includes:
@@ -278,9 +340,15 @@ Deployment and runtime configuration mainly follow these official documents. See
 | Gunicorn settings | [Gunicorn Settings](https://docs.gunicorn.org/en/stable/settings.html) |
 | Nginx WebSocket proxying | [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html) |
 | Certbot / Let's Encrypt | [Certbot install guide](https://eff-certbot.readthedocs.io/en/stable/install.html) |
+| Let's Encrypt | [Let's Encrypt](https://letsencrypt.org/) |
+| Cloudflare entry | [Cloudflare](https://www.cloudflare.com/) / [Dashboard](https://dash.cloudflare.com/) |
+| Cloudflare DNS records | [Create DNS records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/) |
 | Cloudflare SSL mode | [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) |
+| Domain registrar examples | [Alibaba Cloud Domains](https://wanwang.aliyun.com/) / [Tencent Cloud DNSPod](https://dnspod.cloud.tencent.com/) / [Cloudflare Registrar](https://www.cloudflare.com/products/registrar/) / [Namecheap](https://www.namecheap.com/) |
 | systemd environment variables | [systemd.exec EnvironmentFile](https://www.freedesktop.org/software/systemd/man/systemd.exec.html) |
-| LiveKit | [LiveKit Docs](https://docs.livekit.io/) |
+| LiveKit | [LiveKit Docs](https://docs.livekit.io/) / [LiveKit Cloud](https://cloud.livekit.io/) |
+| GitHub / Gitee | [GitHub](https://github.com/) / [Gitee](https://gitee.com/) |
+| Local tools | [Python](https://www.python.org/downloads/) / [Git](https://git-scm.com/downloads) / [FFmpeg](https://ffmpeg.org/download.html) / [VS Code](https://code.visualstudio.com/) / [Homebrew](https://brew.sh/) / [winget](https://learn.microsoft.com/windows/package-manager/winget/) |
 
 ## Documentation
 

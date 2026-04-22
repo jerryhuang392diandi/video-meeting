@@ -207,7 +207,7 @@ cd /opt/video-meeting
 从 Git 仓库部署：
 
 ```bash
-git clone https://github.com/your-name/video-meeting-replace.git .
+git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git .
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
@@ -827,7 +827,7 @@ git init
 git add .
 git commit -m "Initial commit"
 git branch -M main
-git remote add origin https://github.com/your-name/video-meeting-replace.git
+git remote add origin https://github.com/jerryhuangqingxuan/video-meeting-replace.git
 git push -u origin main
 ```
 
