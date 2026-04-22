@@ -207,7 +207,7 @@ cd /opt/video-meeting
 从 Git 仓库部署：
 
 ```bash
-git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git .
+git clone https://github.com/jerryhuangqingxuan/video-meeting.git .
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
@@ -317,7 +317,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 操作步骤：
 
 1. 打开 LiveKit Cloud 控制台 https://cloud.livekit.io/ 并创建一个 project。
-2. 进入项目的 settings 或 keys 页面。
+2. 进入项目的**API keys** 页面，点击**Create Key** 按钮。
 3. 复制 Server URL，格式通常类似 `wss://your-project.livekit.cloud`。
 4. 创建或复制 API key 和 API secret。
 5. 在服务器 `/opt/video-meeting/.env` 里填写：

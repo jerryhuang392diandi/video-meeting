@@ -98,10 +98,10 @@ Windows 建议安装：
 如果 Windows 的 `winget` 可用，也可以在 PowerShell 里安装：
 
 ```powershell
-winget install Python.Python.3.12
-winget install Git.Git
-winget install Gyan.FFmpeg
-winget install Microsoft.VisualStudioCode
+winget install -e --id Python.Python.3.12
+winget install -e --id Git.Git
+winget install -e --id Gyan.FFmpeg
+winget install -e --id Microsoft.VisualStudioCode
 ```
 
 macOS 建议安装：
@@ -146,7 +146,7 @@ Windows PowerShell 示例：
 ```powershell
 mkdir D:\projects
 cd D:\projects
-git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git
+git clone https://github.com/jerryhuangqingxuan/video-meeting.git
 cd video-meeting-replace
 ```
 
@@ -155,7 +155,7 @@ Windows CMD 示例：
 ```bat
 mkdir D:\projects
 cd /d D:\projects
-git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git
+git clone https://github.com/jerryhuangqingxuan/video-meeting.git
 cd video-meeting-replace
 ```
 
@@ -164,7 +164,7 @@ macOS / Linux 示例：
 ```bash
 mkdir -p ~/projects
 cd ~/projects
-git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git
+git clone https://github.com/jerryhuangqingxuan/video-meeting.git
 cd video-meeting-replace
 ```
 

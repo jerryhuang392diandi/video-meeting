@@ -98,10 +98,10 @@ Windows:
 If `winget` is available on Windows, you can install from PowerShell:
 
 ```powershell
-winget install Python.Python.3.12
-winget install Git.Git
-winget install Gyan.FFmpeg
-winget install Microsoft.VisualStudioCode
+winget install -e --id Python.Python.3.12
+winget install -e --id Git.Git
+winget install -e --id Gyan.FFmpeg
+winget install -e --id Microsoft.VisualStudioCode
 ```
 
 macOS:
@@ -146,7 +146,7 @@ Windows PowerShell:
 ```powershell
 mkdir D:\projects
 cd D:\projects
-git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git
+git clone https://github.com/jerryhuangqingxuan/video-meeting.git
 cd video-meeting-replace
 ```
 
@@ -155,7 +155,7 @@ Windows CMD:
 ```bat
 mkdir D:\projects
 cd /d D:\projects
-git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git
+git clone https://github.com/jerryhuangqingxuan/video-meeting.git
 cd video-meeting-replace
 ```
 
@@ -164,7 +164,7 @@ macOS / Linux:
 ```bash
 mkdir -p ~/projects
 cd ~/projects
-git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git
+git clone https://github.com/jerryhuangqingxuan/video-meeting.git
 cd video-meeting-replace
 ```
 

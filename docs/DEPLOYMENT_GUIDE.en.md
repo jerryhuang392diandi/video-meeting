@@ -194,7 +194,7 @@ cd /opt/video-meeting
 Deploy from Git:
 
 ```bash
-git clone https://github.com/jerryhuangqingxuan/video-meeting-replace.git .
+git clone https://github.com/jerryhuangqingxuan/video-meeting.git .
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
