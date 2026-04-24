@@ -11,7 +11,7 @@
     <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
     <a class="chip" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>
     <a class="chip" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
-    <button class="chip mobile-scan-trigger" id="mobileScanToggleBtn" type="button">{{ ('扫码入会' if lang == 'zh' else 'Scan QR') }}</button>
+    <button class="chip mobile-scan-trigger" id="mobileScanToggleBtn" type="button">{{ t('scan_qr') }}</button>
     {% if current_user.is_admin %}<a class="chip" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
     <a class="chip danger" href="{{ url_for('logout') }}">{{ t('nav_logout') }}</a>
   </div>
@@ -33,7 +33,7 @@
     <div class="status-title">{{ t('system_status') }}</div>
     <div class="status-grid">
       <div><span>{{ t('admin_role') }}</span><strong>{{ t('yes') if current_user.is_admin else t('no') }}</strong></div>
-      <div><span>{{ t('language') }}</span><strong>{{ t('lang_zh') if lang == 'zh' else t('lang_en') }}</strong></div>
+      <div><span>{{ t('language') }}</span><strong>{{ t('lang_' ~ lang) }}</strong></div>
       <div><span>{{ t('meeting_mode') }}</span><strong>{{ t('single_device_mode') }}</strong></div>
       <div><span>{{ t('status') }}</span><strong>{{ t('room_ready') }}</strong></div>
     </div>
@@ -100,12 +100,12 @@
 <div id="mobileQrScannerModal" class="scan-modal hidden" aria-hidden="true">
   <div class="scan-modal-card">
     <div class="scan-modal-head">
-      <strong>{{ ('扫码入会' if lang == 'zh' else 'Scan QR to join') }}</strong>
-      <button class="chip danger" id="mobileScanCloseBtn" type="button">{{ ('关闭' if lang == 'zh' else 'Close') }}</button>
+      <strong>{{ t('scan_qr_to_join') }}</strong>
+      <button class="chip danger" id="mobileScanCloseBtn" type="button">{{ t('close') }}</button>
     </div>
     <div class="scan-modal-body">
       <video id="mobileQrVideo" class="scan-video" playsinline muted></video>
-      <div id="mobileScanHint" class="scan-hint">{{ ('点击“扫码入会”后才会调用相机。将二维码对准取景框即可。' if lang == 'zh' else 'The camera starts only after you tap Scan QR. Point the QR code at the frame.') }}</div>
+      <div id="mobileScanHint" class="scan-hint">{{ t('scan_qr_hint') }}</div>
       <div class="scan-frame" aria-hidden="true"></div>
     </div>
   </div>
@@ -191,8 +191,8 @@ const mobileQrScannerModal = document.getElementById('mobileQrScannerModal');
 const mobileScanCloseBtn = document.getElementById('mobileScanCloseBtn');
 const mobileQrVideo = document.getElementById('mobileQrVideo');
 const mobileScanHint = document.getElementById('mobileScanHint');
-const TEXT_SCAN_NOT_SUPPORTED = {{ ('当前浏览器暂不支持扫码，请使用 Chrome 或 Safari 新版本。' if lang == 'zh' else 'This browser does not support QR scanning yet. Please use a recent Chrome or Safari browser.')|tojson }};
-const TEXT_SCAN_PERMISSION_FAILED = {{ ('无法打开相机，请检查浏览器权限。' if lang == 'zh' else 'Unable to access the camera. Please check browser permissions.')|tojson }};
+const TEXT_SCAN_NOT_SUPPORTED = {{ t('scan_not_supported')|tojson }};
+const TEXT_SCAN_PERMISSION_FAILED = {{ t('scan_permission_failed')|tojson }};
 let mobileQrStream = null;
 let mobileQrScanFrame = 0;
 let mobileQrDetector = null;
@@ -274,7 +274,7 @@ async function openMobileQrModal() {
   }
   mobileQrScannerModal.classList.remove('hidden');
   mobileQrScannerModal.setAttribute('aria-hidden', 'false');
-  mobileScanHint.textContent = {{ ('正在打开后置相机…' if lang == 'zh' else 'Opening the rear camera…')|tojson }};
+  mobileScanHint.textContent = {{ t('opening_rear_camera')|tojson }};
   try {
     mobileQrDetector = new BarcodeDetector({ formats: ['qr_code'] });
     mobileQrStream = await navigator.mediaDevices.getUserMedia({
@@ -283,7 +283,7 @@ async function openMobileQrModal() {
     });
     mobileQrVideo.srcObject = mobileQrStream;
     await mobileQrVideo.play();
-    mobileScanHint.textContent = {{ ('请将二维码置于框内' if lang == 'zh' else 'Place the QR code inside the frame')|tojson }};
+    mobileScanHint.textContent = {{ t('place_qr_in_frame')|tojson }};
     mobileQrScanning = true;
     scanMobileQrLoop();
   } catch (_) {

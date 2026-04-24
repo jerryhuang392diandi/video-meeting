@@ -1297,7 +1297,7 @@ def forgot_password_page():
             req = PasswordResetRequest(username=username, contact=contact, note=note, status="pending")
             db.session.add(req)
             db.session.commit()
-            message = "找回密码申请已提交，请等待管理员联系。" if session.get("lang", "zh") == "zh" else "Password reset request submitted. Please wait for admin support."
+            message = t("password_reset_request_submitted")
     return render_template("forgot_password.html", message=message, error=error)
 
 
@@ -2588,7 +2588,7 @@ def on_room_ui_event(data):
                 "type": "screen_share_denied",
                 "from": active_sharer_sid,
                 "activeSharerSid": active_sharer_sid,
-                "message": "Another participant is already sharing the screen" if room.get("lang") != "zh" else "已有其他用户正在共享屏幕",
+                "message": TRANSLATIONS.get(room.get("lang"), TRANSLATIONS["zh"]).get("another_participant_sharing_screen", "已有其他用户正在共享屏幕"),
             }, to=sid)
             return
         room["active_sharer_sid"] = sid

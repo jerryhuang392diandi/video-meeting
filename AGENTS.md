@@ -111,6 +111,8 @@ Current runtime reality:
 ## Documentation Maintenance
 When project behavior changes, update the relevant docs in the same workstream whenever practical.
 
+If a document has paired Chinese and English sections or counterpart files, keep them synchronized. Do not leave one language with materially newer steps, warnings, or conclusions than the other.
+
 At minimum, check whether the change affects:
 
 - `README.md`

@@ -276,7 +276,7 @@ LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=replace-with-livekit-api-key
 LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 
-ADMIN_USERNAME=root
+ADMIN_USERNAME=localadmin
 ADMIN_PASSWORD=root1234
 PUBLIC_REGISTRATION_ENABLED=1
 STRICT_SECURITY_CHECKS=0
@@ -296,12 +296,14 @@ TURNSTILE_SECRET_KEY=
 | `LIVEKIT_URL` | 浏览器直接连接的 LiveKit 服务地址 | LiveKit Cloud 项目页提供，通常是 `wss://...livekit.cloud` |
 | `LIVEKIT_API_KEY` | 后端签发 LiveKit token 使用的 API key | 从 LiveKit Cloud 项目设置复制 |
 | `LIVEKIT_API_SECRET` | 后端签发 LiveKit token 使用的 API secret | 从 LiveKit Cloud 项目设置复制，不要公开 |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 管理后台初始登录账号 | 本地可用简单值，线上必须改强密码 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 管理后台初始登录账号 | 本地可用简单值，但不要和 Linux 的 `root` / `ubuntu` 登录用户混为一谈；线上必须改强密码 |
 | `PUBLIC_REGISTRATION_ENABLED` | 是否允许任何人直接注册 | 本地演示可开，公网建议设为 `0` |
 | `STRICT_SECURITY_CHECKS` | 是否在启动时拒绝弱 `SECRET_KEY` / `ADMIN_*` 配置 | 公网建议设为 `1` |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 站点 key 和服务端 secret | 大陆用户需先实测可用性 |
 
 LiveKit 的三项配置必须来自同一个 LiveKit 项目。Flask 只负责校验用户并签发 token，浏览器拿到 token 后会直接连 `LIVEKIT_URL`；所以这个地址必须能被你的浏览器访问。
+
+这里的 `ADMIN_USERNAME` 是网站管理员登录名，不是你的 Linux/macOS/Windows 系统用户名，也不是服务器 SSH 登录用户。线上如果是 `systemd` 部署，应用配置写 `.env`，进程运行用户写在 service 文件的 `User=`。
 
 如果房间返回 `503`、修改 `.env` 后不生效、或进入房间但看不到对方，先看 [docs/DEPLOYMENT_GUIDE.md 的常见问题](docs/DEPLOYMENT_GUIDE.md#16-常见问题)。本地运行通常重启 `python app.py` 即可重新读取 `.env`；线上 systemd 服务还需要重启服务。
 
@@ -741,7 +743,7 @@ LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=replace-with-livekit-api-key
 LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 
-ADMIN_USERNAME=root
+ADMIN_USERNAME=localadmin
 ADMIN_PASSWORD=root1234
 PUBLIC_REGISTRATION_ENABLED=1
 STRICT_SECURITY_CHECKS=0
@@ -761,12 +763,14 @@ Configuration explanation:
 | `LIVEKIT_URL` | Browser-reachable LiveKit service URL | Copy it from LiveKit Cloud; usually `wss://...livekit.cloud` |
 | `LIVEKIT_API_KEY` | API key used by the backend to sign LiveKit tokens | Copy from the same LiveKit project |
 | `LIVEKIT_API_SECRET` | API secret used by the backend to sign LiveKit tokens | Copy from the same LiveKit project and keep private |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Initial admin login | Simple values are fine locally; use a strong password in production |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Initial admin login | Simple values are fine locally, but this is not the Linux SSH user such as `root` or `ubuntu`; use a strong password in production |
 | `PUBLIC_REGISTRATION_ENABLED` | Whether anyone can self-register | Fine for local demos; set `0` on public deployments |
 | `STRICT_SECURITY_CHECKS` | Refuse weak `SECRET_KEY` / `ADMIN_*` settings at startup | Set `1` on public deployments |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile site key and server secret | Test availability first for mainland users |
 
 The three LiveKit values must come from the same LiveKit project. Flask only checks meeting permission and issues a token; the browser connects directly to `LIVEKIT_URL`, so that URL must be reachable from your browser.
+
+`ADMIN_USERNAME` is the website admin login name, not your operating system account and not the SSH user on the server. In production with `systemd`, app settings belong in `.env`, while the process user belongs in the service file `User=`.
 
 If rooms return `503`, `.env` changes do not apply, or users can join but cannot see each other, start with [Common Issues](docs/DEPLOYMENT_GUIDE.md#16-common-issues). Local development usually only needs restarting `python app.py`; production systemd services must be restarted after `.env` changes.
 

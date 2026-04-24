@@ -20,7 +20,7 @@
       <button class="ghost-btn" id="virtualBgBtn">{{ t('virtual_bg') }}</button>
       <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
       <button class="ghost-btn" id="toggleMicBtn">{{ t('mic') }}</button>
-      <button class="ghost-btn" id="toggleSpeakerBtn">{{ ('扬声器' if lang == 'zh' else 'Speaker') }}</button>
+      <button class="ghost-btn" id="toggleSpeakerBtn">{{ t('speaker') }}</button>
       <button class="ghost-btn" id="toggleCameraBtn">{{ t('camera') }}</button>
       <button class="ghost-btn danger" id="leaveMeetingBtn">{{ t('leave') }}</button>
       {% if is_host %}<button class="ghost-btn danger" id="hostEndMeetingBtn">{{ t('host_end_meeting') }}</button>{% endif %}
@@ -39,27 +39,27 @@
     </div>
 
     <div class="mini-panel" id="invitePanel">
-      <div class="muted">{{ ('邀请链接' if lang == 'zh' else 'Invite link') }}</div>
-      <label>{{ ('分享给参会者' if lang == 'zh' else 'Share with participants') }}</label>
+      <div class="muted">{{ t('invite_link') }}</div>
+      <label>{{ t('share_with_participants') }}</label>
       <input id="inviteInput" value="{{ request.url }}" readonly />
       <div class="row-compact">
-        <button class="ghost-btn" id="copyInviteBtn">{{ ('复制' if lang == 'zh' else 'Copy') }}</button>
-        <button class="ghost-btn" id="showQrBtn">{{ ('显示二维码' if lang == 'zh' else 'Show QR') }}</button>
+        <button class="ghost-btn" id="copyInviteBtn">{{ t('copy') }}</button>
+        <button class="ghost-btn" id="showQrBtn">{{ t('show_qr') }}</button>
       </div>
       <div id="inviteQrWrap" class="invite-qr-wrap hidden">
-        <img id="inviteQrImage" alt="{{ ('入会二维码' if lang == 'zh' else 'Join QR code') }}" />
+        <img id="inviteQrImage" alt="{{ t('join_qr_code') }}" />
       </div>
     </div>
 
     <div class="mini-panel diagnostics-panel" id="rtcDiagnosticsPanel">
       <div class="row-compact diagnostics-head">
         <div>
-          <div class="muted">{{ ('RTC 诊断' if lang == 'zh' else 'RTC diagnostics') }}</div>
-          <div class="small-note">{{ ('用于观察延迟、码率、帧率和连接状态' if lang == 'zh' else 'Observe latency, bitrate, FPS, and connection state') }}</div>
+          <div class="muted">{{ t('rtc_diagnostics') }}</div>
+          <div class="small-note">{{ t('rtc_diagnostics_desc') }}</div>
         </div>
-        <button class="ghost-btn diagnostics-refresh-btn" id="refreshRtcStatsBtn" type="button">{{ ('刷新' if lang == 'zh' else 'Refresh') }}</button>
+        <button class="ghost-btn diagnostics-refresh-btn" id="refreshRtcStatsBtn" type="button">{{ t('refresh') }}</button>
       </div>
-      <pre id="rtcDiagnosticsOutput" class="diagnostics-output">{{ ('正在收集 RTC 指标...' if lang == 'zh' else 'Collecting RTC metrics...') }}</pre>
+      <pre id="rtcDiagnosticsOutput" class="diagnostics-output">{{ t('collecting_rtc_metrics') }}</pre>
     </div>
   </aside>
 
@@ -70,16 +70,16 @@
       <div id="videoSidebar" class="video-sidebar"></div>
       <div id="hiddenParticipantDock" class="hidden-participant-dock" aria-hidden="true"></div>
     </div>
-    <div id="videoPager" class="video-pager hidden" aria-label="{{ '分页参会者视图' if lang == 'zh' else 'Paged participant view' }}">
+    <div id="videoPager" class="video-pager hidden" aria-label="{{ t('paged_participant_view') }}">
       <div class="video-pager-left">
-        <button id="videoHomePageBtn" class="ghost-btn pager-btn pager-home-btn" type="button" title="{{ '首页' if lang == 'zh' else 'First page' }}" aria-label="{{ '首页' if lang == 'zh' else 'First page' }}">⌂</button>
-        <button id="videoPrevPageBtn" class="ghost-btn pager-btn" type="button">{{ '上一页' if lang == 'zh' else 'Previous' }}</button>
+        <button id="videoHomePageBtn" class="ghost-btn pager-btn pager-home-btn" type="button" title="{{ t('first_page') }}" aria-label="{{ t('first_page') }}">⌂</button>
+        <button id="videoPrevPageBtn" class="ghost-btn pager-btn" type="button">{{ t('previous_page') }}</button>
       </div>
       <div class="video-pager-center">
         <span id="videoPagerInfo" class="video-pager-info">1 / 1</span>
       </div>
       <div class="video-pager-right">
-        <button id="videoNextPageBtn" class="ghost-btn pager-btn" type="button">{{ '下一页' if lang == 'zh' else 'Next' }}</button>
+        <button id="videoNextPageBtn" class="ghost-btn pager-btn" type="button">{{ t('next_page') }}</button>
       </div>
     </div>
       <div id="danmakuLayer" class="danmaku-layer"></div>

@@ -28,6 +28,7 @@
 ## 维护规则
 
 - 行为变化优先更新根 README。
+- 所有成对存在的中英文文档必须同步更新，章节结构、关键结论、命令步骤和风险提示不要长期漂移。
 - 部署命令、环境变量或服务管理方式变化时更新 `DEPLOYMENT_GUIDE.md`。
 - 房间状态、LiveKit、屏幕共享、录屏、虚拟背景相关变化时更新 `STABILITY_AUDIT.md`。
 - 中英文文案、移动端扫码、移动端聊天布局、桌面端会议网格或设备默认策略变化时，同步更新根 README 和项目说明文档。
@@ -68,6 +69,7 @@ This folder contains the project overview, deployment guide, stability audit, an
 ## Maintenance Rules
 
 - Update the root README first when project behavior changes.
+- Keep every paired Chinese/English document in sync. Do not let section structure, key conclusions, commands, or risk notes drift for long.
 - Update `DEPLOYMENT_GUIDE.md` when deployment commands, environment variables, or service management changes.
 - Update `STABILITY_AUDIT.md` when room state, LiveKit, screen sharing, recording, or virtual background behavior changes.
 - Update the root README and project guide when UI text, mobile QR join, mobile chat layout, desktop meeting grid, or default device behavior changes.

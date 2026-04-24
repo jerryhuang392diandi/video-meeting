@@ -27,24 +27,24 @@ const TEXT_MEETING_CLOSED = {{ t('meeting_closed')|tojson }};
 const TEXT_COPIED = {{ t('copied')|tojson }};
 const TEXT_MIC_ON = {{ t('mic_on')|tojson }};
 const TEXT_MIC_OFF = {{ t('mic_off')|tojson }};
-const TEXT_SPEAKER_ON = {{ ('扬声器已开启' if lang == 'zh' else 'Speaker enabled')|tojson }};
-const TEXT_SPEAKER_OFF = {{ ('扬声器已静音' if lang == 'zh' else 'Speaker muted')|tojson }};
-const TEXT_SPEAKER_BUTTON_ON = {{ ('扬声器开启' if lang == 'zh' else 'Speaker on')|tojson }};
-const TEXT_SPEAKER_BUTTON_OFF = {{ ('扬声器静音' if lang == 'zh' else 'Speaker muted')|tojson }};
+const TEXT_SPEAKER_ON = {{ t('speaker_enabled')|tojson }};
+const TEXT_SPEAKER_OFF = {{ t('speaker_muted')|tojson }};
+const TEXT_SPEAKER_BUTTON_ON = {{ t('speaker_button_on')|tojson }};
+const TEXT_SPEAKER_BUTTON_OFF = {{ t('speaker_button_off')|tojson }};
 const TEXT_CAMERA_ON = {{ t('camera_on')|tojson }};
 const TEXT_CAMERA_OFF = {{ t('camera_off')|tojson }};
-const TEXT_CAMERA_RECOVERING = {{ ('检测到摄像头中断，正在自动重连…' if lang == 'zh' else 'Camera interruption detected, reconnecting automatically...')|tojson }};
-const TEXT_CAMERA_RECOVERED = {{ ('摄像头已自动恢复' if lang == 'zh' else 'Camera was recovered automatically')|tojson }};
-const TEXT_SCREEN_SHARE_MODE = {{ ('共享屏幕模式已开启' if lang == 'zh' else 'Screen share mode enabled')|tojson }};
-const TEXT_SCREEN_SHARE_STOPPED = {{ ('共享屏幕模式已结束' if lang == 'zh' else 'Screen share mode ended')|tojson }};
-const TEXT_SCREEN_SHARE_AUDIO_PROMPT = {{ ('共享屏幕时是否同时发送“共享内容本身的声音”？\n确定：发送\n取消：不发送（仅麦克风）' if lang == 'zh' else 'When sharing screen, also send the shared content audio?\nOK: send it\nCancel: do not send (microphone only)')|tojson }};
-const TEXT_SCREEN_SHARE_AUDIO_MIXED_PROMPT = {{ ('是否“同时保留麦克风”与“共享内容声音”？\n确定：两者都发送（推荐，类似腾讯会议）\n取消：仅发送共享内容声音（麦克风临时静音）' if lang == 'zh' else 'Keep both microphone and shared content audio?\nOK: send both (recommended, Tencent Meeting style)\nCancel: send shared content audio only (microphone temporarily muted)')|tojson }};
-const TEXT_SCREEN_SHARE_AUDIO_ON = {{ ('共享屏幕将携带系统/标签页音频（如浏览器支持）' if lang == 'zh' else 'Screen share will include system/tab audio when supported')|tojson }};
-const TEXT_SCREEN_SHARE_AUDIO_OFF = {{ ('共享屏幕将不发送系统/标签页音频，仅保留麦克风' if lang == 'zh' else 'Screen share will not include system/tab audio; microphone only')|tojson }};
-const TEXT_SCREEN_SHARE_AUDIO_CONTENT_ONLY = {{ ('将仅发送共享内容声音，麦克风会临时静音（停止共享后自动恢复）' if lang == 'zh' else 'Only shared content audio will be sent. Microphone is temporarily muted and restored after sharing stops')|tojson }};
-const TEXT_SCREEN_SHARE_AUDIO_UNAVAILABLE = {{ ('当前浏览器/共享源未提供共享音频。请优先选择“浏览器标签页”并勾选“共享标签页音频/共享系统音频”。' if lang == 'zh' else 'This browser or selected source did not provide screen-share audio. Prefer sharing a browser tab and enable tab/system audio in the picker.')|tojson }};
-const TEXT_SCREEN_SHARE_BANNER_SELF = {{ ('正在共享屏幕，其他参会者已临时隐藏' if lang == 'zh' else 'You are sharing your screen. Other participants are temporarily hidden')|tojson }};
-const TEXT_SCREEN_SHARE_BANNER_OTHER = {{ ('{name} 正在共享屏幕，其他参会者已临时隐藏' if lang == 'zh' else '{name} is sharing the screen. Other participants are temporarily hidden')|tojson }};
+const TEXT_CAMERA_RECOVERING = {{ t('camera_recovering')|tojson }};
+const TEXT_CAMERA_RECOVERED = {{ t('camera_recovered')|tojson }};
+const TEXT_SCREEN_SHARE_MODE = {{ t('screen_share_mode_enabled')|tojson }};
+const TEXT_SCREEN_SHARE_STOPPED = {{ t('screen_share_mode_ended')|tojson }};
+const TEXT_SCREEN_SHARE_AUDIO_PROMPT = {{ t('screen_share_audio_prompt')|tojson }};
+const TEXT_SCREEN_SHARE_AUDIO_MIXED_PROMPT = {{ t('screen_share_audio_mixed_prompt')|tojson }};
+const TEXT_SCREEN_SHARE_AUDIO_ON = {{ t('screen_share_audio_on')|tojson }};
+const TEXT_SCREEN_SHARE_AUDIO_OFF = {{ t('screen_share_audio_off')|tojson }};
+const TEXT_SCREEN_SHARE_AUDIO_CONTENT_ONLY = {{ t('screen_share_audio_content_only')|tojson }};
+const TEXT_SCREEN_SHARE_AUDIO_UNAVAILABLE = {{ t('screen_share_audio_unavailable')|tojson }};
+const TEXT_SCREEN_SHARE_BANNER_SELF = {{ t('screen_share_banner_self')|tojson }};
+const TEXT_SCREEN_SHARE_BANNER_OTHER = {{ t('screen_share_banner_other')|tojson }};
 const TEXT_SHARE_PROFILE_MOTION = {{ t('share_profile_motion')|tojson }};
 const TEXT_SHARE_PROFILE_DETAIL = {{ t('share_profile_detail')|tojson }};
 const TEXT_SHARE_PROFILE_BUTTON = {{ t('share_profile_button')|tojson }};
@@ -57,58 +57,58 @@ const TEXT_SHARE_PROFILE_STABILITY_PROMPT = {{ t('share_profile_stability_prompt
 const TEXT_SHARE_PROFILE_STABILITY_APPLIED = {{ t('share_profile_stability_applied')|tojson }};
 const TEXT_SHARE_PROFILE_STABILITY_KEPT = {{ t('share_profile_stability_kept')|tojson }};
 const TEXT_SHARE_PROFILE_STABILITY_MANUAL = {{ t('share_profile_stability_manual')|tojson }};
-const TEXT_NO_VIDEO = {{ ('未开启摄像头' if lang == 'zh' else 'Camera off')|tojson }};
-const TEXT_RECORD_STOP = {{ ('停止录屏' if lang == 'zh' else 'Stop recording')|tojson }};
-const TEXT_RECORD_SAVED = {{ ('录屏文件已保存' if lang == 'zh' else 'Recording saved')|tojson }};
-const TEXT_RECORD_NOT_SUPPORTED = {{ ('当前浏览器不支持录屏' if lang == 'zh' else 'Screen recording is not supported in this browser')|tojson }};
-const TEXT_LIVEKIT_CONFIG_MISSING = {{ ('LiveKit 未配置完成，暂时无法启用 SFU 模式' if lang == 'zh' else 'LiveKit is not configured yet, so SFU mode is unavailable')|tojson }};
-const TEXT_LIVEKIT_CONNECT_FAILED = {{ ('连接 LiveKit 失败' if lang == 'zh' else 'Failed to connect to LiveKit')|tojson }};
-const TEXT_VIRTUAL_BG_PICK = {{ ('请选择一张背景图片，系统会开始做人像抠图并替换背景' if lang == 'zh' else 'Choose a background image and the app will start person segmentation with background replacement')|tojson }};
-const TEXT_VIRTUAL_BG_LOADING = {{ ('正在加载虚拟背景模型...' if lang == 'zh' else 'Loading virtual background model...')|tojson }};
-const TEXT_VIRTUAL_BG_READY = {{ ('虚拟背景已启用' if lang == 'zh' else 'Virtual background enabled')|tojson }};
-const TEXT_VIRTUAL_BG_FAILED = {{ ('虚拟背景启动失败' if lang == 'zh' else 'Failed to enable virtual background')|tojson }};
-const TEXT_VIRTUAL_BG_OFF = {{ ('虚拟背景已关闭' if lang == 'zh' else 'Virtual background disabled')|tojson }};
-const TEXT_VIRTUAL_BG_NEEDS_CAMERA = {{ ('请先开启摄像头，再启用虚拟背景。' if lang == 'zh' else 'Turn on the camera first, then enable virtual background.')|tojson }};
-const TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE = {{ ('摄像头画面不可用，请先关闭再重新开启摄像头。' if lang == 'zh' else 'Camera video is unavailable. Turn the camera off and on again first.')|tojson }};
-const TEXT_VIRTUAL_BG_PROCESSING_TIMEOUT = {{ ('虚拟背景处理超时，请稍后重试或换一张较小的背景图。' if lang == 'zh' else 'Virtual background processing timed out. Try again later or choose a smaller background image.')|tojson }};
-const TEXT_RECORD_CONVERTING = {{ ('正在转换为可拖动的 MP4，请稍候...' if lang == 'zh' else 'Converting to a seekable MP4, please wait...')|tojson }};
-const TEXT_RECORD_MP4_FAILED = {{ ('MP4 转换失败，已回退保存为 WebM' if lang == 'zh' else 'MP4 conversion failed, saved as WebM instead')|tojson }};
-const TEXT_RECORD_MP4_SERVER_ERROR = {{ ('服务器 MP4 转换失败' if lang == 'zh' else 'Server-side MP4 conversion failed')|tojson }};
+const TEXT_NO_VIDEO = {{ t('camera_off_short')|tojson }};
+const TEXT_RECORD_STOP = {{ t('stop_recording')|tojson }};
+const TEXT_RECORD_SAVED = {{ t('recording_saved')|tojson }};
+const TEXT_RECORD_NOT_SUPPORTED = {{ t('recording_not_supported')|tojson }};
+const TEXT_LIVEKIT_CONFIG_MISSING = {{ t('livekit_config_missing')|tojson }};
+const TEXT_LIVEKIT_CONNECT_FAILED = {{ t('livekit_connect_failed')|tojson }};
+const TEXT_VIRTUAL_BG_PICK = {{ t('virtual_bg_pick')|tojson }};
+const TEXT_VIRTUAL_BG_LOADING = {{ t('virtual_bg_loading')|tojson }};
+const TEXT_VIRTUAL_BG_READY = {{ t('virtual_bg_enabled')|tojson }};
+const TEXT_VIRTUAL_BG_FAILED = {{ t('virtual_bg_failed')|tojson }};
+const TEXT_VIRTUAL_BG_OFF = {{ t('virtual_bg_disabled')|tojson }};
+const TEXT_VIRTUAL_BG_NEEDS_CAMERA = {{ t('virtual_bg_needs_camera')|tojson }};
+const TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE = {{ t('virtual_bg_camera_unavailable')|tojson }};
+const TEXT_VIRTUAL_BG_PROCESSING_TIMEOUT = {{ t('virtual_bg_processing_timeout')|tojson }};
+const TEXT_RECORD_CONVERTING = {{ t('record_converting_mp4')|tojson }};
+const TEXT_RECORD_MP4_FAILED = {{ t('record_mp4_failed')|tojson }};
+const TEXT_RECORD_MP4_SERVER_ERROR = {{ t('record_mp4_server_error')|tojson }};
 const TEXT_RECORD_DIRECT_MP4 = {{ t('record_direct_mp4')|tojson }};
-const TEXT_IMAGE_NOT_SUPPORTED = {{ ('该图片无法作为虚拟背景，请换一张 PNG/JPG 图片' if lang == 'zh' else 'This image cannot be used as a virtual background. Try a PNG or JPG image instead.')|tojson }};
-const TEXT_HOST_END_CONFIRM = {{ ('确定要解散当前会议吗？所有参会者都会被移出。' if lang == 'zh' else 'End this meeting now? All participants will be removed.')|tojson }};
-const TEXT_LEAVE_CONFIRM = {{ ('确定要离开当前会议吗？' if lang == 'zh' else 'Leave this meeting now?')|tojson }};
+const TEXT_IMAGE_NOT_SUPPORTED = {{ t('image_not_supported_virtual_bg')|tojson }};
+const TEXT_HOST_END_CONFIRM = {{ t('host_end_meeting_confirm')|tojson }};
+const TEXT_LEAVE_CONFIRM = {{ t('leave_meeting_confirm')|tojson }};
 const TEXT_YOU_LEFT_MEETING = {{ t('you_left_meeting')|tojson }};
 const TEXT_HOST_LEFT_ROOM = {{ t('host_left_room')|tojson }};
 const TEXT_HOST_RETURNED_ROOM = {{ t('host_returned_room')|tojson }};
 const IS_HOST = {{ 'true' if is_host else 'false' }};
-const TEXT_DANMAKU_ON = {{ ('弹幕已开启' if lang == 'zh' else 'Danmaku enabled')|tojson }};
-const TEXT_DANMAKU_OFF = {{ ('弹幕已关闭' if lang == 'zh' else 'Danmaku disabled')|tojson }};
-const TEXT_PROFILE_UPDATED = {{ ('显示名称已更新' if lang == 'zh' else 'Display name updated')|tojson }};
-const TEXT_CHAT_WITHDRAWN = {{ ('此消息已撤回' if lang == 'zh' else 'This message was withdrawn')|tojson }};
-const TEXT_CHAT_CLEARED = {{ ('聊天记录已清空' if lang == 'zh' else 'Chat history cleared')|tojson }};
-const TEXT_TRANSLATE_OPEN = {{ ('已打开翻译结果' if lang == 'zh' else 'Opened translation result')|tojson }};
-const TEXT_CHAT_CLEARED_SELF = {{ ('仅清空了你的聊天面板，主持人仍可见历史消息' if lang == 'zh' else 'Only your chat panel was cleared. The host can still see the chat history.')|tojson }};
-const TEXT_CHAT_CLEARED_ALL = {{ ('主持人已清空所有人的聊天记录' if lang == 'zh' else 'The host cleared the chat history for everyone.')|tojson }};
-const TEXT_COPY_SUCCESS = {{ ('文本已复制' if lang == 'zh' else 'Text copied')|tojson }};
-const TEXT_COPY_FAILED_MANUAL = {{ ('复制失败，请长按或手动复制' if lang == 'zh' else 'Copy failed, please copy manually')|tojson }};
-const TEXT_MENTION_COLLAPSE = {{ ('收起' if lang == 'zh' else 'Collapse')|tojson }};
-const TEXT_PERMISSION_DOWNLOAD_ALLOWED = {{ ('可下载' if lang == 'zh' else 'Download allowed')|tojson }};
-const TEXT_PERMISSION_VIEW_ONLY = {{ ('仅查看' if lang == 'zh' else 'View only')|tojson }};
-const TEXT_ATTACHMENT_OPEN = {{ ('查看/打开' if lang == 'zh' else 'Open' )|tojson }};
-const TEXT_ATTACHMENT_VIEW = {{ ('查看' if lang == 'zh' else 'View' )|tojson }};
-const TEXT_DOWNLOAD_LABEL = {{ ('下载' if lang == 'zh' else 'Download')|tojson }};
-const TEXT_CHAT_MODE_HOST = {{ ('仅主持人' if lang == 'zh' else 'Host only')|tojson }};
-const TEXT_CHAT_MODE_PUBLIC = {{ ('公开' if lang == 'zh' else 'Public')|tojson }};
-const TEXT_COPY_BUTTON = {{ ('复制' if lang == 'zh' else 'Copy')|tojson }};
-const TEXT_TRANSLATE_BUTTON = {{ ('翻译' if lang == 'zh' else 'Translate')|tojson }};
-const TEXT_RETRACT_BUTTON = {{ ('撤回' if lang == 'zh' else 'Retract')|tojson }};
+const TEXT_DANMAKU_ON = {{ t('danmaku_enabled')|tojson }};
+const TEXT_DANMAKU_OFF = {{ t('danmaku_disabled')|tojson }};
+const TEXT_PROFILE_UPDATED = {{ t('display_name_updated')|tojson }};
+const TEXT_CHAT_WITHDRAWN = {{ t('chat_withdrawn')|tojson }};
+const TEXT_CHAT_CLEARED = {{ t('chat_history_cleared')|tojson }};
+const TEXT_TRANSLATE_OPEN = {{ t('translation_opened')|tojson }};
+const TEXT_CHAT_CLEARED_SELF = {{ t('chat_cleared_self')|tojson }};
+const TEXT_CHAT_CLEARED_ALL = {{ t('chat_cleared_all')|tojson }};
+const TEXT_COPY_SUCCESS = {{ t('copied')|tojson }};
+const TEXT_COPY_FAILED_MANUAL = {{ t('copy_failed_manual')|tojson }};
+const TEXT_MENTION_COLLAPSE = {{ t('collapse')|tojson }};
+const TEXT_PERMISSION_DOWNLOAD_ALLOWED = {{ t('download_allowed')|tojson }};
+const TEXT_PERMISSION_VIEW_ONLY = {{ t('view_only')|tojson }};
+const TEXT_ATTACHMENT_OPEN = {{ t('open_attachment')|tojson }};
+const TEXT_ATTACHMENT_VIEW = {{ t('view_attachment')|tojson }};
+const TEXT_DOWNLOAD_LABEL = {{ t('download_file')|tojson }};
+const TEXT_CHAT_MODE_HOST = {{ t('host_only')|tojson }};
+const TEXT_CHAT_MODE_PUBLIC = {{ t('public_short')|tojson }};
+const TEXT_COPY_BUTTON = {{ t('copy')|tojson }};
+const TEXT_TRANSLATE_BUTTON = {{ t('translate')|tojson }};
+const TEXT_RETRACT_BUTTON = {{ t('retract')|tojson }};
 const CURRENT_USER_ID = {{ current_user.id|tojson }};
-const TEXT_UPLOAD_FAILED = {{ ('附件上传失败' if lang == 'zh' else 'Attachment upload failed')|tojson }};
-const TEXT_ATTACHMENT_LIMIT_IMAGE = {{ ('图片请控制在 25MB 以内' if lang == 'zh' else 'Please keep images under 25MB')|tojson }};
-const TEXT_ATTACHMENT_LIMIT_VIDEO = {{ ('视频请控制在 120MB 以内' if lang == 'zh' else 'Please keep videos under 120MB')|tojson }};
-const TEXT_ATTACHMENT_LIMIT_FILE = {{ ('文档或压缩包请控制在 25MB 以内' if lang == 'zh' else 'Please keep documents or archives under 25MB')|tojson }};
-const TEXT_ROOM_STORAGE_LIMIT = {{ ('当前会议附件空间已接近上限，请先清理聊天或稍后再试' if lang == 'zh' else 'Meeting attachment storage is nearly full. Please clear chat or try later')|tojson }};
+const TEXT_UPLOAD_FAILED = {{ t('upload_failed')|tojson }};
+const TEXT_ATTACHMENT_LIMIT_IMAGE = {{ t('attachment_limit_image')|tojson }};
+const TEXT_ATTACHMENT_LIMIT_VIDEO = {{ t('attachment_limit_video')|tojson }};
+const TEXT_ATTACHMENT_LIMIT_FILE = {{ t('attachment_limit_file')|tojson }};
+const TEXT_ROOM_STORAGE_LIMIT = {{ t('room_storage_limit')|tojson }};
 const IS_MOBILE = window.matchMedia('(max-width: 768px)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 const socket = io();
@@ -207,9 +207,9 @@ const chatMediaInput = document.getElementById('chatMediaInput');
 const chatDocInput = document.getElementById('chatDocInput');
 const chatAttachmentPreview = document.getElementById('chatAttachmentPreview');
 const mentionPicker = document.getElementById('mentionPicker');
-const MENTION_SEARCH_PLACEHOLDER = {{ ('搜索用户名' if lang == 'zh' else 'Search users')|tojson }};
-const MENTION_EMPTY_TEXT = {{ ('没有匹配的用户' if lang == 'zh' else 'No matching users')|tojson }};
-const MENTION_ALL_TEXT = {{ ('所有成员' if lang == 'zh' else 'All participants')|tojson }};
+const MENTION_SEARCH_PLACEHOLDER = {{ t('mention_search_placeholder')|tojson }};
+const MENTION_EMPTY_TEXT = {{ t('mention_empty')|tojson }};
+const MENTION_ALL_TEXT = {{ t('mention_all')|tojson }};
 window.MENTION_SEARCH_PLACEHOLDER = MENTION_SEARCH_PLACEHOLDER;
 window.MENTION_EMPTY_TEXT = MENTION_EMPTY_TEXT;
 window.MENTION_ALL_TEXT = MENTION_ALL_TEXT;
@@ -234,8 +234,8 @@ const shareProfileTip = document.getElementById('shareProfileTip');
 const rtcDiagnosticsOutput = document.getElementById('rtcDiagnosticsOutput');
 const refreshRtcStatsBtn = document.getElementById('refreshRtcStatsBtn');
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-const TEXT_IOS_PLAY_SCREEN = {{ ('苹果设备可能需要点一下画面才能恢复共享屏幕显示' if lang == 'zh' else 'On older Apple devices, tap the video once if screen sharing does not appear')|tojson }};
-const TEXT_HOST_MUST_END_MEETING = {{ ('主持人不能在会议进行中直接离开，请先解散会议，或等待其他参会者离开后再退出。' if lang == 'zh' else 'The host cannot leave while other participants are still in the meeting. End the meeting first, or wait until others leave.')|tojson }};
+const TEXT_IOS_PLAY_SCREEN = {{ t('ios_play_screen')|tojson }};
+const TEXT_HOST_MUST_END_MEETING = {{ t('host_must_end_meeting_first')|tojson }};
 window.TEXT_COPY_SUCCESS = TEXT_COPY_SUCCESS;
 window.TEXT_COPY_FAILED_MANUAL = TEXT_COPY_FAILED_MANUAL;
 window.TEXT_MENTION_COLLAPSE = TEXT_MENTION_COLLAPSE;
@@ -340,8 +340,8 @@ function updateShareUiState() {
   if (shareScreenBtn) {
     shareScreenBtn.disabled = !canShare || occupiedByOther;
     shareScreenBtn.title = !canShare
-      ? {{ ('当前设备/浏览器不支持共享屏幕' if lang == 'zh' else 'This device/browser does not support screen sharing')|tojson }}
-      : (occupiedByOther ? {{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }} : '');
+      ? {{ t('screen_share_not_supported')|tojson }}
+      : (occupiedByOther ? {{ t('another_participant_sharing_screen')|tojson }} : '');
   }
   updateVirtualBackgroundButtonState();
 }
@@ -352,7 +352,7 @@ function updateVirtualBackgroundButtonState() {
   virtualBgBtn.disabled = disabledByShare;
   virtualBgBtn.classList.toggle('active', !!virtualBgEnabled);
   if (disabledByShare) {
-    virtualBgBtn.title = {{ ('共享屏幕期间不可使用虚拟背景' if lang == 'zh' else 'Virtual background is unavailable during screen sharing')|tojson }};
+    virtualBgBtn.title = {{ t('virtual_bg_unavailable_during_share')|tojson }};
   } else if (virtualBgEnabled) {
     virtualBgBtn.title = TEXT_VIRTUAL_BG_OFF;
   } else if (virtualBgImageDataUrl) {
@@ -851,7 +851,7 @@ function ensureCard(sid, displayName = null, isLocal = false) {
   card.dataset.sid = sid;
   card.innerHTML = `
     <div class="video-toolbar">
-      <button class="card-btn" data-action="fullscreen">{{ ('全屏' if lang == 'zh' else 'Fullscreen') }}</button>
+      <button class="card-btn" data-action="fullscreen">{{ t('fullscreen') }}</button>
     </div>
     <div class="video-placeholder">${TEXT_NO_VIDEO}</div>
     <div class="video-label-stack">
@@ -1024,7 +1024,7 @@ function renderLayout(force = false) {
   }
   const cards = getRenderableCards();
   if (!cards.length) {
-    videoMain.innerHTML = '<div class="video-empty-state">' + escapeHtml({{ ('未找到匹配的参会者' if lang == 'zh' else 'No matching participants found')|tojson }}) + '</div>';
+    videoMain.innerHTML = '<div class="video-empty-state">' + escapeHtml({{ t('no_matching_participants')|tojson }}) + '</div>';
     videoSidebar.innerHTML = '';
     if (hiddenParticipantDock) hiddenParticipantDock.innerHTML = '';
     videoStage.classList.remove('grid-1', 'grid-2', 'grid-3', 'paged-grid', 'focus-layout', 'grid-layout');
@@ -1406,7 +1406,7 @@ async function restoreLiveKitMediaAfterReload(hint) {
   const shouldRestoreMicrophone = !!hint.micEnabled;
   if (!shouldRestoreCamera && !shouldRestoreMicrophone) {
     if (hint.hadScreenShare) {
-      setStatus({{ ('页面刷新后无法自动恢复共享屏幕，请手动重新开启。' if lang == 'zh' else 'Screen share cannot be restored automatically after refresh. Please start sharing again manually.')|tojson }});
+      setStatus({{ t('screen_share_restore_manual')|tojson }});
     }
     return false;
   }
@@ -1416,7 +1416,7 @@ async function restoreLiveKitMediaAfterReload(hint) {
     controller.setCameraEnabled(shouldRestoreCamera),
     controller.setMicrophoneEnabled(shouldRestoreMicrophone),
   ]);
-  setStatus({{ ('页面刷新后已尝试恢复摄像头/麦克风；浏览器限制导致共享屏幕需手动重新开启。' if lang == 'zh' else 'Camera/microphone were recovered after refresh. Screen share must be started again due to browser limitations.')|tojson }});
+  setStatus({{ t('media_recovered_refresh_screen_share_manual')|tojson }});
   return true;
 }
 
@@ -1800,7 +1800,7 @@ async function translateToEnglish(item, text) {
     box.className = 'chat-translation';
     item.appendChild(box);
   }
-  box.textContent = {{ ('翻译中…' if lang == 'zh' else 'Translating...')|tojson }};
+  box.textContent = {{ t('translating')|tojson }};
   try {
     const resp = await fetch('/api/translate_message', {
       method: 'POST',
@@ -1810,11 +1810,11 @@ async function translateToEnglish(item, text) {
     const data = await resp.json();
     if (!resp.ok || !data.ok) throw new Error(data.error || 'translate_failed');
     const target = String(data.target || '').toLowerCase();
-    const label = target.startsWith('zh') ? {{ ('中文翻译' if lang == 'zh' else 'Chinese translation')|tojson }} : {{ ('英文翻译' if lang == 'zh' else 'English translation')|tojson }};
+    const label = target.startsWith('zh') ? {{ t('chinese_translation')|tojson }} : {{ t('english_translation')|tojson }};
     box.innerHTML = `<div class="chat-translation-label">${escapeHtml(label)}</div><div>${escapeHtml(data.translation || '')}</div>`;
-    setStatus({{ ('翻译已显示在消息下方' if lang == 'zh' else 'Translation shown below the message')|tojson }});
+    setStatus({{ t('translation_shown_below')|tojson }});
   } catch (err) {
-    box.textContent = {{ ('翻译失败，请稍后重试' if lang == 'zh' else 'Translation failed. Please try again later.')|tojson }};
+    box.textContent = {{ t('translation_failed_retry')|tojson }};
     setStatus(box.textContent, 'warning');
   }
 }
@@ -1844,13 +1844,13 @@ function openMessageContextMenu(event, item) {
   const canRetract = !isWithdrawn && (String(item.dataset.senderUserId || '') === String({{ current_user.id|tojson }}) || IS_HOST === true || IS_HOST === 'true');
   const menu = [];
   if (canRetract) {
-    menu.push({ label: {{ ('撤回消息' if lang == 'zh' else 'Retract message')|tojson }}, danger: true, action: () => socket.emit('meeting_chat_retract', { id: item.dataset.messageId }) });
+    menu.push({ label: {{ t('retract')|tojson }}, danger: true, action: () => socket.emit('meeting_chat_retract', { id: item.dataset.messageId }) });
   }
   if (text) {
-    menu.push({ label: {{ ('复制文本' if lang == 'zh' else 'Copy text')|tojson }}, action: () => copyText(text) });
-    menu.push({ label: {{ ('翻译消息' if lang == 'zh' else 'Translate message')|tojson }}, action: () => translateToEnglish(item, text) });
+    menu.push({ label: {{ t('copy')|tojson }}, action: () => copyText(text) });
+    menu.push({ label: {{ t('translate')|tojson }}, action: () => translateToEnglish(item, text) });
   }
-  menu.push({ label: {{ ('清空聊天记录' if lang == 'zh' else 'Clear chat history')|tojson }}, danger: true, action: () => socket.emit('meeting_chat_clear') });
+  menu.push({ label: {{ t('clear_chat_history')|tojson }}, danger: true, action: () => socket.emit('meeting_chat_clear') });
   openContextMenu(event.clientX, event.clientY, menu);
 }
 
@@ -1859,7 +1859,7 @@ function openChatAreaContextMenu(event) {
   event.preventDefault();
   event.stopPropagation();
   openContextMenu(event.clientX, event.clientY, [
-    { label: {{ ('清空聊天记录' if lang == 'zh' else 'Clear chat history')|tojson }}, danger: true, action: () => socket.emit('meeting_chat_clear') }
+    { label: {{ t('clear_chat_history')|tojson }}, danger: true, action: () => socket.emit('meeting_chat_clear') }
   ]);
 }
 
@@ -1902,14 +1902,14 @@ function updateAttachmentPreview() {
   }
   chatAttachmentPreview.classList.remove('hidden');
   const permissionText = (chatAttachmentPermission?.value || 'download') === 'download'
-    ? {{ ('接收方可下载' if lang == 'zh' else 'Recipients can download')|tojson }}
-    : {{ ('接收方仅可查看' if lang == 'zh' else 'Recipients can only view')|tojson }};
+    ? {{ t('recipients_can_download')|tojson }}
+    : {{ t('recipients_view_only')|tojson }};
   if ((pendingAttachment.type || '').startsWith('image') && pendingAttachment.previewUrl) {
-    chatAttachmentPreview.innerHTML = `<img class="chat-media" src="${pendingAttachment.previewUrl}" alt="preview" /><div class="chat-file-meta"><span>${escapeHtml(pendingAttachment.name || 'attachment')}</span><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ '移除附件' if lang == 'zh' else 'Remove attachment' }}</button>`;
+    chatAttachmentPreview.innerHTML = `<img class="chat-media" src="${pendingAttachment.previewUrl}" alt="preview" /><div class="chat-file-meta"><span>${escapeHtml(pendingAttachment.name || 'attachment')}</span><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ t('remove_attachment') }}</button>`;
   } else if ((pendingAttachment.type || '').startsWith('video') && pendingAttachment.previewUrl) {
-    chatAttachmentPreview.innerHTML = `<video class="chat-media" src="${pendingAttachment.previewUrl}" controls playsinline></video><div class="chat-file-meta"><span>${escapeHtml(pendingAttachment.name || 'attachment')}</span><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ '移除附件' if lang == 'zh' else 'Remove attachment' }}</button>`;
+    chatAttachmentPreview.innerHTML = `<video class="chat-media" src="${pendingAttachment.previewUrl}" controls playsinline></video><div class="chat-file-meta"><span>${escapeHtml(pendingAttachment.name || 'attachment')}</span><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ t('remove_attachment') }}</button>`;
   } else {
-    chatAttachmentPreview.innerHTML = `<div class="chat-file-card"><div class="chat-file-meta"><strong>${escapeHtml(pendingAttachment.name || 'attachment')}</strong><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ '移除附件' if lang == 'zh' else 'Remove attachment' }}</button></div>`;
+    chatAttachmentPreview.innerHTML = `<div class="chat-file-card"><div class="chat-file-meta"><strong>${escapeHtml(pendingAttachment.name || 'attachment')}</strong><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ t('remove_attachment') }}</button></div>`;
   }
   document.getElementById('clearAttachmentBtn').onclick = () => { pendingAttachment = null; updateAttachmentPreview(); };
   keepChatViewportStable(wasNearBottom);
@@ -1962,14 +1962,14 @@ async function sendChatMessage() {
       } else if (msg.includes('file_too_large') || msg.includes('http_413')) {
         const file = pendingAttachment?.file;
         const extra = msg.includes('http_413')
-          ? {{ ('（服务器或 Nginx 上传上限过小，请同步调大 client_max_body_size）' if lang == 'zh' else '(Server or Nginx upload limit is too small. Increase client_max_body_size as well.)')|tojson }}
+          ? {{ t('upload_limit_nginx_hint')|tojson }}
           : '';
         const baseMsg = file?.type?.startsWith('image/') ? TEXT_ATTACHMENT_LIMIT_IMAGE : (file?.type?.startsWith('video/') ? TEXT_ATTACHMENT_LIMIT_VIDEO : TEXT_ATTACHMENT_LIMIT_FILE);
         setStatus(`${baseMsg}${extra}`, 'warning');
       } else if (msg.includes('file_type_not_allowed')) {
-        setStatus({{ ('该图片/视频格式被服务器拒绝，请换 jpg/png/mp4 或升级后重试' if lang == 'zh' else 'The server rejected this media format. Try jpg/png/mp4 or retry after upgrading.')|tojson }}, 'error');
+        setStatus({{ t('media_format_rejected')|tojson }}, 'error');
       } else if (msg.includes('upload_internal_error')) {
-        setStatus(TEXT_UPLOAD_FAILED + (msg ? ` (${msg})` : '') + {{ ('，后端已返回内部错误，请更新这一版后再试' if lang == 'zh' else ', the backend returned an internal error. Please try again with this build.')|tojson }}, 'error');
+        setStatus(TEXT_UPLOAD_FAILED + (msg ? ` (${msg})` : '') + {{ t('backend_internal_error_retry')|tojson }}, 'error');
       } else {
         setStatus(TEXT_UPLOAD_FAILED + (msg ? ` (${msg})` : ''), 'error');
       }
@@ -2092,7 +2092,7 @@ function initChatUi() {
   setChatMode('all');
   document.querySelectorAll('.chat-mode-btn').forEach(btn => btn.addEventListener('click', () => setChatMode(btn.dataset.mode)));
   document.getElementById('clearChatBtn')?.addEventListener('click', () => {
-    if (confirm({{ ('确认清空当前会议聊天记录？' if lang == 'zh' else 'Clear the current meeting chat history?')|tojson }})) {
+    if (confirm({{ t('clear_current_meeting_chat_confirm')|tojson }})) {
       socket.emit('meeting_chat_clear');
     }
   });
@@ -2132,12 +2132,12 @@ function initChatUi() {
       const docAllowed = ['pdf','doc','docx','ppt','pptx','xls','xlsx','txt','zip','rar','7z'];
       if (uploadKind === 'media') {
         if ((!mediaAllowed.includes(ext)) && !isImage && !isVideo) {
-          setStatus({{ ('暂不支持该图片或视频格式' if lang == 'zh' else 'This media format is not supported yet')|tojson }}, 'warning');
+          setStatus({{ t('media_not_supported_yet')|tojson }}, 'warning');
           return;
         }
       } else {
         if (!docAllowed.includes(ext)) {
-          setStatus({{ ('暂不支持该文档类型' if lang == 'zh' else 'This document type is not supported yet')|tojson }}, 'warning');
+          setStatus({{ t('document_not_supported_yet')|tojson }}, 'warning');
           return;
         }
       }
@@ -2150,10 +2150,10 @@ function initChatUi() {
       if (isImage || isVideo) previewUrl = URL.createObjectURL(file);
       pendingAttachment = { type: file.type || 'application/octet-stream', name: file.name, file, previewUrl, uploadKind };
       updateAttachmentPreview();
-      setStatus({{ ('附件已准备好，可发送' if lang == 'zh' else 'Attachment is ready to send')|tojson }});
+      setStatus({{ t('attachment_ready_to_send')|tojson }});
     } catch (err) {
       console.error(err);
-      setStatus({{ ('附件处理失败' if lang == 'zh' else 'Failed to process attachment')|tojson }}, 'error');
+      setStatus({{ t('attachment_processing_failed')|tojson }}, 'error');
     }
   };
 
@@ -2396,7 +2396,7 @@ socket.on('room_ui_event', (data) => {
     currentSharerSid = normalizeParticipantSid(data.activeSharerSid || currentSharerSid);
     syncScreenShareSpeakerRule({ userGesture: false });
     updateShareUiState();
-    setStatus(data.message || {{ ('已有其他用户正在共享屏幕' if lang == 'zh' else 'Another participant is already sharing the screen')|tojson }}, 'warning');
+    setStatus(data.message || {{ t('another_participant_sharing_screen')|tojson }}, 'warning');
   } else if (data.type === 'danmaku_toggled') {
     danmakuEnabled = !!data.enabled;
     window.danmakuEnabled = danmakuEnabled;
@@ -2617,7 +2617,7 @@ if (copyInviteBtn) {
     const text = inviteInput?.value || window.location.href;
     const ok = await copyText(text);
     if (!ok) {
-      try { window.prompt({{ ('请手动复制下面链接' if lang == 'zh' else 'Please copy this link manually')|tojson }}, text); } catch (_) {}
+      try { window.prompt({{ t('manual_copy_link')|tojson }}, text); } catch (_) {}
     }
   };
 }
@@ -2629,8 +2629,8 @@ if (showQrBtn && inviteQrWrap && inviteQrImage) {
     inviteQrWrap.classList.toggle('hidden');
     const showing = !inviteQrWrap.classList.contains('hidden');
     showQrBtn.textContent = showing
-      ? {{ ('隐藏二维码' if lang == 'zh' else 'Hide QR')|tojson }}
-      : {{ ('显示二维码' if lang == 'zh' else 'Show QR')|tojson }};
+      ? {{ t('hide_qr')|tojson }}
+      : {{ t('show_qr')|tojson }};
   };
 }
 const switchRoomBtn = document.getElementById('switchRoomBtn');

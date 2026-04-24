@@ -244,6 +244,34 @@ pip install gunicorn eventlet
 
 ## 5. 配置环境变量
 
+先把最容易混淆的三个“用户”区分开：
+
+| 名称 | 典型值 | 作用 | 应该写到哪里 |
+| --- | --- | --- | --- |
+| Linux 登录用户 | `root`、`ubuntu`、`deploy` | 你通过 SSH 登录服务器时使用的系统账号 | 云厂商控制台、`/etc/passwd`、SSH 配置 |
+| systemd 运行用户 | `deploy` | `video-meeting.service` 以哪个 Linux 用户身份启动 Gunicorn | `/etc/systemd/system/video-meeting.service` 的 `User=` / `Group=` |
+| 应用管理员用户名 | `meetingadmin` | 登录 `/admin` 的网站管理员账号 | `/opt/video-meeting/.env` 的 `ADMIN_USERNAME` |
+
+这三者不是一回事：
+
+- `ssh root@server` 里的 `root` 是 Linux 系统账号，不等于网站管理员。
+- `.env` 里的 `ADMIN_USERNAME=root` 只是应用登录名，不会让 Gunicorn 以 root 身份运行。
+- `.service` 里的 `User=deploy` 只决定进程权限，不会修改网站管理员用户名。
+
+推荐长期固定成下面这种分层方式：
+
+| 配置文件 | 推荐位置 | 负责内容 | 不要放什么 |
+| --- | --- | --- | --- |
+| 应用环境变量文件 | `/opt/video-meeting/.env` | `SECRET_KEY`、`PUBLIC_HOST`、`LIVEKIT_*`、`ADMIN_*`、Turnstile、Cookie、安全开关 | 不要放 `User=`、`ExecStart=` |
+| systemd 服务文件 | `/etc/systemd/system/video-meeting.service` | `User=`、`Group=`、`WorkingDirectory=`、`EnvironmentFile=`、`ExecStart=`、重启策略 | 不要长期写一堆业务 `Environment=...` |
+| Nginx 站点配置 | `/etc/nginx/sites-available/video-meeting` | 域名、反向代理、上传限制、HTTPS、WebSocket 头 | 不要放 `LIVEKIT_API_SECRET`、`ADMIN_PASSWORD` |
+
+一句话判断：
+
+- 改网站行为和密钥，改 `.env`
+- 改进程身份和启动方式，改 `.service`
+- 改公网入口和 HTTPS，改 Nginx
+
 建议用 EOF 直接写 `/opt/video-meeting/.env`：
 
 ```bash
@@ -272,6 +300,37 @@ REMEMBER_COOKIE_SAMESITE=Lax
 EOF
 
 chmod 600 /opt/video-meeting/.env
+```
+
+如果你当前是用 `root` 登录，或者目录 owner 还不是 `deploy`，更稳妥的写法是：
+
+```bash
+sudo tee /opt/video-meeting/.env > /dev/null <<'EOF'
+SECRET_KEY=replace-with-a-long-random-secret
+DATABASE_URL=sqlite:////opt/video-meeting/instance/app.db
+
+PUBLIC_SCHEME=https
+PUBLIC_HOST=meeting.example.com
+
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=replace-with-livekit-api-key
+LIVEKIT_API_SECRET=replace-with-livekit-api-secret
+
+ADMIN_USERNAME=meetingadmin
+ADMIN_PASSWORD=replace-with-strong-admin-password
+PUBLIC_REGISTRATION_ENABLED=0
+STRICT_SECURITY_CHECKS=1
+TURNSTILE_SITE_KEY=replace-with-turnstile-site-key
+TURNSTILE_SECRET_KEY=replace-with-turnstile-secret-key
+
+SESSION_COOKIE_SECURE=1
+REMEMBER_COOKIE_SECURE=1
+SESSION_COOKIE_SAMESITE=Lax
+REMEMBER_COOKIE_SAMESITE=Lax
+EOF
+
+sudo chown deploy:deploy /opt/video-meeting/.env
+sudo chmod 600 /opt/video-meeting/.env
 ```
 
 生成 `SECRET_KEY`：
@@ -303,37 +362,44 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 注意：
 
 - `.env` 不要提交到 Git。
+- `.env` 推荐权限为 `600`，文件所有者建议就是运行服务的 Linux 用户，例如 `deploy`。
 - 公网部署建议设置 `PUBLIC_REGISTRATION_ENABLED=0`，避免任何人直接创建账号。
 - 公网部署建议设置 `STRICT_SECURITY_CHECKS=1`，避免弱 `SECRET_KEY`、弱管理员密码或默认 `root` 管理员名直接带到线上。
+- 不要因为你是用 `root` 登录服务器，就顺手把 `ADMIN_USERNAME` 也设成 `root`。这是两个完全不同的概念。
 - 线上 systemd 不要直接运行 `python app.py`。那会启动 Werkzeug 开发服务器；如果你在 `systemctl status video-meeting` 里看到 `Werkzeug appears to be used in a production deployment` 或 `This is a development server`，说明当前运行方式不对。
 - 如果你不熟悉终端编辑器，可以直接保留 EOF 写法；最后那个单独一行的 `EOF` 表示写入结束。
-- 如果你不确定环境变量文件到底在哪里被加载，执行 `sudo systemctl cat video-meeting`，确认 `EnvironmentFile=/opt/video-meeting/.env`。
 - `TURNSTILE_SECRET_KEY` 不能自己随便生成，必须和 `TURNSTILE_SITE_KEY` 一起从同一个 Cloudflare Turnstile 站点页面复制。
 - 如果主要服务中国大陆用户，开启 Turnstile 前先在真实大陆网络环境下验证 `challenges.cloudflare.com` 是否可稳定访问。
-- 修改 `.env` 后必须 `sudo systemctl restart video-meeting`。
+- 修改 `.env` 后必须重启服务，后面 `systemd` 章节会执行这一步。
 - LiveKit 三项缺失时，房间页返回 `503` 是正常保护逻辑。
 - SQLite 数据库、上传文件、生成的管理员密码等运行时文件在 `instance/`，备份时不要漏掉。
 
-如果你执行 `sudo systemctl cat video-meeting` 后，看到的是很多 `Environment=...` 而不是 `EnvironmentFile=/opt/video-meeting/.env`，说明你当前部署还在把配置硬编码在 systemd 服务文件或 `override.conf` 里。这种情况下，应该优先迁移到 `.env + EnvironmentFile`，否则后续每次改配置都要改 systemd。
+### 5.1 谁负责哪个文件
 
-在正式重建前，建议先做一轮现状检查：
+建议长期保持下面这套边界，不要混写：
+
+| 你要修改的内容 | 正确文件 | 常见错误 |
+| --- | --- | --- |
+| 改域名或端口对应的对外访问地址 | `/opt/video-meeting/.env` 里的 `PUBLIC_HOST` / `PUBLIC_SCHEME` | 跑去改 `User=` 或只改 Nginx 不改应用配置 |
+| 更换 LiveKit API key / secret | `/opt/video-meeting/.env` | 写进 Nginx 配置或硬编码到 `.service` |
+| 更换网站管理员用户名/密码 | `/opt/video-meeting/.env` | 误以为 Linux 登录用户名也要一起改 |
+| 修改 Gunicorn 监听地址或启动命令 | `/etc/systemd/system/video-meeting.service` 的 `ExecStart=` | 只改 `.env` 但忘了同步 Nginx `proxy_pass` |
+| 修改 Gunicorn 运行身份 | `/etc/systemd/system/video-meeting.service` 的 `User=` / `Group=` | 在 `.env` 里乱加 `USER=deploy` 期待生效 |
+| 修改 HTTPS、证书、反向代理 | Nginx 配置 | 写到 `.env` 后期待 Nginx 自动读取 |
+
+如果你怀疑当前已经写乱了，先把三层都看一遍：
 
 ```bash
-sudo systemctl status video-meeting --no-pager -l
 sudo systemctl cat video-meeting
-sudo journalctl -u video-meeting -n 120 --no-pager
-ps -ef | grep -E "gunicorn|python.*app.py" | grep -v grep
-sudo ss -lntp | grep -E ':80|:443|:5000|:8000'
-sudo nginx -t
-curl -I http://127.0.0.1:8000
-curl -I http://127.0.0.1:5000
+sudo sed -n '1,120p' /opt/video-meeting/.env
+sudo nginx -T | sed -n '1,220p'
 ```
 
-识别重点：
+然后按这个原则收敛：
 
-- 生产环境目标是 `Nginx 80/443 -> Gunicorn 127.0.0.1:8000 -> Flask`
-- 如果你看到 `python app.py`、`Werkzeug` 警告、或应用直接监听公网 `:5000`，先纠正运行方式，再继续改 Nginx 或 `.env`
-- `systemctl cat video-meeting` 应优先看到 `EnvironmentFile=/opt/video-meeting/.env`
+- `.env` 只保留应用配置和密钥
+- `.service` 只保留进程启动和身份配置
+- Nginx 只保留公网入口配置
 
 ## 6. systemd 服务
 
@@ -372,27 +438,100 @@ sudo systemctl status video-meeting
 关键点：
 
 - `EnvironmentFile=/opt/video-meeting/.env` 让 systemd 加载生产环境变量。
+- `User=deploy` / `Group=deploy` 说的是 Linux 进程身份，不是网站管理员账号。
 - `--worker-class eventlet` 用于 Flask-SocketIO 长连接。
 - `--workers 1` 不要随便调大，因为当前房间在线态在单进程内存中。
 - `--bind 127.0.0.1:8000` 必须和 Nginx `proxy_pass` 一致。
+- 如果你把 `User=` 改成了别的 Linux 用户，后面的“如何设置权限”要一起照着改。
 
-如果你当前服务是旧写法，例如：
+### 6.1 如何设置权限
 
-```ini
-Environment=PUBLIC_HOST=...
-Environment=ADMIN_PASSWORD=...
-Environment=LIVEKIT_URL=...
+先记住一条最重要的规则：
+
+- `root` 负责装软件、改 systemd、改 Nginx。
+- Web 应用本身尽量用普通 Linux 用户运行，例如 `deploy`。
+
+为什么示例里写 `deploy`：
+
+- 它只是文档里约定的普通运行用户名字，不是固定要求。
+- 用单独普通用户运行 Gunicorn，更容易控制项目目录、数据库、上传目录和 `.env` 的权限。
+- 就算你平时是 `root` 或 `ubuntu` 登录服务器，也可以让服务本身用 `deploy` 运行。
+
+如果你想继续用别的普通用户，例如 `ubuntu`、`ec2-user`、`meetingapp`，也可以，原则只有两条：
+
+1. `User=` / `Group=` 改成那个真实存在的用户名。
+2. `/opt/video-meeting`、`venv/`、`.env`、`instance/` 都要让这个用户可读写。
+
+不推荐把服务长期写成 `User=root`。它虽然可能跑得起来，但上传文件、SQLite、运行时目录都会变成 root 权限，后面最容易遇到 owner 混乱和权限报错。
+
+最推荐的做法是新建一个运行用户，然后把项目目录交给它：
+
+```bash
+sudo adduser deploy
+sudo chown -R deploy:deploy /opt/video-meeting
+sudo chmod 755 /opt/video-meeting
+sudo chmod 755 /opt/video-meeting/venv
+sudo chmod 700 /opt/video-meeting/instance
+sudo chmod 600 /opt/video-meeting/.env
 ```
 
-或者这些值写在 `/etc/systemd/system/video-meeting.service.d/override.conf`，处理顺序建议是：
+然后在 service 文件里保持：
 
-1. 先把这些值迁移到 `/opt/video-meeting/.env`
-2. 把主服务文件改成 `EnvironmentFile=/opt/video-meeting/.env`
-3. 删除或清空旧 `override.conf`
-4. 执行 `sudo systemctl daemon-reload`
-5. 再执行 `sudo systemctl restart video-meeting`
+```ini
+User=deploy
+Group=deploy
+```
 
-不要一边保留旧 `override.conf`，一边又希望 `.env` 接管全部配置，否则很容易出现“明明改了 `.env`，但实际运行值还是旧的”。
+如果你不想新建用户，准备直接用现有登录用户 `ubuntu`，就把用户名整体替换掉：
+
+```bash
+sudo chown -R ubuntu:ubuntu /opt/video-meeting
+sudo chmod 755 /opt/video-meeting
+sudo chmod 755 /opt/video-meeting/venv
+sudo chmod 700 /opt/video-meeting/instance
+sudo chmod 600 /opt/video-meeting/.env
+```
+
+```ini
+User=ubuntu
+Group=ubuntu
+```
+
+这几条权限分别表示：
+
+- `/opt/video-meeting` 用 `755`：运行用户可写，系统里其他用户可进入目录读取普通代码文件。
+- `venv/` 用 `755`：服务可以执行虚拟环境里的 `gunicorn`。
+- `instance/` 用 `700`：只让运行用户自己读写数据库、上传文件等运行数据。
+- `.env` 用 `600`：只让运行用户自己读写密钥。
+
+设置完以后，至少检查这四项：
+
+```bash
+sudo systemctl cat video-meeting
+ps -o user,group,pid,cmd -C gunicorn
+ls -ld /opt/video-meeting /opt/video-meeting/venv /opt/video-meeting/instance
+ls -l /opt/video-meeting/.env
+```
+
+你应该看到：
+
+- service 里的 `User=` 和 `Group=` 是同一个普通用户
+- `gunicorn` 进程也是这个用户在运行
+- `/opt/video-meeting`、`instance/`、`.env` 的 owner 跟这个用户一致
+
+如果服务起不来，最常见的权限错误只有两种：
+
+- `.env` 还是 `root root` 且权限是 `600`，导致 Gunicorn 读不到环境变量。
+- `instance/` 还是 `root root`，导致 SQLite 或上传目录写不进去。
+
+### 6.2 重新加载并检查服务
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable video-meeting
+sudo systemctl restart video-meeting
+sudo systemctl status video-meeting --no-pager -l
+```
 
 查看日志：
 
@@ -400,6 +539,8 @@ Environment=LIVEKIT_URL=...
 journalctl -u video-meeting -n 100 --no-pager
 journalctl -u video-meeting -f
 ```
+
+如果你在线上看到 `python app.py`、`This is a development server`、或 `Werkzeug appears to be used in a production deployment`，说明当前不是正确的生产运行方式，应回到这里的 `gunicorn + eventlet + systemd` 结构。
 
 修改 `.service` 后执行：
 
@@ -1088,16 +1229,6 @@ sudo systemctl daemon-reload
 sudo systemctl restart video-meeting
 ```
 
-如果你改的是 `/etc/systemd/system/video-meeting.service.d/override.conf`，也必须：
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart video-meeting
-sudo systemctl cat video-meeting
-```
-
-如果 `systemctl cat` 里还能看到旧的 `Environment=...`，说明旧 override 还在覆盖新配置。
-
 ### SSH 登录问题
 
 | 现象 | 处理 |
@@ -1369,6 +1500,34 @@ Private repositories need SSH key or token setup.
 
 ## 5. Configure Environment Variables
 
+First separate the three different "users" that often get mixed together:
+
+| Name | Typical value | What it does | Where it belongs |
+| --- | --- | --- | --- |
+| Linux login user | `root`, `ubuntu`, `deploy` | The system account used for SSH login | Cloud console, `/etc/passwd`, SSH config |
+| systemd runtime user | `deploy` | The Linux user that runs Gunicorn | `User=` / `Group=` in `/etc/systemd/system/video-meeting.service` |
+| App admin username | `meetingadmin` | The website administrator account for `/admin` | `ADMIN_USERNAME` in `/opt/video-meeting/.env` |
+
+These are different identities:
+
+- `ssh root@server` uses the Linux system account, not the website admin account.
+- `ADMIN_USERNAME=root` in `.env` only defines the web admin login name; it does not make Gunicorn run as root.
+- `User=deploy` in `.service` only controls process permissions; it does not rename the web admin.
+
+Keep the layers split like this:
+
+| Config file | Recommended path | Owns this | Do not put this there |
+| --- | --- | --- | --- |
+| App environment file | `/opt/video-meeting/.env` | `SECRET_KEY`, `PUBLIC_HOST`, `LIVEKIT_*`, `ADMIN_*`, Turnstile, cookies, security flags | Do not put `User=` or `ExecStart=` here |
+| systemd service file | `/etc/systemd/system/video-meeting.service` | `User=`, `Group=`, `WorkingDirectory=`, `EnvironmentFile=`, `ExecStart=`, restart policy | Do not keep business config as many `Environment=...` lines |
+| Nginx site config | `/etc/nginx/sites-available/video-meeting` | domain, reverse proxy, upload limits, HTTPS, WebSocket headers | Do not put `LIVEKIT_API_SECRET` or `ADMIN_PASSWORD` |
+
+Quick rule:
+
+- Change `.env` for app behavior and secrets
+- Change `.service` for process identity and startup
+- Change Nginx for public entry and HTTPS
+
 Write `/opt/video-meeting/.env` with EOF:
 
 ```bash
@@ -1397,6 +1556,37 @@ REMEMBER_COOKIE_SAMESITE=Lax
 EOF
 
 chmod 600 /opt/video-meeting/.env
+```
+
+If you are logged in as `root`, or the directory is not yet owned by `deploy`, the safer version is:
+
+```bash
+sudo tee /opt/video-meeting/.env > /dev/null <<'EOF'
+SECRET_KEY=replace-with-a-long-random-secret
+DATABASE_URL=sqlite:////opt/video-meeting/instance/app.db
+
+PUBLIC_SCHEME=https
+PUBLIC_HOST=meeting.example.com
+
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=replace-with-livekit-api-key
+LIVEKIT_API_SECRET=replace-with-livekit-api-secret
+
+ADMIN_USERNAME=meetingadmin
+ADMIN_PASSWORD=replace-with-strong-admin-password
+PUBLIC_REGISTRATION_ENABLED=0
+STRICT_SECURITY_CHECKS=1
+TURNSTILE_SITE_KEY=replace-with-turnstile-site-key
+TURNSTILE_SECRET_KEY=replace-with-turnstile-secret-key
+
+SESSION_COOKIE_SECURE=1
+REMEMBER_COOKIE_SECURE=1
+SESSION_COOKIE_SAMESITE=Lax
+REMEMBER_COOKIE_SAMESITE=Lax
+EOF
+
+sudo chown deploy:deploy /opt/video-meeting/.env
+sudo chmod 600 /opt/video-meeting/.env
 ```
 
 Generate a `SECRET_KEY`:
@@ -1428,12 +1618,41 @@ Configuration:
 Notes:
 
 - Do not commit `.env`.
+- Keep `.env` at permission `600`, ideally owned by the runtime Linux user such as `deploy`.
 - For public deployments, set `PUBLIC_REGISTRATION_ENABLED=0` so anyone cannot create accounts directly.
 - For public deployments, set `STRICT_SECURITY_CHECKS=1` so weak `SECRET_KEY`, weak admin passwords, and the default `root` admin name are rejected at startup.
+- Do not reuse the Linux login name just because you SSH as `root`; that is unrelated to `ADMIN_USERNAME`.
 - If your users are mainly in mainland China, test `challenges.cloudflare.com` from a real mainland network before enforcing Turnstile.
-- Restart `video-meeting` after changing `.env`.
+- Restart the service after changing `.env`; the `systemd` section below will do that.
 - If LiveKit values are missing, room pages intentionally return `503`.
 - Runtime data lives under `instance/`; include it in backups.
+
+### 5.1 Which file owns which setting
+
+Keep these boundaries stable:
+
+| What you want to change | Correct file | Common mistake |
+| --- | --- | --- |
+| Change the public domain or public scheme | `PUBLIC_HOST` / `PUBLIC_SCHEME` in `/opt/video-meeting/.env` | Editing `User=` or changing only Nginx but not app config |
+| Rotate LiveKit API key / secret | `/opt/video-meeting/.env` | Putting them in Nginx or hardcoding them in `.service` |
+| Change the web admin username/password | `/opt/video-meeting/.env` | Assuming the Linux username must change too |
+| Change Gunicorn bind address or startup command | `ExecStart=` in `.service` | Editing only `.env` and forgetting Nginx `proxy_pass` |
+| Change which Linux user runs Gunicorn | `User=` / `Group=` in `.service` | Adding `USER=deploy` to `.env` and expecting it to work |
+| Change HTTPS and reverse proxy behavior | Nginx config | Editing `.env` and expecting Nginx to read it |
+
+If the server is already messy, inspect all three layers first:
+
+```bash
+sudo systemctl cat video-meeting
+sudo sed -n '1,120p' /opt/video-meeting/.env
+sudo nginx -T | sed -n '1,220p'
+```
+
+Then normalize them with this rule:
+
+- `.env` holds app config and secrets
+- `.service` holds process startup and identity
+- Nginx holds public edge config
 
 ## 6. systemd Service
 
@@ -1472,10 +1691,100 @@ sudo systemctl status video-meeting
 Key points:
 
 - `EnvironmentFile=/opt/video-meeting/.env` loads production variables.
+- `User=deploy` / `Group=deploy` refer to the Linux process identity, not the website admin account.
 - `--worker-class eventlet` supports Flask-SocketIO long connections.
 - Keep `--workers 1`; current online room state is in process memory.
 - `--bind 127.0.0.1:8000` must match Nginx `proxy_pass`.
-- Do not replace this with `python app.py` on a public server. If `systemctl status video-meeting` shows Werkzeug development-server warnings, the service definition is wrong for production.
+- If you change `User=`, follow the "How to set permissions" section below at the same time.
+
+### 6.1 How to set permissions
+
+Keep one simple rule in mind:
+
+- `root` handles package install, systemd, and Nginx.
+- The web app itself should run as a normal Linux user such as `deploy`.
+
+Why the example uses `deploy`:
+
+- It is only the example name for the runtime Linux user, not a systemd requirement.
+- Running Gunicorn as a dedicated normal user makes it easier to control permissions for the project directory, database, uploads, and `.env`.
+- Even if you usually log in as `root` or `ubuntu`, the service itself can still run as `deploy`.
+
+If you prefer another normal user such as `ubuntu`, `ec2-user`, or `meetingapp`, that is also fine. Only follow these two rules:
+
+1. Change `User=` / `Group=` to that real username.
+2. Make `/opt/video-meeting`, `venv/`, `.env`, and `instance/` readable and writable by that user.
+
+Do not keep the service running as `root` unless you have a very specific reason. It may start, but uploads, SQLite files, and runtime directories will become root-owned, which is the most common cause of later permission problems.
+
+The recommended setup is to create one runtime user and give the project directory to it:
+
+```bash
+sudo adduser deploy
+sudo chown -R deploy:deploy /opt/video-meeting
+sudo chmod 755 /opt/video-meeting
+sudo chmod 755 /opt/video-meeting/venv
+sudo chmod 700 /opt/video-meeting/instance
+sudo chmod 600 /opt/video-meeting/.env
+```
+
+Then keep these lines in the service file:
+
+```ini
+User=deploy
+Group=deploy
+```
+
+If you do not want a separate user and want to use your existing login user `ubuntu`, replace the username consistently:
+
+```bash
+sudo chown -R ubuntu:ubuntu /opt/video-meeting
+sudo chmod 755 /opt/video-meeting
+sudo chmod 755 /opt/video-meeting/venv
+sudo chmod 700 /opt/video-meeting/instance
+sudo chmod 600 /opt/video-meeting/.env
+```
+
+```ini
+User=ubuntu
+Group=ubuntu
+```
+
+What these permissions mean:
+
+- `/opt/video-meeting` with `755`: the runtime user can write, while other system users can enter the directory and read normal code files.
+- `venv/` with `755`: the service can execute `gunicorn` inside the virtualenv.
+- `instance/` with `700`: only the runtime user can read and write the database, uploads, and other runtime data.
+- `.env` with `600`: only the runtime user can read and write secrets.
+
+After setting permissions, check at least these four things:
+
+```bash
+sudo systemctl cat video-meeting
+ps -o user,group,pid,cmd -C gunicorn
+ls -ld /opt/video-meeting /opt/video-meeting/venv /opt/video-meeting/instance
+ls -l /opt/video-meeting/.env
+```
+
+You should see:
+
+- the same normal user in `User=` and `Group=`
+- the `gunicorn` process running as that user
+- `/opt/video-meeting`, `instance/`, and `.env` owned by that user
+
+The two most common permission mistakes are:
+
+- `.env` is still `root root` with mode `600`, so Gunicorn cannot read environment variables.
+- `instance/` is still `root root`, so SQLite or uploads cannot write files.
+
+### 6.2 Reload and verify the service
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable video-meeting
+sudo systemctl restart video-meeting
+sudo systemctl status video-meeting --no-pager -l
+```
 
 Logs:
 
@@ -1483,6 +1792,8 @@ Logs:
 journalctl -u video-meeting -n 100 --no-pager
 journalctl -u video-meeting -f
 ```
+
+If `systemctl status video-meeting` shows `python app.py`, `This is a development server`, or `Werkzeug appears to be used in a production deployment`, the server is not using the correct production shape yet. Return to the `gunicorn + eventlet + systemd` setup above.
 
 After editing `.service`:
 
