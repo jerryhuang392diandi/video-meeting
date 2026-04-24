@@ -107,7 +107,17 @@ EMAIL_FROM_NAME = (os.environ.get("EMAIL_FROM_NAME") or "Video Meeting").strip()
 EMAIL_VERIFY_TOKEN_TTL_HOURS = max(1, int(os.environ.get("EMAIL_VERIFY_TOKEN_TTL_HOURS", "24") or "24"))
 EMAIL_VERIFY_RESEND_LIMIT_PER_IP = max(1, int(os.environ.get("EMAIL_VERIFY_RESEND_LIMIT_PER_IP", "5") or "5"))
 EMAIL_VERIFY_RESEND_WINDOW_SECONDS = max(60, int(os.environ.get("EMAIL_VERIFY_RESEND_WINDOW_SECONDS", "3600") or "3600"))
-PASSWORD_RESET_TOKEN_TTL_HOURS = max(1, int(os.environ.get("PASSWORD_RESET_TOKEN_TTL_HOURS", "1") or "1"))
+PASSWORD_RESET_TOKEN_TTL_MINUTES = max(
+    1,
+    int(
+        os.environ.get("PASSWORD_RESET_TOKEN_TTL_MINUTES")
+        or (
+            int(os.environ.get("PASSWORD_RESET_TOKEN_TTL_HOURS", "0") or "0") * 60
+            if (os.environ.get("PASSWORD_RESET_TOKEN_TTL_HOURS") or "").strip()
+            else 10
+        )
+    ),
+)
 REQUEST_THROTTLE = {}
 REQUEST_THROTTLE_LOCK = threading.Lock()
 WEAK_SECRET_VALUES = {
@@ -719,12 +729,19 @@ def create_password_reset_token(user: User) -> str:
         user_id=user.id,
         email=user.email,
         token_hash=email_token_hash(raw_token),
-        expires_at=datetime.utcnow() + timedelta(hours=PASSWORD_RESET_TOKEN_TTL_HOURS),
+        expires_at=datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_TOKEN_TTL_MINUTES),
     )
     PasswordResetToken.query.filter_by(user_id=user.id, used_at=None).delete()
     db.session.add(token)
     db.session.commit()
     return raw_token
+
+
+def purge_user_auth_artifacts(user_id: int, username: str | None = None) -> None:
+    EmailVerificationToken.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    PasswordResetToken.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    if username:
+        PasswordResetRequest.query.filter_by(username=username).delete(synchronize_session=False)
 
 
 def send_verification_email(user: User) -> None:
@@ -762,12 +779,12 @@ def send_password_reset_email(user: User) -> None:
     text_body = (
         f"{t('password_reset_mail_intro')}\n\n"
         f"{reset_link}\n\n"
-        f"{t('password_reset_mail_expiry').format(hours=PASSWORD_RESET_TOKEN_TTL_HOURS)}"
+        f"{t('password_reset_mail_expiry').format(minutes=PASSWORD_RESET_TOKEN_TTL_MINUTES)}"
     )
     html_body = (
         f"<p>{t('password_reset_mail_intro')}</p>"
         f"<p><a href=\"{reset_link}\">{reset_link}</a></p>"
-        f"<p>{t('password_reset_mail_expiry').format(hours=PASSWORD_RESET_TOKEN_TTL_HOURS)}</p>"
+        f"<p>{t('password_reset_mail_expiry').format(minutes=PASSWORD_RESET_TOKEN_TTL_MINUTES)}</p>"
     )
     send_email_message(
         to_address=user.email,
@@ -2044,7 +2061,7 @@ def admin_delete_user(user_id):
         db.session.delete(meeting)
 
     MeetingParticipant.query.filter_by(user_id=user.id).delete(synchronize_session=False)
-    PasswordResetRequest.query.filter_by(username=username).delete(synchronize_session=False)
+    purge_user_auth_artifacts(user.id, username)
     db.session.delete(user)
     db.session.commit()
     return redirect(url_for("admin_dashboard"))

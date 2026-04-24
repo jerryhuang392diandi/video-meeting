@@ -783,6 +783,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 | `EMAIL_SMTP_USE_TLS` / `EMAIL_SMTP_USE_SSL` | SMTP 加密方式；常见是 `587 + TLS` 或 `465 + SSL` 二选一 | 启用邮箱验证时推荐 |
 | `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME` | 验证邮件发件地址和显示名称 | 启用邮箱验证时必填 |
 | `EMAIL_VERIFY_TOKEN_TTL_HOURS` | 邮箱验证链接有效期，默认 `24` 小时 | 可选 |
+| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | 密码重置链接有效期，默认 `10` 分钟 | 可选 |
 | `STRICT_SECURITY_CHECKS` | 启动时拒绝弱 `SECRET_KEY` / `ADMIN_*` 配置 | 公网推荐 |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 登录/注册/找回密码的人机验证 | 可选 |
 | `TURN_PUBLIC_HOST` | 自动生成 TURN/STUN 地址时使用的公网主机名 | 可选 |
@@ -836,6 +837,7 @@ EMAIL_SMTP_USE_SSL=1
 EMAIL_FROM_ADDRESS=noreply@meeting.example.com
 EMAIL_FROM_NAME=Video Meeting
 EMAIL_VERIFY_TOKEN_TTL_HOURS=24
+PASSWORD_RESET_TOKEN_TTL_MINUTES=10
 ```
 
 如果你用 Brevo、企业邮箱或其他 SMTP 服务，只需要把主机、端口、用户名、密码和加密方式换成对方给你的值。常见组合是：
@@ -2534,6 +2536,7 @@ Configuration:
 | `EMAIL_SMTP_USE_TLS` / `EMAIL_SMTP_USE_SSL` | SMTP transport mode; common choices are `587 + TLS` or `465 + SSL` | Recommended when email verification is enabled |
 | `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME` | Sender address and display name for verification emails | Required when email verification is enabled |
 | `EMAIL_VERIFY_TOKEN_TTL_HOURS` | Verification-link lifetime, default `24` hours | Optional |
+| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | Password-reset link lifetime, default `10` minutes | Optional |
 | `STRICT_SECURITY_CHECKS` | Refuse weak `SECRET_KEY` / `ADMIN_*` settings at startup | Recommended online |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Human verification for login/register/password reset | Optional |
 | `TURN_PUBLIC_HOST` | Public host used when generating TURN/STUN addresses | Optional |
@@ -2584,6 +2587,7 @@ EMAIL_SMTP_USE_SSL=1
 EMAIL_FROM_ADDRESS=noreply@meeting.example.com
 EMAIL_FROM_NAME=Video Meeting
 EMAIL_VERIFY_TOKEN_TTL_HOURS=24
+PASSWORD_RESET_TOKEN_TTL_MINUTES=10
 ```
 
 If you use Brevo, a company mailbox, or another SMTP provider, replace the host, port, username, password, and transport mode with that provider's values. The two common combinations are:
