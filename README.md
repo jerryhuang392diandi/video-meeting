@@ -342,7 +342,7 @@ http://127.0.0.1:5000
 浏览器
   -> 域名 / Cloudflare DNS
   -> Nginx 反向代理和 HTTPS
-  -> Gunicorn + eventlet 运行 Flask-SocketIO
+  -> Gunicorn threaded worker 运行 Flask-SocketIO
   -> Flask 应用
   -> LiveKit Cloud 或自建 LiveKit 负责媒体传输
 ```
@@ -811,7 +811,7 @@ For production or course demonstrations, use this deployment shape:
 Browser
   -> Domain / Cloudflare DNS
   -> Nginx reverse proxy and HTTPS
-  -> Gunicorn + eventlet running Flask-SocketIO
+  -> Gunicorn threaded worker running Flask-SocketIO
   -> Flask application
   -> LiveKit Cloud or self-hosted LiveKit for media transport
 ```

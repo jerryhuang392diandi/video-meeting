@@ -4,7 +4,7 @@
 
 [中文](#deployment-guide-zh) | [English](#deployment-guide-en)
 
-这份文档按第一次上线的真实顺序写：先准备账号和服务器，再登录服务器，接着部署 Flask 应用、systemd、Nginx、HTTPS，最后配置 LiveKit。示例默认使用 Ubuntu 22.04 / 24.04、Nginx、systemd、Gunicorn + eventlet、SQLite 和 LiveKit Cloud 或自建 LiveKit。
+这份文档按第一次上线的真实顺序写：先准备账号和服务器，再登录服务器，接着部署 Flask 应用、systemd、Nginx、HTTPS，最后配置 LiveKit。示例默认使用 Ubuntu 22.04 / 24.04、Nginx、systemd、Gunicorn threaded worker、SQLite 和 LiveKit Cloud 或自建 LiveKit。
 
 ## 先给零基础读者的结论
 
@@ -69,7 +69,7 @@ Nginx 代理的是本项目网站；LiveKit 承担摄像头、麦克风、屏幕
   -> https://meeting.example.com
   -> DNS 或 Cloudflare
   -> Nginx 443/80
-  -> 127.0.0.1:8000 上的 Gunicorn + eventlet
+  -> 127.0.0.1:8000 上的 Gunicorn threaded worker
   -> Flask + Flask-SocketIO 应用
 
 用户浏览器
@@ -187,6 +187,361 @@ su - deploy
 
 如果提示输入新用户密码，按提示设置即可。密码输入时不显示字符是正常现象。
 
+### 2.5 SSH 安全加固：先验证新登录，再收紧 SSH
+
+第一次拿到新服务器时，很多云厂商默认给你的是 `root + 密码`，这适合“先登录进去”，但不适合长期公网运行。更稳妥的顺序是：
+
+1. 先保留当前会话，不要急着关。
+2. 新建一个普通用户，例如 `deploy`。
+3. 给这个用户配置 SSH 公钥登录。
+4. 先确认新用户能登录成功。
+5. 再禁用 root 远程登录和密码登录。
+
+推荐优先使用 `ed25519` 密钥。只有在旧系统、旧客户端或学校/单位现有规范明确要求 RSA 时，才改成 RSA 4096。不要把“SSH key 登录”和“必须用 RSA”混为一谈。
+
+在你自己的电脑上生成密钥：
+
+```bash
+ssh-keygen -t ed25519 -C "deploy@meeting"
+```
+
+如果你确实需要 RSA：
+
+```bash
+ssh-keygen -t rsa -b 4096 -C "deploy@meeting"
+```
+
+生成后你通常会得到：
+
+- 私钥：`~/.ssh/id_ed25519` 或 `~/.ssh/id_rsa`
+- 公钥：`~/.ssh/id_ed25519.pub` 或 `~/.ssh/id_rsa.pub`
+
+把公钥内容复制出来：
+
+```bash
+cat ~/.ssh/id_ed25519.pub
+```
+
+如果你生成的是 RSA，就看：
+
+```bash
+cat ~/.ssh/id_rsa.pub
+```
+
+如果你的本机已经有可用密钥，Ubuntu 官方也推荐优先直接复制公钥，而不是手动改很多 SSH 配置。最省事的方式是：
+
+```bash
+ssh-copy-id deploy@your_server_ip
+```
+
+如果你的环境没有 `ssh-copy-id`，再手动准备 `authorized_keys`：
+
+```bash
+sudo mkdir -p /home/deploy/.ssh
+sudo chmod 700 /home/deploy/.ssh
+sudo tee /home/deploy/.ssh/authorized_keys > /dev/null <<'EOF'
+把你本机的公钥整行粘贴到这里
+EOF
+sudo chown -R deploy:deploy /home/deploy/.ssh
+sudo chmod 600 /home/deploy/.ssh/authorized_keys
+```
+
+然后在你本机重新开一个终端，单独测试新用户登录。不要先关掉旧会话：
+
+```bash
+ssh deploy@your_server_ip
+```
+
+如果你改过 SSH 端口，例如改成 `2222`，测试命令是：
+
+```bash
+ssh -p 2222 deploy@your_server_ip
+```
+
+确认新用户可以稳定登录后，再改 SSH 服务配置。为了降低把主配置改坏的概率，推荐在 Ubuntu 上单独写一个 drop-in 文件，而不是上来就改完整的 `/etc/ssh/sshd_config`：
+
+```bash
+sudo install -d -m 755 /etc/ssh/sshd_config.d
+cat <<'EOF' | sudo tee /etc/ssh/sshd_config.d/60-video-meeting.conf
+PubkeyAuthentication yes
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+EOF
+```
+
+如果你暂时还没有完全切到 key 登录，就先不要写 `PasswordAuthentication no`；先只保留：
+
+```text
+PubkeyAuthentication yes
+PermitRootLogin no
+```
+
+说明如下：
+
+| 配置项 | 建议值 | 作用 |
+| --- | --- | --- |
+| `PermitRootLogin` | `no` | 禁止 root 直接远程登录 |
+| `PubkeyAuthentication` | `yes` | 允许 SSH 公钥登录 |
+| `PasswordAuthentication` | `no` | 禁止密码登录，减少撞库和爆破风险 |
+| `KbdInteractiveAuthentication` | `no` | 关闭交互式认证，减少额外入口 |
+
+第一次部署不建议一开始就改 SSH 端口。把登录方式、权限、`ufw`、Nginx、HTTPS 全跑通以后，如果你还想改端口，再单独处理。
+
+如果你准备修改 SSH 端口，顺序一定要对：
+
+1. 先在云安全组放行新端口。
+2. 再在服务器 `ufw` 放行新端口。
+3. 用新端口测试登录成功。
+4. 最后再关闭旧的 `22/tcp`。
+
+检查 SSH 配置是否有语法问题。Ubuntu 官方文档也建议先做这一步：
+
+```bash
+sudo sshd -t
+```
+
+如果没有报错，再重载服务：
+
+```bash
+sudo systemctl reload ssh
+```
+
+有些系统服务名也可能是 `sshd`，可以先查：
+
+```bash
+systemctl status ssh
+systemctl status sshd
+```
+
+特别提醒：
+
+- 在新用户 SSH key 登录没测通之前，不要先把 `PasswordAuthentication` 改成 `no`。
+- 在新端口没测通之前，不要先删掉旧端口规则。
+- 不要一边改 SSH 一边只保留一个终端窗口。至少留一个已经登录成功的会话备用。
+- 如果改完 SSH 后真的进不去了，不要继续硬试密码把自己触发 `fail2ban`；直接用云厂商控制台自带的 VNC/远程终端登录，把 `/etc/ssh/sshd_config.d/60-video-meeting.conf` 改回去，再执行 `sudo sshd -t` 和 `sudo systemctl reload ssh`。
+
+### 2.6 防火墙、自动封禁与恶意 IP 处理
+
+公网部署至少要做两层入口控制：
+
+1. 云厂商安全组
+2. 服务器本机防火墙，例如 `ufw`
+
+如果你仍然使用默认 SSH 端口 `22`：
+
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow "Nginx Full"
+sudo ufw enable
+sudo ufw status
+```
+
+如果你把 SSH 端口改成了 `2222`，就不要再只写 `OpenSSH`，而要明确放行新端口：
+
+```bash
+sudo ufw allow 2222/tcp
+sudo ufw allow "Nginx Full"
+sudo ufw enable
+sudo ufw status
+```
+
+确认新端口登录成功之后，如果你确实不再使用 `22`，再删除旧规则：
+
+```bash
+sudo ufw delete allow OpenSSH
+```
+
+或者：
+
+```bash
+sudo ufw delete allow 22/tcp
+```
+
+`ufw` 只是一层基础保护。要自动封禁 SSH 爆破 IP，最常见的是 `fail2ban`。比起“最小示例”，更建议直接上一个稍微完整但仍然容易维护的配置：
+
+```bash
+sudo apt update
+sudo apt install -y fail2ban
+```
+
+新建建议配置：
+
+```bash
+sudo tee /etc/fail2ban/jail.local > /dev/null <<'EOF'
+[DEFAULT]
+bantime = 1h
+findtime = 10m
+maxretry = 5
+ignoreip = 127.0.0.1/8 ::1 113.200.174.0/24
+
+[sshd]
+enabled = true
+port = 22
+backend = systemd
+logpath = %(sshd_log)s
+bantime = 1h
+findtime = 10m
+maxretry = 5
+
+[recidive]
+enabled = true
+logpath = /var/log/fail2ban.log
+banaction = %(banaction_allports)s
+bantime = 1w
+findtime = 1d
+maxretry = 5
+EOF
+```
+
+这份配置的含义：
+
+| 配置项 | 建议值 | 作用 |
+| --- | --- | --- |
+| `ignoreip` | `127.0.0.1/8 ::1 你的固定公网IP/32` | 白名单，不会被 fail2ban 封 |
+| `sshd` | 开启 | 处理短时间内的 SSH 登录失败 |
+| `bantime = 1h` | 1 小时 | 普通爆破先封 1 小时 |
+| `findtime = 10m` | 10 分钟 | 在 10 分钟窗口内统计失败次数 |
+| `maxretry = 5` | 5 次 | 5 次失败后封禁 |
+| `recidive` | 开启 | 针对反复触发封禁的来源做更长时间封禁 |
+| `banaction_allports` | 使用 | 对复犯 IP 封所有端口，不只是 SSH |
+
+如果你改了 SSH 端口，例如 `2222`，记得把 `[sshd]` 里的端口同步改成：
+
+```text
+port = 2222
+```
+
+如果你的出口 IP 是固定的，`ignoreip` 推荐写成：
+
+```text
+ignoreip = 127.0.0.1/8 ::1 198.51.100.24/32
+```
+
+如果你是公司、实验室或宿舍固定网段，也可以写 CIDR：
+
+```text
+ignoreip = 127.0.0.1/8 ::1 198.51.100.0/24
+```
+
+但不要随手把过大的网段加进去，例如整个运营商网段或 `0.0.0.0/0`，那等于把防爆破功能废掉。
+
+### 2.6.1 如何避免把自己封掉
+
+最稳妥的顺序是：
+
+1. 先确认你已经能用 SSH key 稳定登录。
+2. 先把你自己的固定公网 IP 加进 `ignoreip`。
+3. 再启动 `fail2ban`。
+4. 启动后立刻检查 `status`，确认 `sshd` jail 正常加载。
+
+如果你本机公网 IP 是固定的，可以在你自己的电脑上先查出来再写进配置。常见命令：
+
+```bash
+curl https://ifconfig.me
+```
+
+或：
+
+```bash
+curl https://api.ipify.org
+```
+
+注意这必须是你真实的出口公网 IP，不是你电脑上的 `192.168.x.x`、`10.x.x.x` 或 `172.16-31.x.x` 局域网地址。
+
+如果你经常切换网络，例如：
+
+- 手机热点
+- 宿舍 Wi-Fi
+- 校园网
+- 公司 VPN
+- 家里宽带和手机流量来回切
+
+那就不要依赖“固定把自己 IP 写进 `ignoreip`”这一招，因为你的出口 IP 可能经常变。此时更合适的做法是：
+
+- 优先使用 SSH key 登录，不要反复试密码；
+- 保留一个已登录的 SSH 会话再改配置；
+- 先用较宽松的值，例如 `maxretry = 8`、`bantime = 30m`，确认无误后再收紧；
+- 确保你知道如何使用云厂商控制台的网页终端/VNC 解封自己。
+
+如果你刚把自己封了，可以直接在服务器控制台执行：
+
+```bash
+sudo fail2ban-client status sshd
+sudo fail2ban-client set sshd unbanip 198.51.100.24
+```
+
+如果是 `recidive` 把你封了，再执行：
+
+```bash
+sudo fail2ban-client status recidive
+sudo fail2ban-client set recidive unbanip 198.51.100.24
+```
+
+还可以直接查看当前被封的 IP：
+
+```bash
+sudo fail2ban-client status sshd
+sudo fail2ban-client status recidive
+```
+
+启动并查看状态：
+
+```bash
+sudo systemctl enable fail2ban
+sudo systemctl restart fail2ban
+sudo systemctl status fail2ban
+sudo fail2ban-client status
+sudo fail2ban-client status sshd
+sudo fail2ban-client status recidive
+```
+
+它的作用是：
+
+- `sshd` 处理短时间爆破；
+- `recidive` 处理“被封后又持续重来”的来源；
+- `ignoreip` 保证你自己的固定管理 IP 不会被误封。
+
+关于“封禁脏 IP”这件事，建议按下面的优先级处理：
+
+1. 先把 `root` 登录禁掉，改成普通用户 + SSH key。
+2. 开 `ufw`。
+3. 开 `fail2ban` 自动封禁 SSH 爆破，并给自己的固定管理 IP 配 `ignoreip`。
+4. 如果你使用 Cloudflare，再开启 WAF、Bot Fight Mode 或托管规则。
+5. 只有当你已经观察到明确的恶意来源 IP 段时，再手动加封禁规则。
+
+不建议小白一上来就导入来源不明的大型“黑名单 IP 库”，原因是：
+
+- 很容易误伤正常用户或学校/公司共享出口 IP。
+- 规则太多会增加维护负担。
+- 很多网上流传的列表并不新，也不一定可信。
+
+如果你确实想手动封禁某个已经确认异常的 IP，可以用：
+
+```bash
+sudo ufw deny from 203.0.113.10
+```
+
+查看当前规则：
+
+```bash
+sudo ufw status numbered
+```
+
+删除规则时先看编号，再删除对应项：
+
+```bash
+sudo ufw delete 3
+```
+
+零基础部署时，优先级最高的不是“收集很多坏 IP”，而是先把这四件事做好：
+
+- 用普通用户登录
+- 只允许 SSH key 登录
+- 禁止 root 远程登录
+- 用 `fail2ban` 自动挡住爆破
+- 知道如何用 `unbanip` 把自己解封
+
 ## 3. 安装系统依赖
 
 ```bash
@@ -237,7 +592,7 @@ python3 -m venv venv
 source venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-pip install gunicorn eventlet
+pip install gunicorn
 ```
 
 私有仓库需要先配置 SSH key 或 token。
@@ -417,7 +772,7 @@ Group=deploy
 WorkingDirectory=/opt/video-meeting
 EnvironmentFile=/opt/video-meeting/.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/video-meeting/venv/bin/gunicorn --worker-class eventlet --workers 1 --bind 127.0.0.1:8000 app:app
+ExecStart=/opt/video-meeting/venv/bin/gunicorn --worker-class gthread --workers 1 --threads 100 --bind 127.0.0.1:8000 app:app
 Restart=always
 RestartSec=5
 
@@ -439,8 +794,9 @@ sudo systemctl status video-meeting
 
 - `EnvironmentFile=/opt/video-meeting/.env` 让 systemd 加载生产环境变量。
 - `User=deploy` / `Group=deploy` 说的是 Linux 进程身份，不是网站管理员账号。
-- `--worker-class eventlet` 用于 Flask-SocketIO 长连接。
+- 当前代码固定 `SocketIO(async_mode="threading")`，配合 `simple-websocket` 和 Gunicorn threaded worker 更一致，不要再照着旧文档装 `eventlet`。
 - `--workers 1` 不要随便调大，因为当前房间在线态在单进程内存中。
+- `--threads 100` 是 Flask-SocketIO 官方文档里 threaded worker 的常见写法；演示环境通常够用。
 - `--bind 127.0.0.1:8000` 必须和 Nginx `proxy_pass` 一致。
 - 如果你把 `User=` 改成了别的 Linux 用户，后面的“如何设置权限”要一起照着改。
 
@@ -540,7 +896,7 @@ journalctl -u video-meeting -n 100 --no-pager
 journalctl -u video-meeting -f
 ```
 
-如果你在线上看到 `python app.py`、`This is a development server`、或 `Werkzeug appears to be used in a production deployment`，说明当前不是正确的生产运行方式，应回到这里的 `gunicorn + eventlet + systemd` 结构。
+如果你在线上看到 `python app.py`、`This is a development server`、或 `Werkzeug appears to be used in a production deployment`，说明当前不是正确的生产运行方式，应回到这里的 `gunicorn + threads + systemd` 结构。
 
 修改 `.service` 后执行：
 
@@ -1079,7 +1435,7 @@ git status
 git pull origin main
 source /opt/video-meeting/venv/bin/activate
 pip install -r requirements.txt
-pip install gunicorn eventlet
+pip install gunicorn
 sudo systemctl restart video-meeting
 sudo systemctl status video-meeting
 ```
@@ -1235,12 +1591,14 @@ sudo systemctl restart video-meeting
 | --- | --- |
 | 输入密码没有显示 | 正常，Linux/SSH 密码输入默认不回显 |
 | `Permission denied` | 用户名、密码、密钥不对；回云控制台检查或重置 |
+| `Permission denied (publickey)` | 说明服务器已要求公钥登录，但目标用户的 `~/.ssh/authorized_keys`、目录权限或本机私钥不对；优先回滚 SSH 配置，不要盲目继续试 |
 | `Connection timed out` | 公网 IP、22 端口、安全组、本机网络防火墙有问题 |
+| `Connection refused` | SSH 服务没起来、端口改错，或 `ufw` / 安全组没放行当前端口 |
 | `REMOTE HOST IDENTIFICATION HAS CHANGED` | 服务器重装或 IP 复用后常见，确认安全后清理本机 `known_hosts` 对应记录 |
 
 ## 17. 参考依据
 
-本文部署命令结合项目当前代码和以下官方/可信文档整理：
+本文部署命令结合项目当前代码和以下官方/可信文档整理。优先依据官方文档；如果你想找一份更适合跟着敲的实操教程，最推荐 DigitalOcean 那两篇：
 
 | 主题 | 文档 |
 | --- | --- |
@@ -1256,6 +1614,10 @@ sudo systemctl restart video-meeting
 | LiveKit VM 部署 | [LiveKit VM deployment](https://docs.livekit.io/home/self-hosting/vm/) |
 | LiveKit Docker | [LiveKit Docker image](https://github.com/livekit/livekit) |
 | LiveKit Cloud | [LiveKit Cloud](https://cloud.livekit.io/) |
+| Ubuntu UFW | [Ubuntu Uncomplicated Firewall](https://documentation.ubuntu.com/server/how-to/security/firewalls/) |
+| Fail2ban | [Fail2ban Documentation](https://fail2ban.readthedocs.io/en/latest/) |
+| DigitalOcean 服务器初始化 | [Initial Server Setup on Ubuntu](https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu) |
+| DigitalOcean Flask + Gunicorn + Nginx | [How To Serve Flask Applications with Gunicorn and Nginx on Ubuntu](https://www.digitalocean.com/community/tutorials/how-to-serve-flask-applications-with-gunicorn-and-nginx-on-ubuntu-22-04) |
 | Cloudflare DNS | [Create DNS records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/) |
 | Cloudflare SSL | [Full (strict) SSL mode](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) |
 | Windows OpenSSH | [Microsoft OpenSSH client](https://learn.microsoft.com/windows-server/administration/openssh/openssh_install_firstuse) |
@@ -1285,7 +1647,7 @@ sudo systemctl restart video-meeting
 
 [中文](#deployment-guide-zh) | [English](#deployment-guide-en)
 
-This guide follows the real first-deployment order: prepare accounts and a server, connect to the server, deploy the Flask app, systemd, Nginx, HTTPS, and then configure LiveKit. Examples assume Ubuntu 22.04 / 24.04, Nginx, systemd, Gunicorn + eventlet, SQLite, and either LiveKit Cloud or self-hosted LiveKit.
+This guide follows the real first-deployment order: prepare accounts and a server, connect to the server, deploy the Flask app, systemd, Nginx, HTTPS, and then configure LiveKit. Examples assume Ubuntu 22.04 / 24.04, Nginx, systemd, Gunicorn threaded workers, SQLite, and either LiveKit Cloud or self-hosted LiveKit.
 
 ## Beginner Path
 
@@ -1337,7 +1699,7 @@ User browser
   -> https://meeting.example.com
   -> DNS or Cloudflare
   -> Nginx on 443/80
-  -> Gunicorn + eventlet on 127.0.0.1:8000
+  -> Gunicorn threaded worker on 127.0.0.1:8000
   -> Flask + Flask-SocketIO app
 
 User browser
@@ -1455,6 +1817,361 @@ su - deploy
 
 If prompted for a new password, set one. Password input not echoing is normal.
 
+### 2.5 SSH Hardening: Move to a Normal User and SSH Keys
+
+Many new cloud servers start with `root + password` access. That is acceptable for the very first login, but it is not the right long-term public setup. A safer order is:
+
+1. Keep the current session open.
+2. Create a normal user such as `deploy`.
+3. Configure SSH public-key login for that user.
+4. Confirm the new user can log in successfully.
+5. Only then disable root remote login and password login.
+
+Prefer `ed25519` keys by default. Only switch to RSA 4096 if you must support an older system, older SSH client, or an existing policy that explicitly requires RSA. Do not treat "SSH key login" and "must use RSA" as the same thing.
+
+Generate a key on your own computer:
+
+```bash
+ssh-keygen -t ed25519 -C "deploy@meeting"
+```
+
+If you specifically need RSA:
+
+```bash
+ssh-keygen -t rsa -b 4096 -C "deploy@meeting"
+```
+
+This usually creates:
+
+- Private key: `~/.ssh/id_ed25519` or `~/.ssh/id_rsa`
+- Public key: `~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub`
+
+Print the public key:
+
+```bash
+cat ~/.ssh/id_ed25519.pub
+```
+
+If you created an RSA key instead:
+
+```bash
+cat ~/.ssh/id_rsa.pub
+```
+
+If your local machine already has a usable key, Ubuntu documentation also recommends copying the public key directly before you edit more SSH settings:
+
+```bash
+ssh-copy-id deploy@your_server_ip
+```
+
+If `ssh-copy-id` is not available in your environment, prepare `authorized_keys` manually on the server:
+
+```bash
+sudo mkdir -p /home/deploy/.ssh
+sudo chmod 700 /home/deploy/.ssh
+sudo tee /home/deploy/.ssh/authorized_keys > /dev/null <<'EOF'
+paste-your-public-key-here-on-one-line
+EOF
+sudo chown -R deploy:deploy /home/deploy/.ssh
+sudo chmod 600 /home/deploy/.ssh/authorized_keys
+```
+
+Then open a second terminal on your own computer and test the new login before closing the old session:
+
+```bash
+ssh deploy@your_server_ip
+```
+
+If you changed the SSH port, for example to `2222`, test with:
+
+```bash
+ssh -p 2222 deploy@your_server_ip
+```
+
+After the new user login works reliably, edit the SSH server config. On Ubuntu, a safer pattern is to add a small drop-in file instead of rewriting the whole `/etc/ssh/sshd_config` immediately:
+
+```bash
+sudo install -d -m 755 /etc/ssh/sshd_config.d
+cat <<'EOF' | sudo tee /etc/ssh/sshd_config.d/60-video-meeting.conf
+PubkeyAuthentication yes
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+EOF
+```
+
+If you have not fully switched to key-based login yet, do not set `PasswordAuthentication no` yet. Start with:
+
+```text
+PubkeyAuthentication yes
+PermitRootLogin no
+```
+
+Meaning:
+
+| Setting | Recommended value | Purpose |
+| --- | --- | --- |
+| `PermitRootLogin` | `no` | Disables direct root remote login |
+| `PubkeyAuthentication` | `yes` | Allows SSH public-key login |
+| `PasswordAuthentication` | `no` | Disables password login to reduce brute-force risk |
+| `KbdInteractiveAuthentication` | `no` | Closes an extra interactive auth path |
+
+For a first deployment, do not change the SSH port on day one unless you already know why you want it. Get login, `ufw`, Nginx, and HTTPS working first, then change the port later if you still want to.
+
+If you want to change the SSH port, do it in the correct order:
+
+1. Open the new port in the cloud security group first.
+2. Open the new port in `ufw`.
+3. Test login through the new port successfully.
+4. Only then close `22/tcp` if you no longer need it.
+
+Check the SSH config before reload. Ubuntu documentation also recommends validating the config first:
+
+```bash
+sudo sshd -t
+```
+
+If there is no error, reload the service:
+
+```bash
+sudo systemctl reload ssh
+```
+
+Some systems use the service name `sshd`, so you can check both:
+
+```bash
+systemctl status ssh
+systemctl status sshd
+```
+
+Important:
+
+- Do not set `PasswordAuthentication no` before your new user key login is confirmed.
+- Do not remove the old port rule before the new port works.
+- Do not edit SSH while keeping only one terminal session open. Keep at least one known-good session alive.
+- If you do lock yourself out, stop guessing passwords. Use the cloud provider browser console or VNC console, revert `/etc/ssh/sshd_config.d/60-video-meeting.conf`, then run `sudo sshd -t` and `sudo systemctl reload ssh`.
+
+### 2.6 Firewall, Automatic Banning, and Bad IP Handling
+
+For a public deployment, you need at least two layers of access control:
+
+1. The cloud provider security group
+2. The server firewall such as `ufw`
+
+If you still use the default SSH port `22`:
+
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow "Nginx Full"
+sudo ufw enable
+sudo ufw status
+```
+
+If you changed SSH to `2222`, do not rely on `OpenSSH`; allow the actual port explicitly:
+
+```bash
+sudo ufw allow 2222/tcp
+sudo ufw allow "Nginx Full"
+sudo ufw enable
+sudo ufw status
+```
+
+After you confirm the new SSH port works, and only if you no longer need `22`, remove the old rule:
+
+```bash
+sudo ufw delete allow OpenSSH
+```
+
+or:
+
+```bash
+sudo ufw delete allow 22/tcp
+```
+
+`ufw` is only the basic layer. The most common automatic SSH brute-force protection is `fail2ban`. Instead of the smallest possible example, use a slightly fuller config that is still easy to maintain:
+
+```bash
+sudo apt update
+sudo apt install -y fail2ban
+```
+
+Create a recommended config:
+
+```bash
+sudo tee /etc/fail2ban/jail.local > /dev/null <<'EOF'
+[DEFAULT]
+bantime = 1h
+findtime = 10m
+maxretry = 5
+ignoreip = 127.0.0.1/8 ::1 198.51.100.24/32
+
+[sshd]
+enabled = true
+port = 22
+backend = systemd
+logpath = %(sshd_log)s
+bantime = 1h
+findtime = 10m
+maxretry = 5
+
+[recidive]
+enabled = true
+logpath = /var/log/fail2ban.log
+banaction = %(banaction_allports)s
+bantime = 1w
+findtime = 1d
+maxretry = 5
+EOF
+```
+
+What this config does:
+
+| Setting | Recommended value | Purpose |
+| --- | --- | --- |
+| `ignoreip` | `127.0.0.1/8 ::1 your-fixed-public-ip/32` | Whitelist that fail2ban should never ban |
+| `sshd` | enabled | Handles short-window SSH login failures |
+| `bantime = 1h` | 1 hour | First-level ban for ordinary brute-force attempts |
+| `findtime = 10m` | 10 minutes | Count failures within a 10-minute window |
+| `maxretry = 5` | 5 tries | Ban after 5 failed attempts |
+| `recidive` | enabled | Applies a much longer ban to repeat offenders |
+| `banaction_allports` | enabled for recidive | Blocks all ports for repeat offenders, not just SSH |
+
+If your SSH port is `2222`, change the `[sshd]` port to:
+
+```text
+port = 2222
+```
+
+If your public admin IP is fixed, `ignoreip` should look like:
+
+```text
+ignoreip = 127.0.0.1/8 ::1 198.51.100.24/32
+```
+
+If you manage the server from a fixed office/lab/dorm network range, you can also use CIDR:
+
+```text
+ignoreip = 127.0.0.1/8 ::1 198.51.100.0/24
+```
+
+Do not add overly broad ranges such as an entire ISP block or `0.0.0.0/0`, because that would effectively disable brute-force protection.
+
+### 2.6.1 How to avoid banning yourself
+
+The safest order is:
+
+1. Confirm SSH key login already works reliably.
+2. Add your own fixed public IP to `ignoreip`.
+3. Only then start `fail2ban`.
+4. Immediately inspect status and confirm the `sshd` jail loaded correctly.
+
+If your public IP is fixed, get it from your own computer first and then place it in `ignoreip`. Common commands:
+
+```bash
+curl https://ifconfig.me
+```
+
+or:
+
+```bash
+curl https://api.ipify.org
+```
+
+This must be your real public egress IP, not a local address such as `192.168.x.x`, `10.x.x.x`, or `172.16-31.x.x`.
+
+If you switch networks often, for example:
+
+- mobile hotspot
+- dorm Wi-Fi
+- campus network
+- company VPN
+- home broadband and phone data
+
+then do not rely too much on permanently whitelisting your own IP, because your public egress IP may change often. In that case:
+
+- prefer SSH keys and avoid repeated password guesses;
+- keep one known-good SSH session open while editing;
+- start with slightly looser values such as `maxretry = 8` and `bantime = 30m`, then tighten later;
+- make sure you know how to use the cloud provider browser console or VNC console to recover access.
+
+If you already banned yourself, run this from the cloud console or another still-open session:
+
+```bash
+sudo fail2ban-client status sshd
+sudo fail2ban-client set sshd unbanip 198.51.100.24
+```
+
+If `recidive` banned you, also run:
+
+```bash
+sudo fail2ban-client status recidive
+sudo fail2ban-client set recidive unbanip 198.51.100.24
+```
+
+To inspect the current banned IP list:
+
+```bash
+sudo fail2ban-client status sshd
+sudo fail2ban-client status recidive
+```
+
+Start it and inspect status:
+
+```bash
+sudo systemctl enable fail2ban
+sudo systemctl restart fail2ban
+sudo systemctl status fail2ban
+sudo fail2ban-client status
+sudo fail2ban-client status sshd
+sudo fail2ban-client status recidive
+```
+
+What it does:
+
+- `sshd` handles short-window brute-force attempts;
+- `recidive` handles sources that keep coming back after bans;
+- `ignoreip` prevents your own fixed admin IP from being banned by mistake.
+
+For "dirty IP" handling, use this priority:
+
+1. Disable root login and move to a normal user with SSH keys.
+2. Enable `ufw`.
+3. Enable `fail2ban` for SSH brute-force blocking, and whitelist your own fixed admin IP with `ignoreip`.
+4. If you use Cloudflare, enable WAF, Bot Fight Mode, or managed rules.
+5. Only add manual deny rules for IPs or ranges you have actually observed as malicious.
+
+Do not start by importing a huge random internet blacklist if you are new to server ops, because:
+
+- it can block legitimate users behind school or company shared exit IPs;
+- too many rules create extra maintenance cost;
+- many public lists are outdated or low-quality.
+
+If you need to block a confirmed malicious source manually:
+
+```bash
+sudo ufw deny from 203.0.113.10
+```
+
+Check current rules:
+
+```bash
+sudo ufw status numbered
+```
+
+Delete by rule number after checking the list:
+
+```bash
+sudo ufw delete 3
+```
+
+For a beginner deployment, the main goal is not collecting lots of bad IPs. The main goal is to get these four things right:
+
+- use a normal login user;
+- allow SSH key login only;
+- disable root remote login;
+- let `fail2ban` absorb repeated brute-force attempts;
+- know how to use `unbanip` if you accidentally ban yourself.
+
 ## 3. Install System Dependencies
 
 ```bash
@@ -1493,7 +2210,7 @@ python3 -m venv venv
 source venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-pip install gunicorn eventlet
+pip install gunicorn
 ```
 
 Private repositories need SSH key or token setup.
@@ -1670,7 +2387,7 @@ Group=deploy
 WorkingDirectory=/opt/video-meeting
 EnvironmentFile=/opt/video-meeting/.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/video-meeting/venv/bin/gunicorn --worker-class eventlet --workers 1 --bind 127.0.0.1:8000 app:app
+ExecStart=/opt/video-meeting/venv/bin/gunicorn --worker-class gthread --workers 1 --threads 100 --bind 127.0.0.1:8000 app:app
 Restart=always
 RestartSec=5
 
@@ -1692,8 +2409,9 @@ Key points:
 
 - `EnvironmentFile=/opt/video-meeting/.env` loads production variables.
 - `User=deploy` / `Group=deploy` refer to the Linux process identity, not the website admin account.
-- `--worker-class eventlet` supports Flask-SocketIO long connections.
+- The current code hardcodes `SocketIO(async_mode="threading")`, so Gunicorn threaded workers plus `simple-websocket` are a better match than the older `eventlet` wording.
 - Keep `--workers 1`; current online room state is in process memory.
+- `--threads 100` follows the common threaded-worker example in the Flask-SocketIO deployment docs and is usually enough for a class demo or a small showcase.
 - `--bind 127.0.0.1:8000` must match Nginx `proxy_pass`.
 - If you change `User=`, follow the "How to set permissions" section below at the same time.
 
@@ -1793,7 +2511,7 @@ journalctl -u video-meeting -n 100 --no-pager
 journalctl -u video-meeting -f
 ```
 
-If `systemctl status video-meeting` shows `python app.py`, `This is a development server`, or `Werkzeug appears to be used in a production deployment`, the server is not using the correct production shape yet. Return to the `gunicorn + eventlet + systemd` setup above.
+If `systemctl status video-meeting` shows `python app.py`, `This is a development server`, or `Werkzeug appears to be used in a production deployment`, the server is not using the correct production shape yet. Return to the `gunicorn + threads + systemd` setup above.
 
 After editing `.service`:
 
@@ -2308,7 +3026,7 @@ git status
 git pull origin main
 source /opt/video-meeting/venv/bin/activate
 pip install -r requirements.txt
-pip install gunicorn eventlet
+pip install gunicorn
 sudo systemctl restart video-meeting
 sudo systemctl status video-meeting
 ```
@@ -2464,12 +3182,14 @@ sudo systemctl restart video-meeting
 | --- | --- |
 | Password input shows nothing | Normal SSH behavior; type it and press Enter |
 | `Permission denied` | Check username, password, key, or reset credentials in the cloud console |
+| `Permission denied (publickey)` | The server is already enforcing key login, but the target user's `~/.ssh/authorized_keys`, permissions, or your local private key does not match; revert the SSH hardening first instead of retrying blindly |
 | `Connection timed out` | Check public IP, port 22, security group, and local network firewall |
+| `Connection refused` | SSH is not listening on that port, or `ufw` / the security group does not allow the port you are trying |
 | `REMOTE HOST IDENTIFICATION HAS CHANGED` | Common after reinstalling a server or reusing an IP; verify safety, then remove the old `known_hosts` entry |
 
 ## 17. References
 
-This guide combines the current project code with these official or reliable documents:
+This guide combines the current project code with these official or reliable documents. Official docs remain the source of truth. If you also want a practical tutorial to follow line by line, the two DigitalOcean guides below are the most useful supplements:
 
 | Topic | Docs |
 | --- | --- |
@@ -2485,6 +3205,10 @@ This guide combines the current project code with these official or reliable doc
 | LiveKit VM deployment | [LiveKit VM deployment](https://docs.livekit.io/home/self-hosting/vm/) |
 | LiveKit Docker | [LiveKit Docker image](https://github.com/livekit/livekit) |
 | LiveKit Cloud | [LiveKit Cloud](https://cloud.livekit.io/) |
+| Ubuntu UFW | [Ubuntu Uncomplicated Firewall](https://documentation.ubuntu.com/server/how-to/security/firewalls/) |
+| Fail2ban | [Fail2ban Documentation](https://fail2ban.readthedocs.io/en/latest/) |
+| DigitalOcean initial server setup | [Initial Server Setup on Ubuntu](https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu) |
+| DigitalOcean Flask + Gunicorn + Nginx | [How To Serve Flask Applications with Gunicorn and Nginx on Ubuntu](https://www.digitalocean.com/community/tutorials/how-to-serve-flask-applications-with-gunicorn-and-nginx-on-ubuntu-22-04) |
 | Cloudflare DNS | [Create DNS records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/) |
 | Cloudflare SSL | [Full (strict) SSL mode](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/) |
 | Windows OpenSSH | [Microsoft OpenSSH client](https://learn.microsoft.com/windows-server/administration/openssh/openssh_install_firstuse) |
