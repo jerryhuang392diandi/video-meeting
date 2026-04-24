@@ -779,12 +779,16 @@ def send_password_reset_email(user: User) -> None:
     text_body = (
         f"{t('password_reset_mail_intro')}\n\n"
         f"{reset_link}\n\n"
-        f"{t('password_reset_mail_expiry').format(minutes=PASSWORD_RESET_TOKEN_TTL_MINUTES)}"
+        f"{t('password_reset_mail_expiry').format(minutes=PASSWORD_RESET_TOKEN_TTL_MINUTES)}\n"
+        f"{t('password_reset_mail_latest_notice')}\n"
+        f"{t('password_reset_mail_copy_tip')}"
     )
     html_body = (
         f"<p>{t('password_reset_mail_intro')}</p>"
         f"<p><a href=\"{reset_link}\">{reset_link}</a></p>"
         f"<p>{t('password_reset_mail_expiry').format(minutes=PASSWORD_RESET_TOKEN_TTL_MINUTES)}</p>"
+        f"<p>{t('password_reset_mail_latest_notice')}</p>"
+        f"<p>{t('password_reset_mail_copy_tip')}</p>"
     )
     send_email_message(
         to_address=user.email,
