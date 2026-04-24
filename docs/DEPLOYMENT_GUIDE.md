@@ -134,11 +134,26 @@ Nginx 代理的是本项目网站；LiveKit 承担摄像头、麦克风、屏幕
 
 | 场景 | 命令 |
 | --- | --- |
-| Windows PowerShell / CMD | `ssh root@your_server_ip` |
-| macOS Terminal / Linux shell | `ssh root@your_server_ip` |
+| Windows CMD | `ssh root@your_server_ip` |
+| macOS Terminal | `ssh root@your_server_ip` |
+| Linux shell | `ssh root@your_server_ip` |
 | 用户名不是 `root` | `ssh ubuntu@your_server_ip` |
-| macOS / Linux 使用私钥 | `ssh -i /path/to/your-key.pem root@your_server_ip` |
-| Windows 使用私钥 | `ssh -i C:\Users\yourname\.ssh\server.pem root@your_server_ip` |
+
+如果你是用私钥登录，三端可以直接按下面替换路径：
+
+| 终端 | 私钥登录命令 |
+| --- | --- |
+| Windows CMD | `ssh -i C:\Users\yourname\.ssh\server.pem root@your_server_ip` |
+| macOS Terminal | `ssh -i ~/.ssh/server.pem root@your_server_ip` |
+| Linux shell | `ssh -i ~/.ssh/server.pem root@your_server_ip` |
+
+如果你把 SSH 端口改成了 `2222`，三端写法也是一样的，只是多一个 `-p`：
+
+| 终端 | 自定义端口命令 |
+| --- | --- |
+| Windows CMD | `ssh -p 2222 root@your_server_ip` |
+| macOS Terminal | `ssh -p 2222 root@your_server_ip` |
+| Linux shell | `ssh -p 2222 root@your_server_ip` |
 
 第一次连接通常会问：
 
@@ -199,40 +214,53 @@ su - deploy
 
 推荐优先使用 `ed25519` 密钥。只有在旧系统、旧客户端或学校/单位现有规范明确要求 RSA 时，才改成 RSA 4096。不要把“SSH key 登录”和“必须用 RSA”混为一谈。
 
-在你自己的电脑上生成密钥：
+在你自己的电脑上生成密钥。三端命令基本一致：
 
-```bash
-ssh-keygen -t ed25519 -C "deploy@meeting"
-```
+| 终端 | `ed25519` 生成命令 |
+| --- | --- |
+| Windows CMD | `ssh-keygen -t ed25519 -C "deploy@meeting"` |
+| macOS Terminal | `ssh-keygen -t ed25519 -C "deploy@meeting"` |
+| Linux shell | `ssh-keygen -t ed25519 -C "deploy@meeting"` |
 
 如果你确实需要 RSA：
 
-```bash
-ssh-keygen -t rsa -b 4096 -C "deploy@meeting"
-```
+| 终端 | RSA 4096 生成命令 |
+| --- | --- |
+| Windows CMD | `ssh-keygen -t rsa -b 4096 -C "deploy@meeting"` |
+| macOS Terminal | `ssh-keygen -t rsa -b 4096 -C "deploy@meeting"` |
+| Linux shell | `ssh-keygen -t rsa -b 4096 -C "deploy@meeting"` |
 
 生成后你通常会得到：
 
-- 私钥：`~/.ssh/id_ed25519` 或 `~/.ssh/id_rsa`
-- 公钥：`~/.ssh/id_ed25519.pub` 或 `~/.ssh/id_rsa.pub`
+- Windows CMD 私钥：`%USERPROFILE%\.ssh\id_ed25519` 或 `%USERPROFILE%\.ssh\id_rsa`
+- Windows CMD 公钥：`%USERPROFILE%\.ssh\id_ed25519.pub` 或 `%USERPROFILE%\.ssh\id_rsa.pub`
+- macOS / Linux 私钥：`~/.ssh/id_ed25519` 或 `~/.ssh/id_rsa`
+- macOS / Linux 公钥：`~/.ssh/id_ed25519.pub` 或 `~/.ssh/id_rsa.pub`
 
 把公钥内容复制出来：
 
-```bash
-cat ~/.ssh/id_ed25519.pub
-```
+| 终端 | 查看 `ed25519` 公钥 |
+| --- | --- |
+| Windows CMD | `type %USERPROFILE%\.ssh\id_ed25519.pub` |
+| macOS Terminal | `cat ~/.ssh/id_ed25519.pub` |
+| Linux shell | `cat ~/.ssh/id_ed25519.pub` |
 
 如果你生成的是 RSA，就看：
 
-```bash
-cat ~/.ssh/id_rsa.pub
-```
+| 终端 | 查看 RSA 公钥 |
+| --- | --- |
+| Windows CMD | `type %USERPROFILE%\.ssh\id_rsa.pub` |
+| macOS Terminal | `cat ~/.ssh/id_rsa.pub` |
+| Linux shell | `cat ~/.ssh/id_rsa.pub` |
 
 如果你的本机已经有可用密钥，Ubuntu 官方也推荐优先直接复制公钥，而不是手动改很多 SSH 配置。最省事的方式是：
 
-```bash
-ssh-copy-id deploy@your_server_ip
-```
+| 终端 | 复制公钥到服务器 |
+| --- | --- |
+| macOS Terminal | `ssh-copy-id deploy@your_server_ip` |
+| Linux shell | `ssh-copy-id deploy@your_server_ip` |
+
+Windows CMD 默认通常没有 `ssh-copy-id`。Windows 直接按后面的 `authorized_keys` 手动方式最稳，或者改用 Git Bash / WSL 再执行 `ssh-copy-id`。
 
 如果你的环境没有 `ssh-copy-id`，再手动准备 `authorized_keys`：
 
@@ -248,15 +276,19 @@ sudo chmod 600 /home/deploy/.ssh/authorized_keys
 
 然后在你本机重新开一个终端，单独测试新用户登录。不要先关掉旧会话：
 
-```bash
-ssh deploy@your_server_ip
-```
+| 终端 | 测试新用户登录 |
+| --- | --- |
+| Windows CMD | `ssh deploy@your_server_ip` |
+| macOS Terminal | `ssh deploy@your_server_ip` |
+| Linux shell | `ssh deploy@your_server_ip` |
 
 如果你改过 SSH 端口，例如改成 `2222`，测试命令是：
 
-```bash
-ssh -p 2222 deploy@your_server_ip
-```
+| 终端 | 测试新端口 |
+| --- | --- |
+| Windows CMD | `ssh -p 2222 deploy@your_server_ip` |
+| macOS Terminal | `ssh -p 2222 deploy@your_server_ip` |
+| Linux shell | `ssh -p 2222 deploy@your_server_ip` |
 
 确认新用户可以稳定登录后，再改 SSH 服务配置。为了降低把主配置改坏的概率，推荐在 Ubuntu 上单独写一个 drop-in 文件，而不是上来就改完整的 `/etc/ssh/sshd_config`：
 
@@ -522,6 +554,26 @@ sudo fail2ban-client status recidive
 sudo ufw deny from 203.0.113.10
 ```
 
+如果你后面已经在 GitHub Actions 或自己维护的服务器脚本里接入了 [stamparm/ipsum](https://github.com/stamparm/ipsum) 这类公开恶意来源 IP 列表，也要把它当成“额外加固”，不要当成第一道安全线。更稳妥的做法是：
+
+1. 先完成 SSH key、禁用 root 远程登录、`ufw`、`fail2ban`。
+2. 再只取 `ipsum` 里你看得懂、能解释来源的高置信度条目，不要整库无脑导入。
+3. 把规则放到你自己的 GitHub 仓库脚本或部署脚本里，保留注释，知道以后怎么更新和回滚。
+
+例如，如果你只是想从 `ipsum` 拉一份高置信度来源，生成一个给 `ufw`/`ipset` 后续处理的文本文件，可以先在 Linux 服务器这样筛：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/stamparm/ipsum/master/levels/4.txt -o /tmp/ipsum-level4.txt
+```
+
+如果你想进一步只保留前面是真正 IP、后面是命中次数的行，再过滤一次：
+
+```bash
+awk '/^[0-9]/{print $1}' /tmp/ipsum-level4.txt > /tmp/ipsum-level4-ips.txt
+```
+
+这一步先停住，自己抽样看几条，再决定要不要批量导入防火墙。不要在没审过列表的情况下直接自动 `ufw deny` 几千条，否则很容易把正常出口 IP 一起封掉。
+
 查看当前规则：
 
 ```bash
@@ -644,6 +696,15 @@ LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 ADMIN_USERNAME=meetingadmin
 ADMIN_PASSWORD=replace-with-strong-admin-password
 PUBLIC_REGISTRATION_ENABLED=0
+EMAIL_AUTH_ENABLED=1
+EMAIL_SMTP_HOST=smtp.resend.com
+EMAIL_SMTP_PORT=465
+EMAIL_SMTP_USERNAME=resend
+EMAIL_SMTP_PASSWORD=replace-with-resend-api-key
+EMAIL_SMTP_USE_TLS=0
+EMAIL_SMTP_USE_SSL=1
+EMAIL_FROM_ADDRESS=noreply@meeting.example.com
+EMAIL_FROM_NAME=Video Meeting
 STRICT_SECURITY_CHECKS=1
 TURNSTILE_SITE_KEY=replace-with-turnstile-site-key
 TURNSTILE_SECRET_KEY=replace-with-turnstile-secret-key
@@ -674,6 +735,15 @@ LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 ADMIN_USERNAME=meetingadmin
 ADMIN_PASSWORD=replace-with-strong-admin-password
 PUBLIC_REGISTRATION_ENABLED=0
+EMAIL_AUTH_ENABLED=1
+EMAIL_SMTP_HOST=smtp.resend.com
+EMAIL_SMTP_PORT=465
+EMAIL_SMTP_USERNAME=resend
+EMAIL_SMTP_PASSWORD=replace-with-resend-api-key
+EMAIL_SMTP_USE_TLS=0
+EMAIL_SMTP_USE_SSL=1
+EMAIL_FROM_ADDRESS=noreply@meeting.example.com
+EMAIL_FROM_NAME=Video Meeting
 STRICT_SECURITY_CHECKS=1
 TURNSTILE_SITE_KEY=replace-with-turnstile-site-key
 TURNSTILE_SECRET_KEY=replace-with-turnstile-secret-key
@@ -707,6 +777,12 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 | `LIVEKIT_API_SECRET` | Flask 后端签发 LiveKit token 用的 secret | 是 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 初始管理员账号和密码 | 推荐 |
 | `PUBLIC_REGISTRATION_ENABLED` | 是否允许任何人自助注册；公网建议关闭 | 推荐 |
+| `EMAIL_AUTH_ENABLED` | 是否启用“用户名/邮箱 + 密码 + 邮箱验证”注册登录链路 | 按需 |
+| `EMAIL_SMTP_HOST` / `EMAIL_SMTP_PORT` | SMTP 服务器地址和端口 | 启用邮箱验证时必填 |
+| `EMAIL_SMTP_USERNAME` / `EMAIL_SMTP_PASSWORD` | SMTP 用户名和密码；很多服务商这里用 API Key | 启用邮箱验证时通常必填 |
+| `EMAIL_SMTP_USE_TLS` / `EMAIL_SMTP_USE_SSL` | SMTP 加密方式；常见是 `587 + TLS` 或 `465 + SSL` 二选一 | 启用邮箱验证时推荐 |
+| `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME` | 验证邮件发件地址和显示名称 | 启用邮箱验证时必填 |
+| `EMAIL_VERIFY_TOKEN_TTL_HOURS` | 邮箱验证链接有效期，默认 `24` 小时 | 可选 |
 | `STRICT_SECURITY_CHECKS` | 启动时拒绝弱 `SECRET_KEY` / `ADMIN_*` 配置 | 公网推荐 |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 登录/注册/找回密码的人机验证 | 可选 |
 | `TURN_PUBLIC_HOST` | 自动生成 TURN/STUN 地址时使用的公网主机名 | 可选 |
@@ -721,6 +797,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 - 公网部署建议设置 `PUBLIC_REGISTRATION_ENABLED=0`，避免任何人直接创建账号。
 - 公网部署建议设置 `STRICT_SECURITY_CHECKS=1`，避免弱 `SECRET_KEY`、弱管理员密码或默认 `root` 管理员名直接带到线上。
 - 不要因为你是用 `root` 登录服务器，就顺手把 `ADMIN_USERNAME` 也设成 `root`。这是两个完全不同的概念。
+- 如果开启 `EMAIL_AUTH_ENABLED=1`，请确保 `PUBLIC_SCHEME` / `PUBLIC_HOST` 已正确设置；验证邮件里的链接会按这里生成。
 - 线上 systemd 不要直接运行 `python app.py`。那会启动 Werkzeug 开发服务器；如果你在 `systemctl status video-meeting` 里看到 `Werkzeug appears to be used in a production deployment` 或 `This is a development server`，说明当前运行方式不对。
 - 如果你不熟悉终端编辑器，可以直接保留 EOF 写法；最后那个单独一行的 `EOF` 表示写入结束。
 - `TURNSTILE_SECRET_KEY` 不能自己随便生成，必须和 `TURNSTILE_SITE_KEY` 一起从同一个 Cloudflare Turnstile 站点页面复制。
@@ -729,7 +806,63 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 - LiveKit 三项缺失时，房间页返回 `503` 是正常保护逻辑。
 - SQLite 数据库、上传文件、生成的管理员密码等运行时文件在 `instance/`，备份时不要漏掉。
 
-### 5.1 谁负责哪个文件
+### 5.1 邮箱验证注册 / 登录接入
+
+当前代码支持可选的邮箱验证流程：
+
+- 注册页可填写 `用户名 + 邮箱 + 密码`
+- 注册成功后发送验证邮件
+- 用户点击链接后，才允许用“用户名或邮箱 + 密码”登录
+- 如果没收到邮件，可在登录页进入“重发验证邮件”
+- 找回密码页会复用同一套 SMTP 配置发送密码重置链接
+
+最省事的接法通常是 SMTP。你可以接自己域名邮箱，也可以接第三方发信服务的 SMTP。
+
+如果你准备用 Resend 的 SMTP，大致顺序是：
+
+1. 注册 Resend 并验证你的发件域名，准备好 `noreply@your-domain`。
+2. 在 DNS 里按 Resend 后台要求添加 SPF / DKIM 记录。
+3. 在 Resend 后台创建 API Key。
+4. 把 `.env` 里这几项填好：
+
+```env
+EMAIL_AUTH_ENABLED=1
+EMAIL_SMTP_HOST=smtp.resend.com
+EMAIL_SMTP_PORT=465
+EMAIL_SMTP_USERNAME=resend
+EMAIL_SMTP_PASSWORD=re_xxxxxxxxx
+EMAIL_SMTP_USE_TLS=0
+EMAIL_SMTP_USE_SSL=1
+EMAIL_FROM_ADDRESS=noreply@meeting.example.com
+EMAIL_FROM_NAME=Video Meeting
+EMAIL_VERIFY_TOKEN_TTL_HOURS=24
+```
+
+如果你用 Brevo、企业邮箱或其他 SMTP 服务，只需要把主机、端口、用户名、密码和加密方式换成对方给你的值。常见组合是：
+
+- `465 + SSL`
+- `587 + TLS`
+
+不要同时把 `EMAIL_SMTP_USE_TLS=1` 和 `EMAIL_SMTP_USE_SSL=1` 都开成主模式。通常只保留一种。
+
+接入完成后，最少手测这几步：
+
+1. 重启服务：`sudo systemctl restart video-meeting`
+2. 用新邮箱注册一个普通账号
+3. 确认收件箱或垃圾邮件箱收到验证邮件
+4. 点击邮件里的验证链接，确认能回到登录页并显示“邮箱验证成功”
+5. 用用户名登录一次，再用邮箱登录一次
+6. 在“找回密码”页提交一次，确认能收到密码重置链接并成功设置新密码
+7. 用未验证账号直接登录，确认会被拦住并提示重发验证邮件
+
+如果收不到邮件，优先检查：
+
+- `.env` 里的 `EMAIL_FROM_ADDRESS` 是否已经在服务商后台验证过
+- `PUBLIC_HOST` 是否正确，不然邮件里的链接可能回到错误域名
+- 服务商后台的 DNS 验证是否完成
+- `journalctl -u video-meeting -n 100 --no-pager` 里是否有 SMTP 认证失败或连接失败
+
+### 5.2 谁负责哪个文件
 
 建议长期保持下面这套边界，不要混写：
 
@@ -1764,11 +1897,26 @@ Common login commands:
 
 | Scenario | Command |
 | --- | --- |
-| Windows PowerShell / CMD | `ssh root@your_server_ip` |
-| macOS Terminal / Linux shell | `ssh root@your_server_ip` |
+| Windows CMD | `ssh root@your_server_ip` |
+| macOS Terminal | `ssh root@your_server_ip` |
+| Linux shell | `ssh root@your_server_ip` |
 | Username is not `root` | `ssh ubuntu@your_server_ip` |
-| macOS / Linux private key | `ssh -i /path/to/your-key.pem root@your_server_ip` |
-| Windows private key | `ssh -i C:\Users\yourname\.ssh\server.pem root@your_server_ip` |
+
+If you use a private key, replace the path like this:
+
+| Terminal | Private-key login command |
+| --- | --- |
+| Windows CMD | `ssh -i C:\Users\yourname\.ssh\server.pem root@your_server_ip` |
+| macOS Terminal | `ssh -i ~/.ssh/server.pem root@your_server_ip` |
+| Linux shell | `ssh -i ~/.ssh/server.pem root@your_server_ip` |
+
+If you changed the SSH port to `2222`, all three terminals just add `-p`:
+
+| Terminal | Custom-port command |
+| --- | --- |
+| Windows CMD | `ssh -p 2222 root@your_server_ip` |
+| macOS Terminal | `ssh -p 2222 root@your_server_ip` |
+| Linux shell | `ssh -p 2222 root@your_server_ip` |
 
 First connection often asks:
 
@@ -1829,40 +1977,53 @@ Many new cloud servers start with `root + password` access. That is acceptable f
 
 Prefer `ed25519` keys by default. Only switch to RSA 4096 if you must support an older system, older SSH client, or an existing policy that explicitly requires RSA. Do not treat "SSH key login" and "must use RSA" as the same thing.
 
-Generate a key on your own computer:
+Generate a key on your own computer. The command is the same on all three terminals:
 
-```bash
-ssh-keygen -t ed25519 -C "deploy@meeting"
-```
+| Terminal | `ed25519` key generation |
+| --- | --- |
+| Windows CMD | `ssh-keygen -t ed25519 -C "deploy@meeting"` |
+| macOS Terminal | `ssh-keygen -t ed25519 -C "deploy@meeting"` |
+| Linux shell | `ssh-keygen -t ed25519 -C "deploy@meeting"` |
 
 If you specifically need RSA:
 
-```bash
-ssh-keygen -t rsa -b 4096 -C "deploy@meeting"
-```
+| Terminal | RSA 4096 key generation |
+| --- | --- |
+| Windows CMD | `ssh-keygen -t rsa -b 4096 -C "deploy@meeting"` |
+| macOS Terminal | `ssh-keygen -t rsa -b 4096 -C "deploy@meeting"` |
+| Linux shell | `ssh-keygen -t rsa -b 4096 -C "deploy@meeting"` |
 
 This usually creates:
 
-- Private key: `~/.ssh/id_ed25519` or `~/.ssh/id_rsa`
-- Public key: `~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub`
+- Windows CMD private key: `%USERPROFILE%\.ssh\id_ed25519` or `%USERPROFILE%\.ssh\id_rsa`
+- Windows CMD public key: `%USERPROFILE%\.ssh\id_ed25519.pub` or `%USERPROFILE%\.ssh\id_rsa.pub`
+- macOS / Linux private key: `~/.ssh/id_ed25519` or `~/.ssh/id_rsa`
+- macOS / Linux public key: `~/.ssh/id_ed25519.pub` or `~/.ssh/id_rsa.pub`
 
 Print the public key:
 
-```bash
-cat ~/.ssh/id_ed25519.pub
-```
+| Terminal | Show `ed25519` public key |
+| --- | --- |
+| Windows CMD | `type %USERPROFILE%\.ssh\id_ed25519.pub` |
+| macOS Terminal | `cat ~/.ssh/id_ed25519.pub` |
+| Linux shell | `cat ~/.ssh/id_ed25519.pub` |
 
 If you created an RSA key instead:
 
-```bash
-cat ~/.ssh/id_rsa.pub
-```
+| Terminal | Show RSA public key |
+| --- | --- |
+| Windows CMD | `type %USERPROFILE%\.ssh\id_rsa.pub` |
+| macOS Terminal | `cat ~/.ssh/id_rsa.pub` |
+| Linux shell | `cat ~/.ssh/id_rsa.pub` |
 
 If your local machine already has a usable key, Ubuntu documentation also recommends copying the public key directly before you edit more SSH settings:
 
-```bash
-ssh-copy-id deploy@your_server_ip
-```
+| Terminal | Copy public key to server |
+| --- | --- |
+| macOS Terminal | `ssh-copy-id deploy@your_server_ip` |
+| Linux shell | `ssh-copy-id deploy@your_server_ip` |
+
+Windows CMD usually does not include `ssh-copy-id` by default. On Windows, the safest default is the manual `authorized_keys` method below, or use Git Bash / WSL if you specifically want `ssh-copy-id`.
 
 If `ssh-copy-id` is not available in your environment, prepare `authorized_keys` manually on the server:
 
@@ -1878,15 +2039,19 @@ sudo chmod 600 /home/deploy/.ssh/authorized_keys
 
 Then open a second terminal on your own computer and test the new login before closing the old session:
 
-```bash
-ssh deploy@your_server_ip
-```
+| Terminal | Test new user login |
+| --- | --- |
+| Windows CMD | `ssh deploy@your_server_ip` |
+| macOS Terminal | `ssh deploy@your_server_ip` |
+| Linux shell | `ssh deploy@your_server_ip` |
 
 If you changed the SSH port, for example to `2222`, test with:
 
-```bash
-ssh -p 2222 deploy@your_server_ip
-```
+| Terminal | Test new SSH port |
+| --- | --- |
+| Windows CMD | `ssh -p 2222 deploy@your_server_ip` |
+| macOS Terminal | `ssh -p 2222 deploy@your_server_ip` |
+| Linux shell | `ssh -p 2222 deploy@your_server_ip` |
 
 After the new user login works reliably, edit the SSH server config. On Ubuntu, a safer pattern is to add a small drop-in file instead of rewriting the whole `/etc/ssh/sshd_config` immediately:
 
@@ -2152,6 +2317,26 @@ If you need to block a confirmed malicious source manually:
 sudo ufw deny from 203.0.113.10
 ```
 
+If you later add an IP blacklist workflow from GitHub or your own deployment scripts and use a public feed such as [stamparm/ipsum](https://github.com/stamparm/ipsum), treat it as an extra layer, not your primary defense. A safer order is:
+
+1. finish SSH keys, disable remote root login, enable `ufw`, and enable `fail2ban` first;
+2. only pull the higher-confidence `ipsum` entries you understand and can justify, instead of importing the whole project blindly;
+3. keep that logic in your own GitHub repo or deployment script with comments so you can update or roll it back later.
+
+For example, if you only want to fetch a higher-confidence `ipsum` list first and review it before deciding what to block, you can do this on the Linux server:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/stamparm/ipsum/master/levels/4.txt -o /tmp/ipsum-level4.txt
+```
+
+If you want to keep only the IP column for later `ufw` or `ipset` handling:
+
+```bash
+awk '/^[0-9]/{print $1}' /tmp/ipsum-level4.txt > /tmp/ipsum-level4-ips.txt
+```
+
+Stop there first and sample the file before mass-importing it into your firewall. Do not automate thousands of `ufw deny` rules from an unreviewed list, or you can easily block legitimate shared exit IPs.
+
 Check current rules:
 
 ```bash
@@ -2262,6 +2447,15 @@ LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 ADMIN_USERNAME=meetingadmin
 ADMIN_PASSWORD=replace-with-strong-admin-password
 PUBLIC_REGISTRATION_ENABLED=0
+EMAIL_AUTH_ENABLED=1
+EMAIL_SMTP_HOST=smtp.resend.com
+EMAIL_SMTP_PORT=465
+EMAIL_SMTP_USERNAME=resend
+EMAIL_SMTP_PASSWORD=replace-with-resend-api-key
+EMAIL_SMTP_USE_TLS=0
+EMAIL_SMTP_USE_SSL=1
+EMAIL_FROM_ADDRESS=noreply@meeting.example.com
+EMAIL_FROM_NAME=Video Meeting
 STRICT_SECURITY_CHECKS=1
 TURNSTILE_SITE_KEY=replace-with-turnstile-site-key
 TURNSTILE_SECRET_KEY=replace-with-turnstile-secret-key
@@ -2292,6 +2486,15 @@ LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 ADMIN_USERNAME=meetingadmin
 ADMIN_PASSWORD=replace-with-strong-admin-password
 PUBLIC_REGISTRATION_ENABLED=0
+EMAIL_AUTH_ENABLED=1
+EMAIL_SMTP_HOST=smtp.resend.com
+EMAIL_SMTP_PORT=465
+EMAIL_SMTP_USERNAME=resend
+EMAIL_SMTP_PASSWORD=replace-with-resend-api-key
+EMAIL_SMTP_USE_TLS=0
+EMAIL_SMTP_USE_SSL=1
+EMAIL_FROM_ADDRESS=noreply@meeting.example.com
+EMAIL_FROM_NAME=Video Meeting
 STRICT_SECURITY_CHECKS=1
 TURNSTILE_SITE_KEY=replace-with-turnstile-site-key
 TURNSTILE_SECRET_KEY=replace-with-turnstile-secret-key
@@ -2325,6 +2528,12 @@ Configuration:
 | `LIVEKIT_API_SECRET` | Backend secret for signing LiveKit tokens | Yes |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Initial admin account | Recommended |
 | `PUBLIC_REGISTRATION_ENABLED` | Whether anyone can self-register; disable it for public deployments | Recommended |
+| `EMAIL_AUTH_ENABLED` | Enable the username/email + password + email-verification auth flow | Optional |
+| `EMAIL_SMTP_HOST` / `EMAIL_SMTP_PORT` | SMTP host and port | Required when email verification is enabled |
+| `EMAIL_SMTP_USERNAME` / `EMAIL_SMTP_PASSWORD` | SMTP username and password; many providers use an API key here | Usually required when email verification is enabled |
+| `EMAIL_SMTP_USE_TLS` / `EMAIL_SMTP_USE_SSL` | SMTP transport mode; common choices are `587 + TLS` or `465 + SSL` | Recommended when email verification is enabled |
+| `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME` | Sender address and display name for verification emails | Required when email verification is enabled |
+| `EMAIL_VERIFY_TOKEN_TTL_HOURS` | Verification-link lifetime, default `24` hours | Optional |
 | `STRICT_SECURITY_CHECKS` | Refuse weak `SECRET_KEY` / `ADMIN_*` settings at startup | Recommended online |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Human verification for login/register/password reset | Optional |
 | `TURN_PUBLIC_HOST` | Public host used when generating TURN/STUN addresses | Optional |
@@ -2339,12 +2548,69 @@ Notes:
 - For public deployments, set `PUBLIC_REGISTRATION_ENABLED=0` so anyone cannot create accounts directly.
 - For public deployments, set `STRICT_SECURITY_CHECKS=1` so weak `SECRET_KEY`, weak admin passwords, and the default `root` admin name are rejected at startup.
 - Do not reuse the Linux login name just because you SSH as `root`; that is unrelated to `ADMIN_USERNAME`.
+- If you enable `EMAIL_AUTH_ENABLED=1`, make sure `PUBLIC_SCHEME` and `PUBLIC_HOST` are correct; verification links are generated from them.
 - If your users are mainly in mainland China, test `challenges.cloudflare.com` from a real mainland network before enforcing Turnstile.
 - Restart the service after changing `.env`; the `systemd` section below will do that.
 - If LiveKit values are missing, room pages intentionally return `503`.
 - Runtime data lives under `instance/`; include it in backups.
 
-### 5.1 Which file owns which setting
+### 5.1 Email Verification Registration / Login
+
+The current code now supports an optional email-verification flow:
+
+- the register page can collect `username + email + password`
+- a verification email is sent after sign-up
+- the user can sign in with `username or email + password` only after the email is verified
+- if the email was not received, the login page links to `Resend verification email`
+- the forgot-password page reuses the same SMTP setup to send password-reset links
+
+The easiest setup is SMTP. You can point it at your own domain mailbox or a provider SMTP endpoint.
+
+If you want a low-friction Resend setup, the rough order is:
+
+1. Create a Resend account and verify your sender domain, such as `noreply@your-domain`.
+2. Add the SPF / DKIM DNS records shown in the Resend dashboard.
+3. Create an API key in Resend.
+4. Fill these values in `.env`:
+
+```env
+EMAIL_AUTH_ENABLED=1
+EMAIL_SMTP_HOST=smtp.resend.com
+EMAIL_SMTP_PORT=465
+EMAIL_SMTP_USERNAME=resend
+EMAIL_SMTP_PASSWORD=re_xxxxxxxxx
+EMAIL_SMTP_USE_TLS=0
+EMAIL_SMTP_USE_SSL=1
+EMAIL_FROM_ADDRESS=noreply@meeting.example.com
+EMAIL_FROM_NAME=Video Meeting
+EMAIL_VERIFY_TOKEN_TTL_HOURS=24
+```
+
+If you use Brevo, a company mailbox, or another SMTP provider, replace the host, port, username, password, and transport mode with that provider's values. The two common combinations are:
+
+- `465 + SSL`
+- `587 + TLS`
+
+Do not try to run both `EMAIL_SMTP_USE_TLS=1` and `EMAIL_SMTP_USE_SSL=1` as the primary mode at the same time. In most cases, pick one.
+
+Minimum manual test after setup:
+
+1. Restart the service: `sudo systemctl restart video-meeting`
+2. Register a new normal account with a real email
+3. Confirm the verification email arrives in inbox or spam
+4. Open the verification link and confirm the login page shows the success notice
+5. Sign in once with the username, then once with the email
+6. Submit one forgot-password request, confirm the reset email arrives, and set a new password successfully
+7. Try signing in before verification and confirm the app blocks it and points to resend verification
+
+If mail does not arrive, check these first:
+
+- whether `EMAIL_FROM_ADDRESS` has already been verified by the provider
+- whether `PUBLIC_HOST` is correct, otherwise the verification link may point to the wrong domain
+- whether the provider DNS verification is complete
+- whether `journalctl -u video-meeting -n 100 --no-pager` shows SMTP authentication or connection errors
+
+### 5.2 Which file owns which setting
 
 Keep these boundaries stable:
 
