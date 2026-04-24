@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import uuid
+from collections import deque
 from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import urlopen, Request
 from urllib.error import URLError
@@ -76,6 +77,39 @@ login_manager.login_view = "login"
 
 
 DEBUG_ROOM = os.environ.get("DEBUG_ROOM") == "1"
+PUBLIC_REGISTRATION_ENABLED = (os.environ.get("PUBLIC_REGISTRATION_ENABLED", "1") or "").strip().lower() in {"1", "true", "yes", "on"}
+STRICT_SECURITY_CHECKS = (os.environ.get("STRICT_SECURITY_CHECKS", "0") or "").strip().lower() in {"1", "true", "yes", "on"}
+SECURITY_HEADERS_ENABLED = (os.environ.get("SECURITY_HEADERS_ENABLED", "1") or "").strip().lower() in {"1", "true", "yes", "on"}
+TURNSTILE_SITE_KEY = (os.environ.get("TURNSTILE_SITE_KEY") or "").strip()
+TURNSTILE_SECRET_KEY = (os.environ.get("TURNSTILE_SECRET_KEY") or "").strip()
+TURNSTILE_VERIFY_URL = (os.environ.get("TURNSTILE_VERIFY_URL") or "https://challenges.cloudflare.com/turnstile/v0/siteverify").strip()
+TURNSTILE_TIMEOUT_SECONDS = max(3, int(os.environ.get("TURNSTILE_TIMEOUT_SECONDS", "5") or "5"))
+LOGIN_RATE_LIMIT_PER_IP = max(3, int(os.environ.get("LOGIN_RATE_LIMIT_PER_IP", "20") or "20"))
+LOGIN_RATE_LIMIT_PER_USER = max(3, int(os.environ.get("LOGIN_RATE_LIMIT_PER_USER", "8") or "8"))
+LOGIN_RATE_LIMIT_WINDOW_SECONDS = max(60, int(os.environ.get("LOGIN_RATE_LIMIT_WINDOW_SECONDS", "600") or "600"))
+REGISTER_RATE_LIMIT_PER_IP = max(1, int(os.environ.get("REGISTER_RATE_LIMIT_PER_IP", "5") or "5"))
+REGISTER_RATE_LIMIT_WINDOW_SECONDS = max(60, int(os.environ.get("REGISTER_RATE_LIMIT_WINDOW_SECONDS", "3600") or "3600"))
+PASSWORD_RESET_RATE_LIMIT_PER_IP = max(1, int(os.environ.get("PASSWORD_RESET_RATE_LIMIT_PER_IP", "5") or "5"))
+PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS = max(60, int(os.environ.get("PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS", "3600") or "3600"))
+REQUEST_THROTTLE = {}
+REQUEST_THROTTLE_LOCK = threading.Lock()
+WEAK_SECRET_VALUES = {
+    "",
+    "changeme",
+    "change-me",
+    "replace-me",
+    "replace-with-a-long-random-secret",
+    "replace-with-strong-admin-password",
+    "replace-with-random-secret",
+    "root1234",
+    "admin",
+    "admin123",
+    "password",
+    "password123",
+    "123456",
+    "12345678",
+    "local-dev-secret-change-me",
+}
 
 
 def sanitize_host_port(value: str | None) -> str:
@@ -89,6 +123,94 @@ def sanitize_host_port(value: str | None) -> str:
     if not re.fullmatch(r"[A-Za-z0-9.-]+(?::\d{1,5})?", raw):
         return ""
     return raw
+
+
+def _client_address() -> str:
+    remote_addr = (request.remote_addr or "").strip()
+    forwarded = (request.headers.get("X-Forwarded-For") or "").split(",", 1)[0].strip()
+    if remote_addr in {"127.0.0.1", "::1"} and forwarded:
+        return forwarded[:64]
+    return (remote_addr or forwarded or "unknown")[:64]
+
+
+def _request_throttle_key(bucket: str, scope: str) -> str:
+    normalized_scope = (scope or "").strip().lower()[:96] or "-"
+    return f"{bucket}:{normalized_scope}"
+
+
+def _consume_request_budget(bucket: str, scope: str, limit: int, window_seconds: int) -> int | None:
+    now = time.time()
+    key = _request_throttle_key(bucket, scope)
+    with REQUEST_THROTTLE_LOCK:
+        attempts = REQUEST_THROTTLE.get(key)
+        if attempts is None:
+            attempts = deque()
+            REQUEST_THROTTLE[key] = attempts
+        while attempts and attempts[0] <= now - window_seconds:
+            attempts.popleft()
+        if len(attempts) >= limit:
+            retry_after = max(1, int(window_seconds - (now - attempts[0])))
+            return retry_after
+        attempts.append(now)
+    return None
+
+
+def _too_many_attempts_response(template_name: str, *, status_code: int = 429):
+    error = t("too_many_attempts")
+    response = render_template(template_name, error=error)
+    return response, status_code, {"Retry-After": "60"}
+
+
+def _validate_public_security_settings() -> list[str]:
+    issues = []
+    secret_key_env = (os.environ.get("SECRET_KEY") or "").strip()
+    admin_password_env = (os.environ.get("ADMIN_PASSWORD") or "").strip()
+    admin_username = (os.environ.get("ADMIN_USERNAME") or "root").strip() or "root"
+    if not secret_key_env or len(secret_key_env) < 32 or secret_key_env.lower() in WEAK_SECRET_VALUES:
+        issues.append("SECRET_KEY must be explicitly set to a long random value when STRICT_SECURITY_CHECKS=1.")
+    if not admin_password_env or len(admin_password_env) < 12 or admin_password_env.lower() in WEAK_SECRET_VALUES:
+        issues.append("ADMIN_PASSWORD must be explicitly set to a strong value when STRICT_SECURITY_CHECKS=1.")
+    if admin_username.lower() == "root":
+        issues.append("ADMIN_USERNAME should not stay as 'root' when STRICT_SECURITY_CHECKS=1.")
+    if app.config["PREFERRED_URL_SCHEME"] == "https" and not app.config["SESSION_COOKIE_SECURE"]:
+        issues.append("SESSION_COOKIE_SECURE must be enabled when PUBLIC_SCHEME=https and STRICT_SECURITY_CHECKS=1.")
+    if app.config["PREFERRED_URL_SCHEME"] == "https" and not app.config["REMEMBER_COOKIE_SECURE"]:
+        issues.append("REMEMBER_COOKIE_SECURE must be enabled when PUBLIC_SCHEME=https and STRICT_SECURITY_CHECKS=1.")
+    return issues
+
+
+def turnstile_enabled() -> bool:
+    return bool(TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY)
+
+
+def verify_turnstile_response(token: str | None) -> tuple[bool, str | None]:
+    if not turnstile_enabled():
+        return True, None
+    response_token = (token or "").strip()
+    if not response_token:
+        return False, t("turnstile_required")
+    payload = urlencode(
+        {
+            "secret": TURNSTILE_SECRET_KEY,
+            "response": response_token,
+            "remoteip": _client_address(),
+        }
+    ).encode("utf-8")
+    try:
+        req = Request(
+            TURNSTILE_VERIFY_URL,
+            data=payload,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        with urlopen(req, timeout=TURNSTILE_TIMEOUT_SECONDS) as resp:
+            raw = resp.read()
+        data = json.loads(raw.decode("utf-8"))
+    except (URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
+        return False, t("turnstile_unavailable")
+    if data.get("success"):
+        return True, None
+    return False, t("turnstile_failed")
 
 
 def get_public_origin() -> str:
@@ -364,6 +486,9 @@ def inject_globals():
         "asset_version": asset_version,
         "display_timezone": timezone,
         "display_timezone_label": localized_timezone_label(timezone, lang),
+        "public_registration_enabled": PUBLIC_REGISTRATION_ENABLED,
+        "turnstile_enabled": turnstile_enabled(),
+        "turnstile_site_key": TURNSTILE_SITE_KEY,
     }
 
 
@@ -404,6 +529,10 @@ def ensure_user_columns():
 def ensure_admin():
     admin_username = (os.environ.get("ADMIN_USERNAME") or "root").strip() or "root"
     admin_password = (os.environ.get("ADMIN_PASSWORD") or "").strip()
+    if STRICT_SECURITY_CHECKS:
+        issues = _validate_public_security_settings()
+        if issues:
+            raise RuntimeError("Security configuration check failed: " + " ".join(issues))
     user = User.query.filter_by(username=admin_username).first()
     generated_password = None
     if not user:
@@ -425,6 +554,19 @@ def ensure_admin():
     if generated_password:
         persist_bootstrap_secret("admin_password.txt", generated_password)
         app.logger.warning("ADMIN_PASSWORD was not set; generated an initial admin password and wrote it to instance/admin_password.txt")
+
+
+@app.after_request
+def apply_security_headers(response):
+    if not SECURITY_HEADERS_ENABLED:
+        return response
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(), browsing-topics=()")
+    if request.path in {"/login", "/register", "/forgot-password", "/admin"}:
+        response.headers.setdefault("Cache-Control", "no-store, private")
+    return response
 
 
 def normalize_password(pwd: str) -> str:
@@ -1133,6 +1275,19 @@ def forgot_password_page():
     message = None
     error = None
     if request.method == "POST":
+        retry_after = _consume_request_budget(
+            "forgot_password_ip",
+            _client_address(),
+            PASSWORD_RESET_RATE_LIMIT_PER_IP,
+            PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS,
+        )
+        if retry_after is not None:
+            response, status_code, headers = _too_many_attempts_response("forgot_password.html")
+            headers["Retry-After"] = str(retry_after)
+            return response, status_code, headers
+        turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
+        if not turnstile_ok:
+            return render_template("forgot_password.html", message=message, error=turnstile_error), 403
         username = (request.form.get("username") or "").strip()[:64]
         contact = (request.form.get("contact") or "").strip()[:128]
         note = (request.form.get("note") or "").strip()[:500]
@@ -1163,8 +1318,24 @@ def support_page():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
+    if not PUBLIC_REGISTRATION_ENABLED:
+        return render_template("register.html", error=t("registration_disabled")), 403
     if request.method == "GET":
         return render_template("register.html")
+
+    retry_after = _consume_request_budget(
+        "register_ip",
+        _client_address(),
+        REGISTER_RATE_LIMIT_PER_IP,
+        REGISTER_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    if retry_after is not None:
+        response, status_code, headers = _too_many_attempts_response("register.html")
+        headers["Retry-After"] = str(retry_after)
+        return response, status_code, headers
+    turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
+    if not turnstile_ok:
+        return render_template("register.html", error=turnstile_error), 403
 
     username = (request.form.get("username") or "").strip()
     password = (request.form.get("password") or "").strip()
@@ -1194,6 +1365,26 @@ def login():
 
     username = (request.form.get("username") or "").strip()
     password = (request.form.get("password") or "").strip()
+    retry_after_ip = _consume_request_budget(
+        "login_ip",
+        _client_address(),
+        LOGIN_RATE_LIMIT_PER_IP,
+        LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    retry_after_user = _consume_request_budget(
+        "login_user",
+        username or "<empty>",
+        LOGIN_RATE_LIMIT_PER_USER,
+        LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    retry_after = retry_after_ip if retry_after_ip is not None else retry_after_user
+    if retry_after is not None:
+        response, status_code, headers = _too_many_attempts_response("login.html")
+        headers["Retry-After"] = str(retry_after)
+        return response, status_code, headers
+    turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
+    if not turnstile_ok:
+        return render_template("login.html", error=turnstile_error), 403
 
     user = User.query.filter_by(username=username).first()
     if not user or not user.check_password(password):

@@ -278,6 +278,10 @@ LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 
 ADMIN_USERNAME=root
 ADMIN_PASSWORD=root1234
+PUBLIC_REGISTRATION_ENABLED=1
+STRICT_SECURITY_CHECKS=0
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
 ```
 
 `.env` 不要提交到 Git。
@@ -293,6 +297,9 @@ ADMIN_PASSWORD=root1234
 | `LIVEKIT_API_KEY` | 后端签发 LiveKit token 使用的 API key | 从 LiveKit Cloud 项目设置复制 |
 | `LIVEKIT_API_SECRET` | 后端签发 LiveKit token 使用的 API secret | 从 LiveKit Cloud 项目设置复制，不要公开 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 管理后台初始登录账号 | 本地可用简单值，线上必须改强密码 |
+| `PUBLIC_REGISTRATION_ENABLED` | 是否允许任何人直接注册 | 本地演示可开，公网建议设为 `0` |
+| `STRICT_SECURITY_CHECKS` | 是否在启动时拒绝弱 `SECRET_KEY` / `ADMIN_*` 配置 | 公网建议设为 `1` |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 站点 key 和服务端 secret | 大陆用户需先实测可用性 |
 
 LiveKit 的三项配置必须来自同一个 LiveKit 项目。Flask 只负责校验用户并签发 token，浏览器拿到 token 后会直接连 `LIVEKIT_URL`；所以这个地址必须能被你的浏览器访问。
 
@@ -395,9 +402,13 @@ http://127.0.0.1:5000
 | `PUBLIC_SCHEME` | 对外访问协议，通常为 `http` 或 `https` |
 | `ADMIN_USERNAME` | 初始管理员用户名，默认 `root` |
 | `ADMIN_PASSWORD` | 初始管理员密码；未设置时自动生成 |
+| `PUBLIC_REGISTRATION_ENABLED` | 是否允许公开注册，默认开启 |
+| `STRICT_SECURITY_CHECKS` | 严格安全启动检查，开启后要求显式强 `SECRET_KEY`、强 `ADMIN_PASSWORD`，且不允许 `ADMIN_USERNAME=root` |
+| `TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key，留空则关闭 |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret key，留空则关闭 |
 | `DEBUG_ROOM=1` | 输出房间相关调试日志 |
 
-可选项包括 `TURN_PUBLIC_HOST`、`TURN_URLS`、`TURN_USERNAME`、`TURN_PASSWORD`、`SESSION_COOKIE_SAMESITE`、`SESSION_COOKIE_SECURE`、`REMEMBER_COOKIE_SAMESITE`、`REMEMBER_COOKIE_SECURE`。
+可选项包括 `TURN_PUBLIC_HOST`、`TURN_URLS`、`TURN_USERNAME`、`TURN_PASSWORD`、`SESSION_COOKIE_SAMESITE`、`SESSION_COOKIE_SECURE`、`REMEMBER_COOKIE_SAMESITE`、`REMEMBER_COOKIE_SECURE`、`LOGIN_RATE_LIMIT_PER_IP`、`LOGIN_RATE_LIMIT_PER_USER`、`PUBLIC_REGISTRATION_ENABLED`、`STRICT_SECURITY_CHECKS`、`TURNSTILE_SITE_KEY`、`TURNSTILE_SECRET_KEY`。
 
 ## 运行限制
 
@@ -732,6 +743,10 @@ LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 
 ADMIN_USERNAME=root
 ADMIN_PASSWORD=root1234
+PUBLIC_REGISTRATION_ENABLED=1
+STRICT_SECURITY_CHECKS=0
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
 ```
 
 Do not commit `.env`.
@@ -747,6 +762,9 @@ Configuration explanation:
 | `LIVEKIT_API_KEY` | API key used by the backend to sign LiveKit tokens | Copy from the same LiveKit project |
 | `LIVEKIT_API_SECRET` | API secret used by the backend to sign LiveKit tokens | Copy from the same LiveKit project and keep private |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Initial admin login | Simple values are fine locally; use a strong password in production |
+| `PUBLIC_REGISTRATION_ENABLED` | Whether anyone can self-register | Fine for local demos; set `0` on public deployments |
+| `STRICT_SECURITY_CHECKS` | Refuse weak `SECRET_KEY` / `ADMIN_*` settings at startup | Set `1` on public deployments |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile site key and server secret | Test availability first for mainland users |
 
 The three LiveKit values must come from the same LiveKit project. Flask only checks meeting permission and issues a token; the browser connects directly to `LIVEKIT_URL`, so that URL must be reachable from your browser.
 
@@ -851,9 +869,13 @@ LiveKit configuration is required. If it is missing, room media is unavailable a
 | `PUBLIC_SCHEME` | Public scheme, usually `http` or `https` |
 | `ADMIN_USERNAME` | Initial admin username, defaults to `root` |
 | `ADMIN_PASSWORD` | Initial admin password; generated if not set |
+| `PUBLIC_REGISTRATION_ENABLED` | Whether public self-registration is enabled, defaults to on |
+| `STRICT_SECURITY_CHECKS` | Strict startup guard; requires explicit strong `SECRET_KEY`, strong `ADMIN_PASSWORD`, and non-`root` `ADMIN_USERNAME` |
+| `TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key; leave empty to disable |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret key; leave empty to disable |
 | `DEBUG_ROOM=1` | Enables room debug logging |
 
-Optional settings include `TURN_PUBLIC_HOST`, `TURN_URLS`, `TURN_USERNAME`, `TURN_PASSWORD`, `SESSION_COOKIE_SAMESITE`, `SESSION_COOKIE_SECURE`, `REMEMBER_COOKIE_SAMESITE`, and `REMEMBER_COOKIE_SECURE`.
+Optional settings include `TURN_PUBLIC_HOST`, `TURN_URLS`, `TURN_USERNAME`, `TURN_PASSWORD`, `SESSION_COOKIE_SAMESITE`, `SESSION_COOKIE_SECURE`, `REMEMBER_COOKIE_SAMESITE`, `REMEMBER_COOKIE_SECURE`, `LOGIN_RATE_LIMIT_PER_IP`, `LOGIN_RATE_LIMIT_PER_USER`, `PUBLIC_REGISTRATION_ENABLED`, `STRICT_SECURITY_CHECKS`, `TURNSTILE_SITE_KEY`, and `TURNSTILE_SECRET_KEY`.
 
 ## Runtime Limits
 

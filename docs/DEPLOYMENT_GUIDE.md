@@ -258,8 +258,12 @@ LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=replace-with-livekit-api-key
 LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 
-ADMIN_USERNAME=root
+ADMIN_USERNAME=meetingadmin
 ADMIN_PASSWORD=replace-with-strong-admin-password
+PUBLIC_REGISTRATION_ENABLED=0
+STRICT_SECURITY_CHECKS=1
+TURNSTILE_SITE_KEY=replace-with-turnstile-site-key
+TURNSTILE_SECRET_KEY=replace-with-turnstile-secret-key
 
 SESSION_COOKIE_SECURE=1
 REMEMBER_COOKIE_SECURE=1
@@ -288,6 +292,9 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 | `LIVEKIT_API_KEY` | Flask 后端签发 LiveKit token 用的 key | 是 |
 | `LIVEKIT_API_SECRET` | Flask 后端签发 LiveKit token 用的 secret | 是 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 初始管理员账号和密码 | 推荐 |
+| `PUBLIC_REGISTRATION_ENABLED` | 是否允许任何人自助注册；公网建议关闭 | 推荐 |
+| `STRICT_SECURITY_CHECKS` | 启动时拒绝弱 `SECRET_KEY` / `ADMIN_*` 配置 | 公网推荐 |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 登录/注册/找回密码的人机验证 | 可选 |
 | `TURN_PUBLIC_HOST` | 自动生成 TURN/STUN 地址时使用的公网主机名 | 可选 |
 | `TURN_URLS` | 自定义 TURN/STUN URL，多个地址用逗号分隔 | 可选 |
 | `TURN_USERNAME` / `TURN_PASSWORD` | TURN 中继账号和密码；设置 `TURN_URLS` 时通常需要 | 可选 |
@@ -296,9 +303,37 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 注意：
 
 - `.env` 不要提交到 Git。
+- 公网部署建议设置 `PUBLIC_REGISTRATION_ENABLED=0`，避免任何人直接创建账号。
+- 公网部署建议设置 `STRICT_SECURITY_CHECKS=1`，避免弱 `SECRET_KEY`、弱管理员密码或默认 `root` 管理员名直接带到线上。
+- 线上 systemd 不要直接运行 `python app.py`。那会启动 Werkzeug 开发服务器；如果你在 `systemctl status video-meeting` 里看到 `Werkzeug appears to be used in a production deployment` 或 `This is a development server`，说明当前运行方式不对。
+- 如果你不熟悉终端编辑器，可以直接保留 EOF 写法；最后那个单独一行的 `EOF` 表示写入结束。
+- 如果你不确定环境变量文件到底在哪里被加载，执行 `sudo systemctl cat video-meeting`，确认 `EnvironmentFile=/opt/video-meeting/.env`。
+- `TURNSTILE_SECRET_KEY` 不能自己随便生成，必须和 `TURNSTILE_SITE_KEY` 一起从同一个 Cloudflare Turnstile 站点页面复制。
+- 如果主要服务中国大陆用户，开启 Turnstile 前先在真实大陆网络环境下验证 `challenges.cloudflare.com` 是否可稳定访问。
 - 修改 `.env` 后必须 `sudo systemctl restart video-meeting`。
 - LiveKit 三项缺失时，房间页返回 `503` 是正常保护逻辑。
 - SQLite 数据库、上传文件、生成的管理员密码等运行时文件在 `instance/`，备份时不要漏掉。
+
+如果你执行 `sudo systemctl cat video-meeting` 后，看到的是很多 `Environment=...` 而不是 `EnvironmentFile=/opt/video-meeting/.env`，说明你当前部署还在把配置硬编码在 systemd 服务文件或 `override.conf` 里。这种情况下，应该优先迁移到 `.env + EnvironmentFile`，否则后续每次改配置都要改 systemd。
+
+在正式重建前，建议先做一轮现状检查：
+
+```bash
+sudo systemctl status video-meeting --no-pager -l
+sudo systemctl cat video-meeting
+sudo journalctl -u video-meeting -n 120 --no-pager
+ps -ef | grep -E "gunicorn|python.*app.py" | grep -v grep
+sudo ss -lntp | grep -E ':80|:443|:5000|:8000'
+sudo nginx -t
+curl -I http://127.0.0.1:8000
+curl -I http://127.0.0.1:5000
+```
+
+识别重点：
+
+- 生产环境目标是 `Nginx 80/443 -> Gunicorn 127.0.0.1:8000 -> Flask`
+- 如果你看到 `python app.py`、`Werkzeug` 警告、或应用直接监听公网 `:5000`，先纠正运行方式，再继续改 Nginx 或 `.env`
+- `systemctl cat video-meeting` 应优先看到 `EnvironmentFile=/opt/video-meeting/.env`
 
 ## 6. systemd 服务
 
@@ -340,6 +375,24 @@ sudo systemctl status video-meeting
 - `--worker-class eventlet` 用于 Flask-SocketIO 长连接。
 - `--workers 1` 不要随便调大，因为当前房间在线态在单进程内存中。
 - `--bind 127.0.0.1:8000` 必须和 Nginx `proxy_pass` 一致。
+
+如果你当前服务是旧写法，例如：
+
+```ini
+Environment=PUBLIC_HOST=...
+Environment=ADMIN_PASSWORD=...
+Environment=LIVEKIT_URL=...
+```
+
+或者这些值写在 `/etc/systemd/system/video-meeting.service.d/override.conf`，处理顺序建议是：
+
+1. 先把这些值迁移到 `/opt/video-meeting/.env`
+2. 把主服务文件改成 `EnvironmentFile=/opt/video-meeting/.env`
+3. 删除或清空旧 `override.conf`
+4. 执行 `sudo systemctl daemon-reload`
+5. 再执行 `sudo systemctl restart video-meeting`
+
+不要一边保留旧 `override.conf`，一边又希望 `.env` 接管全部配置，否则很容易出现“明明改了 `.env`，但实际运行值还是旧的”。
 
 查看日志：
 
@@ -422,6 +475,18 @@ sudo systemctl status video-meeting
 
 实际端口以你的 LiveKit 配置和官方文档为准。云厂商安全组和服务器 `ufw` 都要放行，二者缺一不可。
 
+如果你是自建 LiveKit，先把这三个值的来源分清：
+
+- `LIVEKIT_URL` 是你自己给 LiveKit 准备的公网访问地址，通常写成 `wss://livekit.example.com`
+- `LIVEKIT_API_KEY` 和 `LIVEKIT_API_SECRET` 来自你自建 LiveKit 服务端配置，不是 Cloudflare 的 key，也不是 Flask 的 `SECRET_KEY`
+- Flask `.env` 里的 `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` 必须和 LiveKit 实际启动时加载的配置完全一致
+
+不要把下面几类值混在一起：
+
+- `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET`：Flask 后端签发 LiveKit token 时使用
+- `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`：Cloudflare Turnstile 人机验证使用
+- Flask `SECRET_KEY`：这个 Web 应用自己的 session 和签名使用
+
 ### 7.4 自建 LiveKit：Docker Compose 示例
 
 安装 Docker：
@@ -441,7 +506,9 @@ sudo chown deploy:deploy /opt/livekit
 cd /opt/livekit
 ```
 
-写 LiveKit 配置。先生成一组 key/secret，示例里为了易读写成固定占位值，实际必须替换：
+写 LiveKit 配置。先生成一组 key/secret，示例里为了易读写成固定占位值，实际必须替换。
+
+这里的 `keys:` 就是你后面要填进 Flask `.env` 的 `LIVEKIT_API_KEY` 和 `LIVEKIT_API_SECRET` 来源。不是去 gunicorn 拿，也不是去 Cloudflare 拿。
 
 ```bash
 cat <<'EOF' > /opt/livekit/livekit.yaml
@@ -534,6 +601,8 @@ LIVEKIT_URL=wss://livekit.example.com
 LIVEKIT_API_KEY=replace-livekit-api-key
 LIVEKIT_API_SECRET=replace-livekit-api-secret
 ```
+
+也就是要和 `/opt/livekit/livekit.yaml` 里的 `keys:` 保持一一对应。
 
 最后重启：
 
@@ -1019,6 +1088,16 @@ sudo systemctl daemon-reload
 sudo systemctl restart video-meeting
 ```
 
+如果你改的是 `/etc/systemd/system/video-meeting.service.d/override.conf`，也必须：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart video-meeting
+sudo systemctl cat video-meeting
+```
+
+如果 `systemctl cat` 里还能看到旧的 `Environment=...`，说明旧 override 还在覆盖新配置。
+
 ### SSH 登录问题
 
 | 现象 | 处理 |
@@ -1304,8 +1383,12 @@ LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=replace-with-livekit-api-key
 LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 
-ADMIN_USERNAME=root
+ADMIN_USERNAME=meetingadmin
 ADMIN_PASSWORD=replace-with-strong-admin-password
+PUBLIC_REGISTRATION_ENABLED=0
+STRICT_SECURITY_CHECKS=1
+TURNSTILE_SITE_KEY=replace-with-turnstile-site-key
+TURNSTILE_SECRET_KEY=replace-with-turnstile-secret-key
 
 SESSION_COOKIE_SECURE=1
 REMEMBER_COOKIE_SECURE=1
@@ -1334,6 +1417,9 @@ Configuration:
 | `LIVEKIT_API_KEY` | Backend key for signing LiveKit tokens | Yes |
 | `LIVEKIT_API_SECRET` | Backend secret for signing LiveKit tokens | Yes |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Initial admin account | Recommended |
+| `PUBLIC_REGISTRATION_ENABLED` | Whether anyone can self-register; disable it for public deployments | Recommended |
+| `STRICT_SECURITY_CHECKS` | Refuse weak `SECRET_KEY` / `ADMIN_*` settings at startup | Recommended online |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Human verification for login/register/password reset | Optional |
 | `TURN_PUBLIC_HOST` | Public host used when generating TURN/STUN addresses | Optional |
 | `TURN_URLS` | Custom TURN/STUN URLs, comma-separated | Optional |
 | `TURN_USERNAME` / `TURN_PASSWORD` | TURN relay credentials; usually required when `TURN_URLS` is set | Optional |
@@ -1342,6 +1428,9 @@ Configuration:
 Notes:
 
 - Do not commit `.env`.
+- For public deployments, set `PUBLIC_REGISTRATION_ENABLED=0` so anyone cannot create accounts directly.
+- For public deployments, set `STRICT_SECURITY_CHECKS=1` so weak `SECRET_KEY`, weak admin passwords, and the default `root` admin name are rejected at startup.
+- If your users are mainly in mainland China, test `challenges.cloudflare.com` from a real mainland network before enforcing Turnstile.
 - Restart `video-meeting` after changing `.env`.
 - If LiveKit values are missing, room pages intentionally return `503`.
 - Runtime data lives under `instance/`; include it in backups.
@@ -1386,6 +1475,7 @@ Key points:
 - `--worker-class eventlet` supports Flask-SocketIO long connections.
 - Keep `--workers 1`; current online room state is in process memory.
 - `--bind 127.0.0.1:8000` must match Nginx `proxy_pass`.
+- Do not replace this with `python app.py` on a public server. If `systemctl status video-meeting` shows Werkzeug development-server warnings, the service definition is wrong for production.
 
 Logs:
 
