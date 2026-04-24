@@ -51,8 +51,10 @@
     <label>{{ t('password') }}</label>
     <input name="password" type="password" required />
     {% if turnstile_enabled %}
-    <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>
-    <div class="muted small-note">{{ t('turnstile_help') }}</div>
+    <div class="auth-turnstile-block">
+      <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>
+      <div class="muted small-note">{{ t('turnstile_help') }}</div>
+    </div>
     {% endif %}
     <button class="primary-btn" type="submit">{{ t('submit_login') }}</button>
     <div class="auth-links-row">
