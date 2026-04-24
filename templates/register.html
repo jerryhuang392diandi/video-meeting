@@ -34,12 +34,20 @@
   </div>
 
   <form method="post" class="form-card elevated-card auth-form-card">
+    {% if message %}
+      <div class="notice">{{ message }}</div>
+    {% endif %}
     {% if error %}
       <div class="notice error">{{ error }}</div>
     {% endif %}
     {% if public_registration_enabled %}
     <label>{{ t('username') }}</label>
-    <input name="username" maxlength="32" required />
+    <input name="username" maxlength="32" value="{{ request.form.get('username', '') }}" required />
+    {% if email_auth_enabled %}
+    <label>{{ t('email') }}</label>
+    <input name="email" type="email" maxlength="255" value="{{ request.form.get('email', '') }}" required />
+    <div class="muted small-note">{{ t('register_email_help') }}</div>
+    {% endif %}
     <label>{{ t('password') }}</label>
     <input name="password" type="password" required />
     {% if turnstile_enabled %}

@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('resend_verification') }}{% endblock %}
+{% block shell_class %}auth-shell auth-request-shell{% endblock %}
+{% block head %}
+  {{ super() }}
+  {% if turnstile_enabled %}
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  {% endif %}
+{% endblock %}
+{% block content %}
+<header class="topbar compact">
+  <div>
+    <div class="brand">{{ t('app_name') }}</div>
+    <div class="muted">{{ t('subtitle') }}</div>
+  </div>
+  <div class="top-actions">
+    {% include '_language_switch.html' %}
+    <a class="chip" href="{{ url_for('login') }}">{{ t('back_to_login') }}</a>
+  </div>
+</header>
+
+<section class="hero-card auth-landing-card glass-highlight">
+  <div class="landing-copy">
+    <span class="eyebrow">{{ t('app_name') }}</span>
+    <h1>{{ t('resend_verification') }}</h1>
+    <p class="landing-tagline">{{ t('auth_tagline') }}</p>
+    <p>{{ t('resend_verification_intro') }}</p>
+  </div>
+
+  <form method="post" class="form-card elevated-card auth-form-card">
+    {% if message %}
+      <div class="notice">{{ message }}</div>
+    {% endif %}
+    {% if error %}
+      <div class="notice error">{{ error }}</div>
+    {% endif %}
+    <label>{{ t('login_identifier') }}</label>
+    <input name="identifier" maxlength="255" value="{{ request.form.get('identifier', '') }}" required />
+    <div class="muted small-note">{{ t('login_identifier_help') }}</div>
+    {% if turnstile_enabled %}
+    <div class="auth-turnstile-block">
+      <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>
+      <div class="muted small-note">{{ t('turnstile_help') }}</div>
+    </div>
+    {% endif %}
+    <button class="primary-btn" type="submit">{{ t('resend_verification') }}</button>
+    <a class="text-link" href="{{ url_for('login') }}">{{ t('back_to_login') }}</a>
+  </form>
+</section>
+{% endblock %}
