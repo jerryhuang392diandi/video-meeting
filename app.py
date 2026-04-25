@@ -1485,8 +1485,6 @@ def forgot_password_page():
         identifier = (request.form.get("identifier") or "").strip()[:255]
         email_code = (request.form.get("email_code") or "").strip()
         new_password = (request.form.get("new_password") or "").strip()
-        contact = (request.form.get("contact") or "").strip()[:128]
-        note = (request.form.get("note") or "").strip()[:500]
         if not identifier:
             error = t("login_identifier_required") if email_auth_active() else t("username_password_required")
         else:
@@ -1502,8 +1500,7 @@ def forgot_password_page():
                         else:
                             message = t("password_reset_code_sent")
                     else:
-                        create_password_reset_request(identifier, contact, note)
-                        message = t("password_reset_email_sent_generic")
+                        error = t("password_reset_email_unavailable")
                 else:
                     if user and user.email and user.email_verified:
                         turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
@@ -1532,12 +1529,39 @@ def forgot_password_page():
                                 session.clear()
                                 return redirect(url_for("login", reset="1"))
                     else:
-                        create_password_reset_request(identifier, contact, note)
-                        message = t("password_reset_request_submitted")
+                        error = t("password_reset_email_unavailable")
             else:
-                create_password_reset_request(identifier, contact, note)
-                message = t("password_reset_request_submitted")
+                error = t("password_reset_email_unavailable")
     return render_template("forgot_password.html", message=message, error=error)
+
+
+@app.route("/forgot-password-support", methods=["GET", "POST"])
+def forgot_password_support_page():
+    message = None
+    error = None
+    if request.method == "POST":
+        retry_after = _consume_request_budget(
+            "forgot_password_ip",
+            _client_address(),
+            PASSWORD_RESET_RATE_LIMIT_PER_IP,
+            PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS,
+        )
+        if retry_after is not None:
+            response, status_code, headers = _too_many_attempts_response("forgot_password_support.html")
+            headers["Retry-After"] = str(retry_after)
+            return response, status_code, headers
+        turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
+        if not turnstile_ok:
+            return render_template("forgot_password_support.html", message=message, error=turnstile_error), 403
+        identifier = (request.form.get("identifier") or "").strip()[:255]
+        contact = (request.form.get("contact") or "").strip()[:128]
+        note = (request.form.get("note") or "").strip()[:500]
+        if not identifier:
+            error = t("login_identifier_required") if email_auth_active() else t("username_password_required")
+        else:
+            create_password_reset_request(identifier, contact, note)
+            message = t("password_reset_request_submitted")
+    return render_template("forgot_password_support.html", message=message, error=error)
 
 
 @app.route("/help")
@@ -1639,14 +1663,10 @@ def register():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    message = None
-    error = None
     if request.method == "GET":
-        return render_template("login.html", active_login_mode="password")
+        return render_template("login.html")
 
-    intent = (request.form.get("intent") or "password").strip()
-    active_login_mode = "email_code" if intent in {"send_login_code", "email_code"} else "password"
-    rate_limit_scope = normalize_email(request.form.get("email")) if active_login_mode == "email_code" else (request.form.get("identifier") or "").strip()
+    identifier = (request.form.get("identifier") or "").strip()
     retry_after_ip = _consume_request_budget(
         "login_ip",
         _client_address(),
@@ -1655,7 +1675,7 @@ def login():
     )
     retry_after_user = _consume_request_budget(
         "login_user",
-        rate_limit_scope or "<empty>",
+        identifier or "<empty>",
         LOGIN_RATE_LIMIT_PER_USER,
         LOGIN_RATE_LIMIT_WINDOW_SECONDS,
     )
@@ -1665,51 +1685,82 @@ def login():
         headers["Retry-After"] = str(retry_after)
         return response, status_code, headers
 
-    if active_login_mode == "password":
-        identifier = (request.form.get("identifier") or "").strip()
-        password = (request.form.get("password") or "").strip()
-        turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
-        if not turnstile_ok:
-            return render_template("login.html", error=turnstile_error, active_login_mode=active_login_mode), 403
+    password = (request.form.get("password") or "").strip()
+    turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
+    if not turnstile_ok:
+        return render_template("login.html", error=turnstile_error), 403
 
-        user = User.query.filter_by(username=identifier).first()
-        if not user or not user.check_password(password):
-            return render_template("login.html", error=t("invalid_login"), active_login_mode=active_login_mode)
-        if not user.is_active_user:
-            return render_template("login.html", error=t("account_disabled"), active_login_mode=active_login_mode)
-        if verification_email_required_for_user(user):
-            return render_template("login.html", error=t("email_not_verified"), active_login_mode=active_login_mode)
-    else:
-        email = normalize_email(request.form.get("email"))
-        email_code = (request.form.get("email_code") or "").strip()
-        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-            return render_template("login.html", error=t("invalid_email"), active_login_mode=active_login_mode)
-        user = User.query.filter(func.lower(User.email) == email).first()
-        if intent == "send_login_code":
-            try:
-                if user and user.email and user.is_active_user:
-                    send_email_verification_code(email=user.email, purpose="login", user=user)
-            except Exception:
-                app.logger.exception("Failed to send login code to %s", email)
-                return render_template("login.html", error=t("verification_email_send_failed"), active_login_mode=active_login_mode), 502
-            message = t("login_code_sent_generic")
-            return render_template("login.html", message=message, active_login_mode=active_login_mode)
+    user = User.query.filter_by(username=identifier).first()
+    if not user or not user.check_password(password):
+        return render_template("login.html", error=t("invalid_login"))
+    if not user.is_active_user:
+        return render_template("login.html", error=t("account_disabled"))
+    if verification_email_required_for_user(user):
+        return render_template("login.html", error=t("email_not_verified"))
 
-        turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
-        if not turnstile_ok:
-            return render_template("login.html", error=turnstile_error, active_login_mode=active_login_mode), 403
-        if not re.fullmatch(r"\d{6}", email_code):
-            return render_template("login.html", error=t("verification_code_required"), active_login_mode=active_login_mode)
-        if not user or not user.email:
-            return render_template("login.html", error=t("invalid_login"), active_login_mode=active_login_mode)
-        if not user.is_active_user:
-            return render_template("login.html", error=t("account_disabled"), active_login_mode=active_login_mode)
-        code = find_email_verification_code(email=user.email, purpose="login", raw_code=email_code, user_id=user.id)
-        if not code:
-            return render_template("login.html", error=t("verification_code_invalid"), active_login_mode=active_login_mode)
-        code.used_at = datetime.utcnow()
-        mark_user_email_verified(user)
+    user.session_version = (user.session_version or 0) + 1
+    db.session.commit()
+    login_user(user)
+    session["session_version"] = user.session_version
+    disconnect_user_sockets(user.id, message=t("kicked"))
+    return redirect(url_for("index"))
 
+
+@app.route("/login-email-code", methods=["GET", "POST"])
+def login_email_code():
+    message = None
+    error = None
+    if request.method == "GET":
+        return render_template("login_email_code.html")
+
+    intent = (request.form.get("intent") or "email_code").strip()
+    email = normalize_email(request.form.get("email"))
+    retry_after_ip = _consume_request_budget(
+        "login_ip",
+        _client_address(),
+        LOGIN_RATE_LIMIT_PER_IP,
+        LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    retry_after_user = _consume_request_budget(
+        "login_user",
+        email or "<empty>",
+        LOGIN_RATE_LIMIT_PER_USER,
+        LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    retry_after = retry_after_ip if retry_after_ip is not None else retry_after_user
+    if retry_after is not None:
+        response, status_code, headers = _too_many_attempts_response("login_email_code.html")
+        headers["Retry-After"] = str(retry_after)
+        return response, status_code, headers
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        return render_template("login_email_code.html", error=t("invalid_email"))
+
+    user = User.query.filter(func.lower(User.email) == email).first()
+    if intent == "send_login_code":
+        try:
+            if user and user.email and user.is_active_user:
+                send_email_verification_code(email=user.email, purpose="login", user=user)
+        except Exception:
+            app.logger.exception("Failed to send login code to %s", email)
+            return render_template("login_email_code.html", error=t("verification_email_send_failed")), 502
+        message = t("login_code_sent_generic")
+        return render_template("login_email_code.html", message=message)
+
+    email_code = (request.form.get("email_code") or "").strip()
+    turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
+    if not turnstile_ok:
+        return render_template("login_email_code.html", error=turnstile_error), 403
+    if not re.fullmatch(r"\d{6}", email_code):
+        return render_template("login_email_code.html", error=t("verification_code_required"))
+    if not user or not user.email:
+        return render_template("login_email_code.html", error=t("invalid_login"))
+    if not user.is_active_user:
+        return render_template("login_email_code.html", error=t("account_disabled"))
+    code = find_email_verification_code(email=user.email, purpose="login", raw_code=email_code, user_id=user.id)
+    if not code:
+        return render_template("login_email_code.html", error=t("verification_code_invalid"))
+    code.used_at = datetime.utcnow()
+    mark_user_email_verified(user)
     user.session_version = (user.session_version or 0) + 1
     db.session.commit()
     login_user(user)

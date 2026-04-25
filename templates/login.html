@@ -39,65 +39,34 @@
     <p class="muted small-note">{{ t('placeholder_login_hint') }}</p>
   </div>
 
-  <div class="form-card elevated-card auth-form-card">
+  <form method="post" class="form-card elevated-card auth-form-card">
     {% if request.args.get('kicked') %}
       <div class="notice warning">{{ t('kicked') }}</div>
     {% endif %}
     {% if request.args.get('reset') == '1' %}
       <div class="notice">{{ t('password_reset_success') }}</div>
     {% endif %}
-    {% if message %}
-      <div class="notice">{{ message }}</div>
-    {% endif %}
     {% if error %}
       <div class="notice error">{{ error }}</div>
     {% endif %}
-
-    <div class="auth-subsection{% if active_login_mode != 'password' %} muted-section{% endif %}">
-      <h3>{{ t('login_with_password') }}</h3>
-      <form method="post">
-        <label>{{ t('username') }}</label>
-        <input name="identifier" maxlength="255" value="{{ request.form.get('identifier', '') if active_login_mode == 'password' else '' }}" required />
-        <div class="muted small-note">{{ t('login_password_help') }}</div>
-        <label>{{ t('password') }}</label>
-        <input name="password" type="password" required />
-        {% if turnstile_enabled %}
-        <div class="auth-turnstile-block">
-          <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>
-          <div class="muted small-note">{{ t('turnstile_help') }}</div>
-        </div>
-        {% endif %}
-        <button class="primary-btn" type="submit" name="intent" value="password">{{ t('submit_login') }}</button>
-      </form>
-    </div>
-
-    {% if email_auth_enabled %}
-    <div class="auth-subsection{% if active_login_mode != 'email_code' %} muted-section{% endif %}">
-      <h3>{{ t('login_with_email_code') }}</h3>
-      <form method="post">
-        <label>{{ t('email') }}</label>
-        <input name="email" type="email" maxlength="255" value="{{ request.form.get('email', '') if active_login_mode == 'email_code' else '' }}" required />
-        <div class="muted small-note">{{ t('login_email_code_help') }}</div>
-        <label>{{ t('email_verification_code') }}</label>
-        <input name="email_code" inputmode="numeric" pattern="\d{6}" maxlength="6" value="{{ request.form.get('email_code', '') if active_login_mode == 'email_code' else '' }}" required />
-        {% if turnstile_enabled %}
-        <div class="auth-turnstile-block">
-          <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>
-          <div class="muted small-note">{{ t('turnstile_help') }}</div>
-        </div>
-        {% endif %}
-        <div class="auth-inline-actions">
-          <button class="ghost-btn" type="submit" name="intent" value="send_login_code" formnovalidate>{{ t('send_email_verification_code') }}</button>
-          <button class="primary-btn" type="submit" name="intent" value="email_code">{{ t('login_with_email_code') }}</button>
-        </div>
-      </form>
+    <label>{{ t('username') }}</label>
+    <input name="identifier" maxlength="255" value="{{ request.form.get('identifier', '') }}" required />
+    <div class="muted small-note">{{ t('login_password_help') }}</div>
+    <label>{{ t('password') }}</label>
+    <input name="password" type="password" required />
+    {% if turnstile_enabled %}
+    <div class="auth-turnstile-block">
+      <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>
+      <div class="muted small-note">{{ t('turnstile_help') }}</div>
     </div>
     {% endif %}
+    <button class="primary-btn" type="submit">{{ t('submit_login') }}</button>
 
     <div class="auth-links-row">
+      {% if email_auth_enabled %}<a class="text-link" href="{{ url_for('login_email_code') }}">{{ t('login_with_email_code') }}</a>{% endif %}
       {% if public_registration_enabled %}<a class="text-link" href="{{ url_for('register') }}">{{ t('nav_register') }}</a>{% endif %}
       <a class="text-link" href="{{ url_for('forgot_password_page') }}">{{ t('forgot_password') }}</a>
     </div>
-  </div>
+  </form>
 </section>
 {% endblock %}
