@@ -1121,13 +1121,18 @@ function cleanupProcessedVideoStream({ stopCanvas = false } = {}) {
   }
 }
 
-function disableVirtualBackgroundState({ stopCanvas = false } = {}) {
+function disableVirtualBackgroundState({ stopCanvas = false, cleanupProcessed = true } = {}) {
   virtualBgEnabled = false;
   virtualBgLoopActive = false;
   segmentationSending = false;
   virtualBgActivationToken += 1;
   activeVirtualBgToken = 0;
-  cleanupProcessedVideoStream({ stopCanvas });
+  if (cleanupProcessed) {
+    cleanupProcessedVideoStream({ stopCanvas });
+  } else if (stopCanvas && processedCanvasStream) {
+    stopStreamTracks(processedCanvasStream);
+    processedCanvasStream = null;
+  }
 }
 
 function getLiveVideoTrack(stream) {
@@ -1158,7 +1163,7 @@ async function replaceLiveKitCameraTrackFromStream(stream) {
 
 async function fallbackToRawCamera(message = null, { stopCanvas = false } = {}) {
   const rawSourceStream = getVirtualBackgroundSourceStream();
-  disableVirtualBackgroundState({ stopCanvas });
+  disableVirtualBackgroundState({ stopCanvas, cleanupProcessed: false });
   if (rawSourceStream) {
     try {
       await replaceLiveKitCameraTrackFromStream(rawSourceStream);
@@ -1166,6 +1171,7 @@ async function fallbackToRawCamera(message = null, { stopCanvas = false } = {}) 
       console.error(err);
     }
   }
+  cleanupProcessedVideoStream({ stopCanvas });
   updateVirtualBackgroundButtonState();
   if (message) setStatus(message, 'warning');
 }

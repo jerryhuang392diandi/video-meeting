@@ -1709,13 +1709,11 @@ def register():
 
     if email_auth_active() and not email_delivery_configured():
         return render_email_code_template("register.html", purpose="register", scope=email, error=t("email_delivery_not_configured")), 503
-    if email_auth_active():
+    if intent == "send_code" and email_auth_active():
         if not looks_like_email(email):
             return render_email_code_template("register.html", purpose="register", scope=email, error=t("invalid_email"))
         if User.query.filter(func.lower(User.email) == email).first():
             return render_email_code_template("register.html", purpose="register", scope=email, error=t("email_exists"))
-
-    if intent == "send_code" and email_auth_active():
         retry_after = consume_email_code_send_budget(purpose="register", scope=email)
         if retry_after is not None:
             return render_email_code_template(
@@ -1735,6 +1733,11 @@ def register():
             scope=email,
             message=build_email_code_sent_message(purpose="register", scope=email),
         )
+    if email_auth_active():
+        if not looks_like_email(email):
+            return render_email_code_template("register.html", purpose="register", scope=email, error=t("invalid_email"))
+        if User.query.filter(func.lower(User.email) == email).first():
+            return render_email_code_template("register.html", purpose="register", scope=email, error=t("email_exists"))
 
     if not username or not password or (email_auth_active() and (not email or not email_code)):
         return render_email_code_template(
