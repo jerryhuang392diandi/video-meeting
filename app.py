@@ -105,6 +105,7 @@ EMAIL_SMTP_USE_SSL = (os.environ.get("EMAIL_SMTP_USE_SSL", "0") or "").strip().l
 EMAIL_FROM_ADDRESS = (os.environ.get("EMAIL_FROM_ADDRESS") or "").strip()
 EMAIL_FROM_NAME = (os.environ.get("EMAIL_FROM_NAME") or "Video Meeting").strip() or "Video Meeting"
 ADMIN_ALERT_EMAIL = (os.environ.get("ADMIN_ALERT_EMAIL") or "").strip().lower()
+ADMIN_EMAIL = (os.environ.get("ADMIN_EMAIL") or ADMIN_ALERT_EMAIL or "").strip().lower()
 ADMIN_EMAIL_NOTIFY_ENABLED = (os.environ.get("ADMIN_EMAIL_NOTIFY_ENABLED", "0") or "").strip().lower() in {"1", "true", "yes", "on"}
 ADMIN_NOTIFY_ON_USER_REGISTER = (os.environ.get("ADMIN_NOTIFY_ON_USER_REGISTER", "1") or "").strip().lower() in {"1", "true", "yes", "on"}
 ADMIN_NOTIFY_ON_ROOM_JOIN = (os.environ.get("ADMIN_NOTIFY_ON_ROOM_JOIN", "1") or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -720,6 +721,7 @@ def ensure_user_columns():
 def ensure_admin():
     admin_username = (os.environ.get("ADMIN_USERNAME") or "root").strip() or "root"
     admin_password = (os.environ.get("ADMIN_PASSWORD") or "").strip()
+    admin_email = ADMIN_EMAIL if looks_like_email(ADMIN_EMAIL) else ""
     if STRICT_SECURITY_CHECKS:
         issues = _validate_public_security_settings()
         if issues:
@@ -727,7 +729,15 @@ def ensure_admin():
     user = User.query.filter_by(username=admin_username).first()
     generated_password = None
     if not user:
-        user = User(username=admin_username, is_admin=True, is_active_user=True, session_version=0)
+        user = User(
+            username=admin_username,
+            email=admin_email or None,
+            email_verified=True,
+            email_verified_at=datetime.utcnow() if admin_email else None,
+            is_admin=True,
+            is_active_user=True,
+            session_version=0,
+        )
         if not admin_password:
             generated_password = secrets.token_urlsafe(18)
             admin_password = generated_password
@@ -736,6 +746,10 @@ def ensure_admin():
     else:
         user.is_admin = True
         user.is_active_user = True
+        if admin_email and normalize_email(user.email) != admin_email:
+            user.email = admin_email
+            user.email_verified = True
+            user.email_verified_at = datetime.utcnow()
         if not user.password_hash:
             if not admin_password:
                 generated_password = secrets.token_urlsafe(18)
@@ -1016,6 +1030,23 @@ def find_user_by_identifier(identifier: str) -> User | None:
             func.lower(User.email) == normalized_email,
         )
     ).first()
+
+
+def find_admin_by_identifier(identifier: str) -> User | None:
+    normalized_identifier = (identifier or "").strip()
+    normalized_email = normalize_email(identifier)
+    admin_username = (os.environ.get("ADMIN_USERNAME") or "root").strip() or "root"
+
+    if normalized_identifier == admin_username:
+        return User.query.filter_by(username=admin_username, is_admin=True).first()
+
+    if ADMIN_EMAIL and normalized_email == ADMIN_EMAIL:
+        return User.query.filter_by(username=admin_username, is_admin=True).first()
+
+    user = find_user_by_identifier(identifier)
+    if user and user.is_admin:
+        return user
+    return None
 
 
 def format_mb(mb_value):
@@ -1989,7 +2020,7 @@ def admin_login():
     if not turnstile_ok:
         return render_template("admin_login.html", error=turnstile_error, admin_login_path=ADMIN_LOGIN_PATH), 403
 
-    user = find_user_by_identifier(identifier)
+    user = find_admin_by_identifier(identifier)
     if not user or not user.check_password(password) or not user.is_admin:
         return render_template("admin_login.html", error=t("invalid_admin_login"), admin_login_path=ADMIN_LOGIN_PATH)
     if not user.is_active_user:
