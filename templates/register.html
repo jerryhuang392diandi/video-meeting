@@ -34,6 +34,7 @@
   </div>
 
   <form method="post" class="form-card elevated-card auth-form-card" id="registerForm">
+    <input type="hidden" name="intent" id="registerIntent" value="register" />
     {% if message %}
       <div class="notice">{{ message }}</div>
     {% endif %}
@@ -81,7 +82,7 @@
     </div>
     {% endif %}
     {% if email_auth_enabled %}
-    <button class="ghost-btn" type="submit" name="intent" value="send_code" formnovalidate data-code-submit="1" {% if email_code_send_locked %}disabled{% endif %}>{{ t(email_code_button_key) }}</button>
+    <button class="ghost-btn" type="submit" value="send_code" formnovalidate data-code-submit="1" {% if email_code_send_locked %}disabled{% endif %}>{{ t(email_code_button_key) }}</button>
     {% endif %}
     <button class="primary-btn" type="submit" data-full-submit="1">{{ t('submit_register') }}</button>
     {% endif %}
@@ -92,15 +93,20 @@
 (() => {
   const form = document.getElementById('registerForm');
   if (!form) return;
+  const intentInput = document.getElementById('registerIntent');
   form.querySelector('[data-code-submit="1"]')?.addEventListener('click', () => {
+    if (intentInput) intentInput.value = 'send_code';
     form.noValidate = true;
   });
   form.querySelector('[data-full-submit="1"]')?.addEventListener('click', () => {
+    if (intentInput) intentInput.value = 'register';
     form.noValidate = false;
   });
   form.addEventListener('submit', (event) => {
     const submitter = event.submitter;
-    if (!submitter || submitter.name !== 'intent' || submitter.value !== 'send_code') return;
+    if (submitter?.dataset?.codeSubmit === '1' && intentInput) intentInput.value = 'send_code';
+    if (intentInput?.value !== 'send_code') return;
+    if (!submitter) return;
     submitter.disabled = true;
     submitter.textContent = {{ t('sending_email_verification_code')|tojson }};
   });
