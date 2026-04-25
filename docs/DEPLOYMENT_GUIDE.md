@@ -783,8 +783,6 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 | `EMAIL_SMTP_USE_TLS` / `EMAIL_SMTP_USE_SSL` | SMTP 加密方式；常见是 `587 + TLS` 或 `465 + SSL` 二选一 | 启用邮箱验证时推荐 |
 | `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME` | 验证邮件发件地址和显示名称 | 启用邮箱验证时必填 |
 | `EMAIL_VERIFY_CODE_TTL_MINUTES` | 邮箱验证码有效期，默认 `10` 分钟 | 可选 |
-| `EMAIL_VERIFY_TOKEN_TTL_HOURS` | 旧链接式邮箱验证兼容有效期，默认 `24` 小时 | 可选 |
-| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | 旧链接式密码重置兼容有效期，默认 `10` 分钟 | 可选 |
 | `STRICT_SECURITY_CHECKS` | 启动时拒绝弱 `SECRET_KEY` / `ADMIN_*` 配置 | 公网推荐 |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 登录/注册/找回密码的人机验证 | 可选 |
 | `TURN_PUBLIC_HOST` | 自动生成 TURN/STUN 地址时使用的公网主机名 | 可选 |
@@ -799,7 +797,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 - 公网部署建议设置 `PUBLIC_REGISTRATION_ENABLED=0`，避免任何人直接创建账号。
 - 公网部署建议设置 `STRICT_SECURITY_CHECKS=1`，避免弱 `SECRET_KEY`、弱管理员密码或默认 `root` 管理员名直接带到线上。
 - 不要因为你是用 `root` 登录服务器，就顺手把 `ADMIN_USERNAME` 也设成 `root`。这是两个完全不同的概念。
-- 如果开启 `EMAIL_AUTH_ENABLED=1`，请确保 SMTP 发信配置正确；注册验证码和密码重置验证码都会直接发到用户邮箱。`PUBLIC_SCHEME` / `PUBLIC_HOST` 仍会影响旧兼容链接。
+- 如果开启 `EMAIL_AUTH_ENABLED=1`，请确保 SMTP 发信配置正确；注册验证码和密码重置验证码都会直接发到用户邮箱。
 - 线上 systemd 不要直接运行 `python app.py`。那会启动 Werkzeug 开发服务器；如果你在 `systemctl status video-meeting` 里看到 `Werkzeug appears to be used in a production deployment` 或 `This is a development server`，说明当前运行方式不对。
 - 如果你不熟悉终端编辑器，可以直接保留 EOF 写法；最后那个单独一行的 `EOF` 表示写入结束。
 - `TURNSTILE_SECRET_KEY` 不能自己随便生成，必须和 `TURNSTILE_SITE_KEY` 一起从同一个 Cloudflare Turnstile 站点页面复制。
@@ -838,8 +836,6 @@ EMAIL_SMTP_USE_SSL=1
 EMAIL_FROM_ADDRESS=noreply@meeting.example.com
 EMAIL_FROM_NAME=Video Meeting
 EMAIL_VERIFY_CODE_TTL_MINUTES=10
-EMAIL_VERIFY_TOKEN_TTL_HOURS=24
-PASSWORD_RESET_TOKEN_TTL_MINUTES=10
 ```
 
 如果你用 Brevo、企业邮箱或其他 SMTP 服务，只需要把主机、端口、用户名、密码和加密方式换成对方给你的值。常见组合是：
@@ -2538,8 +2534,6 @@ Configuration:
 | `EMAIL_SMTP_USE_TLS` / `EMAIL_SMTP_USE_SSL` | SMTP transport mode; common choices are `587 + TLS` or `465 + SSL` | Recommended when email verification is enabled |
 | `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME` | Sender address and display name for verification emails | Required when email verification is enabled |
 | `EMAIL_VERIFY_CODE_TTL_MINUTES` | Email-code lifetime, default `10` minutes | Optional |
-| `EMAIL_VERIFY_TOKEN_TTL_HOURS` | Legacy link-verification compatibility lifetime, default `24` hours | Optional |
-| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | Legacy password-reset link compatibility lifetime, default `10` minutes | Optional |
 | `STRICT_SECURITY_CHECKS` | Refuse weak `SECRET_KEY` / `ADMIN_*` settings at startup | Recommended online |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Human verification for login/register/password reset | Optional |
 | `TURN_PUBLIC_HOST` | Public host used when generating TURN/STUN addresses | Optional |
@@ -2554,7 +2548,7 @@ Notes:
 - For public deployments, set `PUBLIC_REGISTRATION_ENABLED=0` so anyone cannot create accounts directly.
 - For public deployments, set `STRICT_SECURITY_CHECKS=1` so weak `SECRET_KEY`, weak admin passwords, and the default `root` admin name are rejected at startup.
 - Do not reuse the Linux login name just because you SSH as `root`; that is unrelated to `ADMIN_USERNAME`.
-- If you enable `EMAIL_AUTH_ENABLED=1`, make sure SMTP delivery is configured correctly; registration codes and password-reset codes are sent directly by email. `PUBLIC_SCHEME` and `PUBLIC_HOST` still affect the legacy compatibility links.
+- If you enable `EMAIL_AUTH_ENABLED=1`, make sure SMTP delivery is configured correctly; registration codes and password-reset codes are sent directly by email.
 - If your users are mainly in mainland China, test `challenges.cloudflare.com` from a real mainland network before enforcing Turnstile.
 - Restart the service after changing `.env`; the `systemd` section below will do that.
 - If LiveKit values are missing, room pages intentionally return `503`.
@@ -2590,8 +2584,6 @@ EMAIL_SMTP_USE_SSL=1
 EMAIL_FROM_ADDRESS=noreply@meeting.example.com
 EMAIL_FROM_NAME=Video Meeting
 EMAIL_VERIFY_CODE_TTL_MINUTES=10
-EMAIL_VERIFY_TOKEN_TTL_HOURS=24
-PASSWORD_RESET_TOKEN_TTL_MINUTES=10
 ```
 
 If you use Brevo, a company mailbox, or another SMTP provider, replace the host, port, username, password, and transport mode with that provider's values. The two common combinations are:

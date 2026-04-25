@@ -104,21 +104,9 @@ EMAIL_SMTP_USE_TLS = (os.environ.get("EMAIL_SMTP_USE_TLS", "1") or "").strip().l
 EMAIL_SMTP_USE_SSL = (os.environ.get("EMAIL_SMTP_USE_SSL", "0") or "").strip().lower() in {"1", "true", "yes", "on"}
 EMAIL_FROM_ADDRESS = (os.environ.get("EMAIL_FROM_ADDRESS") or "").strip()
 EMAIL_FROM_NAME = (os.environ.get("EMAIL_FROM_NAME") or "Video Meeting").strip() or "Video Meeting"
-EMAIL_VERIFY_TOKEN_TTL_HOURS = max(1, int(os.environ.get("EMAIL_VERIFY_TOKEN_TTL_HOURS", "24") or "24"))
 EMAIL_VERIFY_CODE_TTL_MINUTES = max(1, int(os.environ.get("EMAIL_VERIFY_CODE_TTL_MINUTES", "10") or "10"))
 EMAIL_VERIFY_RESEND_LIMIT_PER_IP = max(1, int(os.environ.get("EMAIL_VERIFY_RESEND_LIMIT_PER_IP", "5") or "5"))
 EMAIL_VERIFY_RESEND_WINDOW_SECONDS = max(60, int(os.environ.get("EMAIL_VERIFY_RESEND_WINDOW_SECONDS", "3600") or "3600"))
-PASSWORD_RESET_TOKEN_TTL_MINUTES = max(
-    1,
-    int(
-        os.environ.get("PASSWORD_RESET_TOKEN_TTL_MINUTES")
-        or (
-            int(os.environ.get("PASSWORD_RESET_TOKEN_TTL_HOURS", "0") or "0") * 60
-            if (os.environ.get("PASSWORD_RESET_TOKEN_TTL_HOURS") or "").strip()
-            else 10
-        )
-    ),
-)
 REQUEST_THROTTLE = {}
 REQUEST_THROTTLE_LOCK = threading.Lock()
 WEAK_SECRET_VALUES = {
@@ -182,10 +170,6 @@ def verification_email_required_for_user(user) -> bool:
     return bool(email_auth_active() and getattr(user, "email", None) and not getattr(user, "email_verified", False))
 
 
-def email_token_hash(raw_token: str) -> str:
-    return hashlib.sha256((raw_token or "").encode("utf-8")).hexdigest()
-
-
 def email_code_hash(*, email: str, purpose: str, raw_code: str, user_id: int | None = None) -> str:
     payload = f"{normalize_email(email)}|{purpose}|{user_id or 0}|{raw_code or ''}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -245,7 +229,7 @@ def password_reset_human_verification_ready() -> bool:
     return expires_at >= datetime.utcnow() and bool((state.get("identifier") or "").strip())
 
 
-def password_reset_human_verification_valid(*, identifier: str | None, user: "User" | None) -> bool:
+def password_reset_human_verification_valid(*, identifier: str | None, user: "User" = None) -> bool:
     if not identifier or not user or not getattr(user, "email", None):
         return False
     state = session.get("password_reset_human_verification")
@@ -544,20 +528,6 @@ class PasswordResetRequest(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
-class EmailVerificationToken(db.Model):
-    __tablename__ = "email_verification_tokens"
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
-    email = db.Column(db.String(255), nullable=False)
-    token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
-    expires_at = db.Column(db.DateTime, nullable=False)
-    used_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    user = db.relationship("User", backref="email_verification_tokens", lazy=True)
-
-
 class EmailVerificationCode(db.Model):
     __tablename__ = "email_verification_codes"
 
@@ -571,20 +541,6 @@ class EmailVerificationCode(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship("User", backref="email_verification_codes", lazy=True)
-
-
-class PasswordResetToken(db.Model):
-    __tablename__ = "password_reset_tokens"
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
-    email = db.Column(db.String(255), nullable=False)
-    token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
-    expires_at = db.Column(db.DateTime, nullable=False)
-    used_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    user = db.relationship("User", backref="password_reset_tokens", lazy=True)
 
 
 @login_manager.user_loader
@@ -703,9 +659,7 @@ def ensure_user_columns():
     if "auto_enable_speaker" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN auto_enable_speaker BOOLEAN DEFAULT 1")
     cur.execute("CREATE TABLE IF NOT EXISTS password_reset_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, username VARCHAR(64) NOT NULL, contact VARCHAR(128), note TEXT, status VARCHAR(16) DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)")
-    cur.execute("CREATE TABLE IF NOT EXISTS email_verification_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, email VARCHAR(255) NOT NULL, token_hash VARCHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))")
     cur.execute("CREATE TABLE IF NOT EXISTS email_verification_codes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, email VARCHAR(255) NOT NULL, purpose VARCHAR(32) NOT NULL, code_hash VARCHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))")
-    cur.execute("CREATE TABLE IF NOT EXISTS password_reset_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, email VARCHAR(255) NOT NULL, token_hash VARCHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))")
     conn.commit()
     conn.close()
 
@@ -800,24 +754,6 @@ def send_email_message(*, to_address: str, subject: str, text_body: str, html_bo
         server.send_message(message)
 
 
-def build_email_verification_link(raw_token: str) -> str:
-    return f"{get_base_url()}{url_for('verify_email')}?token={quote(raw_token)}"
-
-
-def create_email_verification_token(user: User) -> str:
-    raw_token = secrets.token_urlsafe(32)
-    token = EmailVerificationToken(
-        user_id=user.id,
-        email=user.email,
-        token_hash=email_token_hash(raw_token),
-        expires_at=datetime.utcnow() + timedelta(hours=EMAIL_VERIFY_TOKEN_TTL_HOURS),
-    )
-    EmailVerificationToken.query.filter_by(user_id=user.id, used_at=None).delete()
-    db.session.add(token)
-    db.session.commit()
-    return raw_token
-
-
 def create_email_verification_code(*, email: str, purpose: str, user_id: int | None = None) -> str:
     raw_code = generate_email_verification_code()
     query = EmailVerificationCode.query.filter_by(email=email, purpose=purpose, used_at=None)
@@ -855,49 +791,10 @@ def find_email_verification_code(*, email: str, purpose: str, raw_code: str, use
     return code
 
 
-def create_password_reset_token(user: User) -> str:
-    raw_token = secrets.token_urlsafe(32)
-    token = PasswordResetToken(
-        user_id=user.id,
-        email=user.email,
-        token_hash=email_token_hash(raw_token),
-        expires_at=datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_TOKEN_TTL_MINUTES),
-    )
-    PasswordResetToken.query.filter_by(user_id=user.id, used_at=None).delete()
-    db.session.add(token)
-    db.session.commit()
-    return raw_token
-
-
 def purge_user_auth_artifacts(user_id: int, username: str | None = None) -> None:
-    EmailVerificationToken.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     EmailVerificationCode.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    PasswordResetToken.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     if username:
         PasswordResetRequest.query.filter_by(username=username).delete(synchronize_session=False)
-
-
-def send_verification_email(user: User) -> None:
-    if not user.email:
-        raise RuntimeError("User email is empty.")
-    raw_token = create_email_verification_token(user)
-    verify_link = build_email_verification_link(raw_token)
-    text_body = (
-        f"{t('email_verify_mail_intro')}\n\n"
-        f"{verify_link}\n\n"
-        f"{t('email_verify_mail_expiry').format(hours=EMAIL_VERIFY_TOKEN_TTL_HOURS)}"
-    )
-    html_body = (
-        f"<p>{t('email_verify_mail_intro')}</p>"
-        f"<p><a href=\"{verify_link}\">{verify_link}</a></p>"
-        f"<p>{t('email_verify_mail_expiry').format(hours=EMAIL_VERIFY_TOKEN_TTL_HOURS)}</p>"
-    )
-    send_email_message(
-        to_address=user.email,
-        subject=build_email_subject("email_verify_subject"),
-        text_body=text_body,
-        html_body=html_body,
-    )
 
 
 def send_email_verification_code(*, email: str, purpose: str, user: User | None = None) -> None:
@@ -933,37 +830,6 @@ def send_email_verification_code(*, email: str, purpose: str, user: User | None 
 def mark_user_email_verified(user: User) -> None:
     user.email_verified = True
     user.email_verified_at = datetime.utcnow()
-
-
-def build_password_reset_link(raw_token: str) -> str:
-    return f"{get_base_url()}{url_for('reset_password')}?token={quote(raw_token)}"
-
-
-def send_password_reset_email(user: User) -> None:
-    if not user.email:
-        raise RuntimeError("User email is empty.")
-    raw_token = create_password_reset_token(user)
-    reset_link = build_password_reset_link(raw_token)
-    text_body = (
-        f"{t('password_reset_mail_intro')}\n\n"
-        f"{reset_link}\n\n"
-        f"{t('password_reset_mail_expiry').format(minutes=PASSWORD_RESET_TOKEN_TTL_MINUTES)}\n"
-        f"{t('password_reset_mail_latest_notice')}\n"
-        f"{t('password_reset_mail_copy_tip')}"
-    )
-    html_body = (
-        f"<p>{t('password_reset_mail_intro')}</p>"
-        f"<p><a href=\"{reset_link}\">{reset_link}</a></p>"
-        f"<p>{t('password_reset_mail_expiry').format(minutes=PASSWORD_RESET_TOKEN_TTL_MINUTES)}</p>"
-        f"<p>{t('password_reset_mail_latest_notice')}</p>"
-        f"<p>{t('password_reset_mail_copy_tip')}</p>"
-    )
-    send_email_message(
-        to_address=user.email,
-        subject=build_email_subject("password_reset_subject"),
-        text_body=text_body,
-        html_body=html_body,
-    )
 
 
 def create_password_reset_request(identifier: str, contact: str, note: str) -> None:
@@ -1986,52 +1852,6 @@ def verify_email_code():
     mark_user_email_verified(user)
     db.session.commit()
     return redirect(url_for("login", verified="1"))
-
-
-@app.get("/verify-email")
-def verify_email():
-    raw_token = (request.args.get("token") or "").strip()
-    if not raw_token:
-        return render_template("login.html", error=t("verification_link_invalid")), 400
-    token = EmailVerificationToken.query.filter_by(token_hash=email_token_hash(raw_token), used_at=None).first()
-    if not token or token.expires_at < datetime.utcnow():
-        return render_template("login.html", error=t("verification_link_invalid")), 400
-    user = db.session.get(User, token.user_id)
-    if not user:
-        return render_template("login.html", error=t("verification_link_invalid")), 400
-    mark_user_email_verified(user)
-    token.used_at = datetime.utcnow()
-    db.session.commit()
-    return redirect(url_for("login", verified="1"))
-
-
-@app.route("/reset-password", methods=["GET", "POST"])
-def reset_password():
-    raw_token = (request.values.get("token") or "").strip()
-    if not raw_token:
-        return render_template("login.html", error=t("password_reset_link_invalid")), 400
-    token = PasswordResetToken.query.filter_by(token_hash=email_token_hash(raw_token), used_at=None).first()
-    if not token or token.expires_at < datetime.utcnow():
-        return render_template("login.html", error=t("password_reset_link_invalid")), 400
-    user = db.session.get(User, token.user_id)
-    if not user:
-        return render_template("login.html", error=t("password_reset_link_invalid")), 400
-
-    if request.method == "GET":
-        return render_template("reset_password.html", token=raw_token)
-
-    new_password = (request.form.get("new_password") or "").strip()
-    if not new_password:
-        return render_template("reset_password.html", token=raw_token, error=t("new_password_required")), 400
-
-    user.set_password(new_password)
-    user.session_version = (user.session_version or 0) + 1
-    token.used_at = datetime.utcnow()
-    db.session.commit()
-    disconnect_user_sockets(user.id, message=t("kicked"))
-    logout_user()
-    session.clear()
-    return redirect(url_for("login", reset="1"))
 
 
 @app.post("/api/create_room")
