@@ -970,6 +970,27 @@ body.has-simulated-fullscreen {
   justify-self: end;
   padding: 28px;
 }
+.auth-subsection {
+  display: grid;
+  gap: 12px;
+}
+.auth-subsection + .auth-subsection {
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(255,255,255,.12);
+}
+.muted-section {
+  opacity: .88;
+}
+.auth-subsection h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.auth-inline-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 .auth-turnstile-block {
   display: grid;
   gap: 8px;

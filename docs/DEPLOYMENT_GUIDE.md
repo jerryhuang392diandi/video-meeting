@@ -813,7 +813,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 - 注册页填写 `用户名 + 邮箱 + 密码`
 - 先通过人机验证，再发送 6 位邮箱验证码
 - 只有邮箱验证码校验通过后，账号才会正式创建
-- 已存在但未验证的账号，可在登录页进入“重发验证码”或“输入验证码”
+- 已存在但未验证的旧账号，可直接在登录页使用“绑定邮箱 + 验证码登录”
 - 找回密码页继续复用同一套 SMTP 配置发送密码重置验证码
 
 最省事的接法通常是 SMTP。你可以接自己域名邮箱，也可以接第三方发信服务的 SMTP。
@@ -853,7 +853,7 @@ EMAIL_VERIFY_CODE_TTL_MINUTES=10
 4. 输入邮件里的 6 位验证码，确认注册完成并能直接登录
 5. 用用户名登录一次，再用邮箱登录一次
 6. 在“找回密码”页提交一次，确认能收到密码重置验证码并成功设置新密码
-7. 给一个未验证旧账号重发验证码，确认“输入验证码”页能完成邮箱验证
+7. 给一个未验证旧账号直接使用“绑定邮箱 + 验证码登录”，确认可完成登录并补齐邮箱验证状态
 
 如果收不到邮件，优先检查：
 
@@ -2561,7 +2561,7 @@ The current code now supports an optional email-code verification flow:
 - the register page collects `username + email + password`
 - after the human check passes, the app sends a 6-digit email code
 - the account is created only after the email code is verified
-- for existing unverified accounts, the login page links to `Resend code` and `Verify with code`
+- legacy unverified accounts can sign in directly with `bound email + code`
 - the forgot-password page still reuses the same SMTP setup to send password-reset codes
 
 The easiest setup is SMTP. You can point it at your own domain mailbox or a provider SMTP endpoint.
@@ -2601,7 +2601,7 @@ Minimum manual test after setup:
 4. Enter the 6-digit code from the email and confirm registration finishes successfully
 5. Sign in once with the username, then once with the email
 6. Submit one forgot-password request, confirm the reset code email arrives, and set a new password successfully
-7. Resend a code for one legacy unverified account and confirm `Verify with code` completes the email verification
+7. Sign in with one legacy unverified account through `bound email + code` and confirm the email verification state is completed during login
 
 If mail does not arrive, check these first:
 
