@@ -3,6 +3,7 @@
 {% block shell_class %}auth-shell{% endblock %}
 {% block head %}
   {{ super() }}
+  <link rel="stylesheet" href="{{ url_for('static', filename='auth.css', v=asset_version('auth.css')) }}" />
   {% if turnstile_enabled %}
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   {% endif %}
@@ -82,11 +83,32 @@
     </div>
     {% endif %}
     {% if email_auth_enabled %}
-    <button class="ghost-btn" type="submit" value="send_code" formnovalidate data-code-submit="1" {% if email_code_send_locked %}disabled{% endif %}>{{ t(email_code_button_key) }}</button>
-    {% endif %}
+    <div class="auth-inline-actions">
+      <button class="ghost-btn" type="submit" value="send_code" formnovalidate data-code-submit="1" {% if email_code_send_locked %}disabled{% endif %}>{{ t(email_code_button_key) }}</button>
+      <button class="primary-btn" type="submit" data-full-submit="1">{{ t('submit_register') }}</button>
+    </div>
+    {% else %}
     <button class="primary-btn" type="submit" data-full-submit="1">{{ t('submit_register') }}</button>
     {% endif %}
-    <a class="text-link" href="{{ url_for('login') }}">{{ t('nav_login') }}</a>
+    {% endif %}
+    <div class="auth-action-grid compact">
+      <a class="auth-action-card" href="{{ url_for('login') }}">
+        <span class="auth-action-icon" aria-hidden="true">↩</span>
+        <span>
+          <strong>{{ t('nav_login') }}</strong>
+          <small>{{ t('login_with_password') }}</small>
+        </span>
+      </a>
+      {% if email_auth_enabled %}
+      <a class="auth-action-card" href="{{ url_for('login_email_code') }}">
+        <span class="auth-action-icon" aria-hidden="true">✉</span>
+        <span>
+          <strong>{{ t('login_with_email_login') }}</strong>
+          <small>{{ t('email_verification_code') }}</small>
+        </span>
+      </a>
+      {% endif %}
+    </div>
   </form>
 </section>
 <script>
