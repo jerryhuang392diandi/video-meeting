@@ -63,7 +63,7 @@ const TEXT_RECORD_SAVED = {{ t('recording_saved')|tojson }};
 const TEXT_RECORD_NOT_SUPPORTED = {{ t('recording_not_supported')|tojson }};
 const TEXT_LIVEKIT_CONFIG_MISSING = {{ t('livekit_config_missing')|tojson }};
 const TEXT_LIVEKIT_CONNECT_FAILED = {{ t('livekit_connect_failed')|tojson }};
-const TEXT_VIRTUAL_BG_PICK = {{ t('virtual_bg_pick')|tojson }};
+const TEXT_BLUR_BG_TIP = {{ t('blur_bg_tip')|tojson }};
 const TEXT_VIRTUAL_BG_LOADING = {{ t('virtual_bg_loading')|tojson }};
 const TEXT_VIRTUAL_BG_READY = {{ t('virtual_bg_enabled')|tojson }};
 const TEXT_VIRTUAL_BG_FAILED = {{ t('virtual_bg_failed')|tojson }};
@@ -75,7 +75,6 @@ const TEXT_RECORD_CONVERTING = {{ t('record_converting_mp4')|tojson }};
 const TEXT_RECORD_MP4_FAILED = {{ t('record_mp4_failed')|tojson }};
 const TEXT_RECORD_MP4_SERVER_ERROR = {{ t('record_mp4_server_error')|tojson }};
 const TEXT_RECORD_DIRECT_MP4 = {{ t('record_direct_mp4')|tojson }};
-const TEXT_IMAGE_NOT_SUPPORTED = {{ t('image_not_supported_virtual_bg')|tojson }};
 const TEXT_HOST_END_CONFIRM = {{ t('host_end_meeting_confirm')|tojson }};
 const TEXT_LEAVE_CONFIRM = {{ t('leave_meeting_confirm')|tojson }};
 const TEXT_YOU_LEFT_MEETING = {{ t('you_left_meeting')|tojson }};
@@ -130,8 +129,6 @@ const {
   stopStreamTracks,
   escapeHtml,
   copyText,
-  fileToDataUrl,
-  compressImageFile,
   setMediaTrackContentHint,
   applyMediaStreamContentHints,
 } = window.RoomPageUtils;
@@ -153,8 +150,6 @@ let isSharingScreen = false;
 let activeRecorder = null;
 let recorderStream = null;
 let virtualBgEnabled = false;
-let virtualBgImageDataUrl = null;
-let virtualBgImageEl = new Image();
 let segmentationModel = null;
 let segmentationSending = false;
 let virtualBgLoopActive = false;
@@ -196,7 +191,6 @@ const participantCountEl = document.getElementById('participantCount');
 const statusBox = document.getElementById('statusBox');
 window.statusBox = statusBox;
 const recordingBtn = document.getElementById('recordingBtn');
-const virtualBgInput = document.getElementById('virtualBgInput');
 const hostEndMeetingBtn = document.getElementById('hostEndMeetingBtn');
 const chatWindow = document.getElementById('chatWindow');
 const chatHeader = document.getElementById('chatHeader');
@@ -355,10 +349,8 @@ function updateVirtualBackgroundButtonState() {
     virtualBgBtn.title = {{ t('virtual_bg_unavailable_during_share')|tojson }};
   } else if (virtualBgEnabled) {
     virtualBgBtn.title = TEXT_VIRTUAL_BG_OFF;
-  } else if (virtualBgImageDataUrl) {
-    virtualBgBtn.title = TEXT_VIRTUAL_BG_PICK;
   } else {
-    virtualBgBtn.title = TEXT_VIRTUAL_BG_PICK;
+    virtualBgBtn.title = TEXT_BLUR_BG_TIP;
   }
 }
 
@@ -1178,22 +1170,8 @@ async function fallbackToRawCamera(message = null, { stopCanvas = false } = {}) 
   if (message) setStatus(message, 'warning');
 }
 
-async function deactivateVirtualBackground(message = null, { clearImage = false, stopCanvas = false } = {}) {
-  if (clearImage) {
-    virtualBgImageDataUrl = null;
-  }
+async function deactivateVirtualBackground(message = null, { stopCanvas = false } = {}) {
   await fallbackToRawCamera(message || TEXT_VIRTUAL_BG_OFF, { stopCanvas });
-}
-
-async function prepareVirtualBackgroundImage(file) {
-  if (!file || !file.type || !file.type.startsWith('image/')) {
-    throw new Error(TEXT_IMAGE_NOT_SUPPORTED);
-  }
-  try {
-    const compressed = await compressImageFile(file);
-    if (compressed?.dataUrl) return compressed.dataUrl;
-  } catch (_) {}
-  return await fileToDataUrl(file);
 }
 
 function getScaledSize(width, height) {
@@ -1608,17 +1586,8 @@ async function loadSegmentationModel() {
   return segmentationModel;
 }
 
-function drawImageCover(ctx, img, x, y, width, height) {
-  const scale = Math.max(width / img.width, height / img.height);
-  const drawWidth = img.width * scale;
-  const drawHeight = img.height * scale;
-  const dx = x + (width - drawWidth) / 2;
-  const dy = y + (height - drawHeight) / 2;
-  ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
-}
-
 function onSegmentationResults(results) {
-  if (!virtualBgEnabled || !virtualBgImageEl?.src) return;
+  if (!virtualBgEnabled) return;
 
   const sourceWidth = results.image.videoWidth || results.image.width || 1280;
   const sourceHeight = results.image.videoHeight || results.image.height || 720;
@@ -1631,10 +1600,12 @@ function onSegmentationResults(results) {
   processingCtx.save();
   processingCtx.clearRect(0, 0, width, height);
   processingCtx.drawImage(results.segmentationMask, 0, 0, width, height);
-  processingCtx.globalCompositeOperation = 'source-out';
-  drawImageCover(processingCtx, virtualBgImageEl, 0, 0, width, height);
-  processingCtx.globalCompositeOperation = 'destination-atop';
+  processingCtx.globalCompositeOperation = 'source-in';
   processingCtx.drawImage(results.image, 0, 0, width, height);
+  processingCtx.globalCompositeOperation = 'destination-over';
+  processingCtx.filter = IS_MOBILE ? 'blur(10px)' : 'blur(18px)';
+  processingCtx.drawImage(results.image, 0, 0, width, height);
+  processingCtx.filter = 'none';
   processingCtx.restore();
   processedFrameCount += 1;
 }
@@ -1679,31 +1650,15 @@ async function startSegmentationLoop() {
 
 async function activateVirtualBackground() {
   const sourceStream = getVirtualBackgroundSourceStream();
-  if (!sourceStream || !virtualBgImageDataUrl) {
+  if (!sourceStream) {
     setStatus(TEXT_VIRTUAL_BG_NEEDS_CAMERA, 'warning');
     return false;
   }
   const activationToken = ++virtualBgActivationToken;
-  let hadWorkingVbg = !!virtualBgEnabled;
-  const previousBgImageEl = virtualBgImageEl;
-  const previousBgImageDataUrl = virtualBgImageDataUrl;
   setStatus(TEXT_VIRTUAL_BG_LOADING, 'warning');
 
   try {
     await loadSegmentationModel();
-    const bgImage = new Image();
-    await new Promise((resolve, reject) => {
-      bgImage.onload = () => {
-        if (!bgImage.naturalWidth || !bgImage.naturalHeight) {
-          reject(new Error(TEXT_IMAGE_NOT_SUPPORTED));
-          return;
-        }
-        resolve();
-      };
-      bgImage.onerror = () => reject(new Error(TEXT_IMAGE_NOT_SUPPORTED));
-      bgImage.src = virtualBgImageDataUrl;
-    });
-
     if (!hasLiveVideoTrack(sourceStream)) {
       throw new Error(TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE);
     }
@@ -1717,7 +1672,6 @@ async function activateVirtualBackground() {
 
     const startCount = processedFrameCount;
 
-    virtualBgImageEl = bgImage;
     virtualBgEnabled = true;
     updateVirtualBackgroundButtonState();
     await startSegmentationLoop();
@@ -1760,15 +1714,7 @@ async function activateVirtualBackground() {
     return true;
   } catch (err) {
     console.error(err);
-    if (hadWorkingVbg && processedVideoStream) {
-      virtualBgImageEl = previousBgImageEl;
-      virtualBgImageDataUrl = previousBgImageDataUrl;
-      virtualBgEnabled = true;
-      updateVirtualBackgroundButtonState();
-      setStatus(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'), 'warning');
-    } else {
-      await fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'), { stopCanvas: true });
-    }
+    await fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'), { stopCanvas: true });
     return false;
   }
 }
@@ -2213,7 +2159,6 @@ function cleanupMeetingSession() {
   try {
     disableVirtualBackgroundState({ stopCanvas: true });
   } catch (_) {}
-  virtualBgImageDataUrl = null;
   rawPreviewVideo.srcObject = null;
   updateVirtualBackgroundButtonState();
   if (livekitController) {
@@ -2493,7 +2438,7 @@ document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-
   const controller = await ensureLiveKitConnected();
   if (!controller) return;
   if (virtualBgEnabled) {
-    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { clearImage: true, stopCanvas: true });
+    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { stopCanvas: true });
   }
   const enabled = await controller.setCameraEnabled();
   const localCard = ensureCard('local', getDisplayName('local'), true);
@@ -2511,6 +2456,9 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
   let includeAudio = screenShareAudioPrefs.includeAudio;
   let keepMicWhenAudio = screenShareAudioPrefs.keepMicWhenAudio;
   if (!mediaState.screenShareEnabled) {
+    if (virtualBgEnabled) {
+      await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { stopCanvas: true });
+    }
     if (speakerStateBeforeShare === null) speakerStateBeforeShare = speakerEnabled;
     setSpeakerEnabled(true, { userGesture: true, persist: true, showStatus: false });
     speakerForcedByShareRule = !speakerStateBeforeShare;
@@ -2544,29 +2492,10 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
 });
 document.getElementById('virtualBgBtn').onclick = () => runMediaTask('virtual-background-toggle', async () => {
   if (virtualBgEnabled) {
-    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { clearImage: true });
+    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF);
     return;
   }
-  if (!virtualBgInput || virtualBgInput.disabled) {
-    setStatus(TEXT_VIRTUAL_BG_NEEDS_CAMERA, 'warning');
-    return;
-  }
-  virtualBgInput.value = '';
-  virtualBgInput.click();
-  setStatus(TEXT_VIRTUAL_BG_PICK, 'warning');
-});
-virtualBgInput.onchange = (event) => runMediaTask('virtual-background-image', async () => {
-  const file = event.target.files?.[0];
-  event.target.value = '';
-  if (!file) return;
-  try {
-    virtualBgImageDataUrl = await prepareVirtualBackgroundImage(file);
-    updateVirtualBackgroundButtonState();
-    await activateVirtualBackground();
-  } catch (err) {
-    console.error(err);
-    setStatus(err?.message || TEXT_IMAGE_NOT_SUPPORTED, 'error');
-  }
+  await activateVirtualBackground();
 });
 recordingBtn.onclick = () => toggleScreenRecording();
 document.getElementById('leaveMeetingBtn').onclick = () => {

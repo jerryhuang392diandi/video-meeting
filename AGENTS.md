@@ -89,14 +89,14 @@ When changing screen share behavior:
 - verify client focus state reset after stop, refresh, and reconnect;
 - treat UI focus state separately from media publication state;
 - prioritize “remote users can still see the share” over polished secondary interactions on mobile or weak networks;
-- re-check recording and virtual background interactions if they share the same local media path.
+- re-check recording and background blur interactions if they share the same local media path.
 
-## Recording and Virtual Background Notes
+## Recording and Background Blur Notes
 Both features are resource-heavy and should be treated as enhancement features, not baseline stability guarantees.
 
 - Recording may depend on browser output format and optional server-side `ffmpeg` remux.
-- Virtual background depends on browser-side processing and can degrade weak devices.
-- If a change touches local media replacement, verify camera, screen share, virtual background, and recording paths do not conflict.
+- Background blur depends on browser-side processing and can degrade weak devices.
+- If a change touches local media replacement, verify camera, screen share, background blur, and recording paths do not conflict.
 
 ## Deployment and Runtime Guard
 Do not write docs or make deployment assumptions as if this app were already safely horizontally scalable.

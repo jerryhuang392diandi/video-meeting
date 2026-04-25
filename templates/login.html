@@ -49,9 +49,9 @@
     {% if error %}
       <div class="notice error">{{ error }}</div>
     {% endif %}
-    <label>{{ t('username') }}</label>
-    <input name="identifier" maxlength="255" value="{{ request.form.get('identifier', '') }}" required />
-    <div class="muted small-note">{{ t('login_password_help') }}</div>
+    <label>{{ t('login_identifier') }}</label>
+    <input name="identifier" maxlength="255" autocomplete="username" value="{{ request.form.get('identifier', '') }}" required />
+    <div class="muted small-note">{{ t('login_identifier_help') }}</div>
     <label>{{ t('password') }}</label>
     <input name="password" type="password" required />
     {% if turnstile_enabled %}
@@ -63,7 +63,7 @@
     <button class="primary-btn" type="submit">{{ t('submit_login') }}</button>
 
     <div class="auth-links-row">
-      {% if email_auth_enabled %}<a class="text-link" href="{{ url_for('login_email_code') }}">{{ t('login_with_email_code') }}</a>{% endif %}
+      {% if email_auth_enabled %}<a class="text-link" href="{{ url_for('login_email_code') }}">{{ t('login_with_email_login') }}</a>{% endif %}
       {% if public_registration_enabled %}<a class="text-link" href="{{ url_for('register') }}">{{ t('nav_register') }}</a>{% endif %}
       <a class="text-link" href="{{ url_for('forgot_password_page') }}">{{ t('forgot_password') }}</a>
     </div>

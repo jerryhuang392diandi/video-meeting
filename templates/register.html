@@ -33,7 +33,7 @@
     <p class="muted small-note">{{ t('admin_note') }}</p>
   </div>
 
-  <form method="post" class="form-card elevated-card auth-form-card">
+  <form method="post" class="form-card elevated-card auth-form-card" id="registerForm">
     {% if message %}
       <div class="notice">{{ message }}</div>
     {% endif %}
@@ -44,12 +44,33 @@
     <label>{{ t('username') }}</label>
     <input name="username" maxlength="32" value="{{ request.form.get('username', '') }}" required />
     {% if email_auth_enabled %}
+    <div class="auth-code-panel">
+      <div class="auth-code-panel-head">
+        <strong>{{ t('email_verification_code') }}</strong>
+        <span class="auth-code-attempt-chip">{{ email_code_send_count }}/{{ email_code_send_limit }}</span>
+      </div>
+      <p class="muted small-note">
+        {% if email_code_send_locked %}
+          {{ t('email_code_limit_reached_help').format(minutes=email_code_send_window_minutes) }}
+        {% elif email_code_send_count %}
+          {{ t('email_code_sent_hint').format(remaining=email_code_send_remaining) }}
+        {% else %}
+          {{ t('register_code_help') }}
+        {% endif %}
+      </p>
+    </div>
     <label>{{ t('email') }}</label>
-    <input name="email" type="email" maxlength="255" value="{{ request.form.get('email', '') }}" required />
+    <input name="email" type="email" maxlength="255" autocomplete="email" value="{{ request.form.get('email', '') }}" required />
     <div class="muted small-note">{{ t('register_email_help') }}</div>
     <label>{{ t('email_verification_code') }}</label>
-    <input name="email_code" inputmode="numeric" pattern="\d{6}" maxlength="6" value="{{ request.form.get('email_code', '') }}" />
-    <div class="muted small-note">{{ t('register_code_help') }}</div>
+    <input name="email_code" inputmode="numeric" pattern="\d{6}" maxlength="6" autocomplete="one-time-code" value="{{ request.form.get('email_code', '') }}" />
+    <div class="muted small-note">
+      {% if email_code_send_locked %}
+        {{ t('email_code_locked_next_step') }}
+      {% else %}
+        {{ t('email_code_remaining_hint').format(limit=email_code_send_limit) }}
+      {% endif %}
+    </div>
     {% endif %}
     <label>{{ t('password') }}</label>
     <input name="password" type="password" required />
@@ -60,11 +81,23 @@
     </div>
     {% endif %}
     {% if email_auth_enabled %}
-    <button class="ghost-btn" type="submit" name="intent" value="send_code" formnovalidate>{{ t('send_email_verification_code') }}</button>
+    <button class="ghost-btn" type="submit" name="intent" value="send_code" formnovalidate {% if email_code_send_locked %}disabled{% endif %}>{{ t(email_code_button_key) }}</button>
     {% endif %}
     <button class="primary-btn" type="submit">{{ t('submit_register') }}</button>
     {% endif %}
     <a class="text-link" href="{{ url_for('login') }}">{{ t('nav_login') }}</a>
   </form>
 </section>
+<script>
+(() => {
+  const form = document.getElementById('registerForm');
+  if (!form) return;
+  form.addEventListener('submit', (event) => {
+    const submitter = event.submitter;
+    if (!submitter || submitter.name !== 'intent' || submitter.value !== 'send_code') return;
+    submitter.disabled = true;
+    submitter.textContent = {{ t('sending_email_verification_code')|tojson }};
+  });
+})();
+</script>
 {% endblock %}

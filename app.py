@@ -105,6 +105,11 @@ EMAIL_SMTP_USE_SSL = (os.environ.get("EMAIL_SMTP_USE_SSL", "0") or "").strip().l
 EMAIL_FROM_ADDRESS = (os.environ.get("EMAIL_FROM_ADDRESS") or "").strip()
 EMAIL_FROM_NAME = (os.environ.get("EMAIL_FROM_NAME") or "Video Meeting").strip() or "Video Meeting"
 EMAIL_VERIFY_CODE_TTL_MINUTES = max(1, int(os.environ.get("EMAIL_VERIFY_CODE_TTL_MINUTES", "10") or "10"))
+EMAIL_CODE_SEND_LIMIT = max(1, int(os.environ.get("EMAIL_CODE_SEND_LIMIT", "2") or "2"))
+EMAIL_CODE_SEND_WINDOW_SECONDS = max(
+    60,
+    int(os.environ.get("EMAIL_CODE_SEND_WINDOW_SECONDS", str(EMAIL_VERIFY_CODE_TTL_MINUTES * 60)) or str(EMAIL_VERIFY_CODE_TTL_MINUTES * 60)),
+)
 REQUEST_THROTTLE = {}
 REQUEST_THROTTLE_LOCK = threading.Lock()
 WEAK_SECRET_VALUES = {
@@ -156,6 +161,10 @@ def normalize_email(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
+def looks_like_email(value: str | None) -> bool:
+    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", normalize_email(value)))
+
+
 def email_delivery_configured() -> bool:
     return bool(EMAIL_SMTP_HOST and EMAIL_FROM_ADDRESS)
 
@@ -194,10 +203,101 @@ def _consume_request_budget(bucket: str, scope: str, limit: int, window_seconds:
     return None
 
 
+def _peek_request_budget(bucket: str, scope: str, window_seconds: int) -> tuple[int, int | None]:
+    now = time.time()
+    key = _request_throttle_key(bucket, scope)
+    with REQUEST_THROTTLE_LOCK:
+        attempts = REQUEST_THROTTLE.get(key)
+        if attempts is None:
+            return 0, None
+        while attempts and attempts[0] <= now - window_seconds:
+            attempts.popleft()
+        if not attempts:
+            REQUEST_THROTTLE.pop(key, None)
+            return 0, None
+        retry_after = max(1, int(window_seconds - (now - attempts[0])))
+        return len(attempts), retry_after
+
+
 def _too_many_attempts_response(template_name: str, *, status_code: int = 429):
     error = t("too_many_attempts")
-    response = render_template(template_name, error=error)
+    if template_name == "register.html":
+        response = render_email_code_template(template_name, purpose="register", error=error)
+    elif template_name == "login_email_code.html":
+        response = render_email_code_template(template_name, purpose="login", error=error)
+    else:
+        response = render_template(template_name, error=error)
     return response, status_code, {"Retry-After": "60"}
+
+
+def email_code_budget_bucket(purpose: str) -> str:
+    return f"email_code_send:{(purpose or 'generic').strip().lower()[:24]}"
+
+
+def get_email_code_send_state(*, purpose: str, scope: str | None) -> dict[str, int | bool | None]:
+    normalized_scope = normalize_email(scope)
+    if not normalized_scope:
+        return {
+            "count": 0,
+            "remaining": EMAIL_CODE_SEND_LIMIT,
+            "retry_after": None,
+            "locked": False,
+        }
+    count, retry_after = _peek_request_budget(
+        email_code_budget_bucket(purpose),
+        normalized_scope,
+        EMAIL_CODE_SEND_WINDOW_SECONDS,
+    )
+    remaining = max(0, EMAIL_CODE_SEND_LIMIT - count)
+    return {
+        "count": count,
+        "remaining": remaining,
+        "retry_after": retry_after if remaining == 0 else None,
+        "locked": remaining == 0,
+    }
+
+
+def consume_email_code_send_budget(*, purpose: str, scope: str | None) -> int | None:
+    normalized_scope = normalize_email(scope)
+    if not normalized_scope:
+        return None
+    return _consume_request_budget(
+        email_code_budget_bucket(purpose),
+        normalized_scope,
+        EMAIL_CODE_SEND_LIMIT,
+        EMAIL_CODE_SEND_WINDOW_SECONDS,
+    )
+
+
+def build_email_code_flow_context(*, purpose: str, scope: str | None = None) -> dict[str, int | bool | str | None]:
+    state = get_email_code_send_state(purpose=purpose, scope=scope)
+    return {
+        "email_code_send_count": state["count"],
+        "email_code_send_limit": EMAIL_CODE_SEND_LIMIT,
+        "email_code_send_remaining": state["remaining"],
+        "email_code_send_locked": state["locked"],
+        "email_code_send_retry_after": state["retry_after"],
+        "email_code_send_window_minutes": max(1, EMAIL_CODE_SEND_WINDOW_SECONDS // 60),
+        "email_code_button_key": "resend_email_verification_code" if state["count"] else "send_email_verification_code",
+    }
+
+
+def render_email_code_template(template_name: str, *, purpose: str, scope: str | None = None, **context):
+    merged = build_email_code_flow_context(purpose=purpose, scope=scope)
+    merged.update(context)
+    return render_template(template_name, **merged)
+
+
+def build_email_code_sent_message(*, purpose: str, scope: str | None) -> str:
+    state = get_email_code_send_state(purpose=purpose, scope=scope)
+    return t("email_code_sent_status").format(remaining=state["remaining"], limit=EMAIL_CODE_SEND_LIMIT)
+
+
+def build_email_code_limit_error() -> str:
+    return t("email_code_send_limit_reached").format(
+        limit=EMAIL_CODE_SEND_LIMIT,
+        minutes=max(1, EMAIL_CODE_SEND_WINDOW_SECONDS // 60),
+    )
 
 
 def _validate_public_security_settings() -> list[str]:
@@ -1492,13 +1592,17 @@ def forgot_password_page():
             if email_auth_active() and email_delivery_configured():
                 if intent == "send_code":
                     if user and user.email and user.email_verified:
-                        try:
-                            send_email_verification_code(email=user.email, purpose="password_reset", user=user)
-                        except Exception:
-                            app.logger.exception("Failed to send password reset code for user_id=%s", user.id)
-                            error = t("password_reset_email_send_failed")
+                        retry_after = consume_email_code_send_budget(purpose="password_reset", scope=user.email)
+                        if retry_after is not None:
+                            error = build_email_code_limit_error()
                         else:
-                            message = t("password_reset_code_sent")
+                            try:
+                                send_email_verification_code(email=user.email, purpose="password_reset", user=user)
+                            except Exception:
+                                app.logger.exception("Failed to send password reset code for user_id=%s", user.id)
+                                error = t("password_reset_email_send_failed")
+                            else:
+                                message = build_email_code_sent_message(purpose="password_reset", scope=user.email)
                     else:
                         error = t("password_reset_email_unavailable")
                 else:
@@ -1582,9 +1686,9 @@ def support_page():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if not PUBLIC_REGISTRATION_ENABLED:
-        return render_template("register.html", error=t("registration_disabled")), 403
+        return render_email_code_template("register.html", purpose="register", error=t("registration_disabled")), 403
     if request.method == "GET":
-        return render_template("register.html")
+        return render_email_code_template("register.html", purpose="register")
 
     retry_after = _consume_request_budget(
         "register_ip",
@@ -1604,28 +1708,43 @@ def register():
     email_code = (request.form.get("email_code") or "").strip()
 
     if email_auth_active() and not email_delivery_configured():
-        return render_template("register.html", error=t("email_delivery_not_configured")), 503
+        return render_email_code_template("register.html", purpose="register", scope=email, error=t("email_delivery_not_configured")), 503
     if email_auth_active():
-        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-            return render_template("register.html", error=t("invalid_email"))
+        if not looks_like_email(email):
+            return render_email_code_template("register.html", purpose="register", scope=email, error=t("invalid_email"))
         if User.query.filter(func.lower(User.email) == email).first():
-            return render_template("register.html", error=t("email_exists"))
+            return render_email_code_template("register.html", purpose="register", scope=email, error=t("email_exists"))
 
     if intent == "send_code" and email_auth_active():
+        retry_after = consume_email_code_send_budget(purpose="register", scope=email)
+        if retry_after is not None:
+            return render_email_code_template(
+                "register.html",
+                purpose="register",
+                scope=email,
+                error=build_email_code_limit_error(),
+            )
         try:
             send_email_verification_code(email=email, purpose="register")
         except Exception:
             app.logger.exception("Failed to send register verification code to %s", email)
-            return render_template("register.html", error=t("verification_email_send_failed")), 502
-        return render_template("register.html", message=t("register_code_sent"))
+            return render_email_code_template("register.html", purpose="register", scope=email, error=t("verification_email_send_failed")), 502
+        return render_email_code_template(
+            "register.html",
+            purpose="register",
+            scope=email,
+            message=build_email_code_sent_message(purpose="register", scope=email),
+        )
 
     if not username or not password or (email_auth_active() and (not email or not email_code)):
-        return render_template(
+        return render_email_code_template(
             "register.html",
+            purpose="register",
+            scope=email,
             error=t("register_fields_required") if email_auth_active() else t("username_password_required"),
         )
     if User.query.filter_by(username=username).first():
-        return render_template("register.html", error=t("username_exists"))
+        return render_email_code_template("register.html", purpose="register", scope=email, error=t("username_exists"))
 
     user = User(
         username=username,
@@ -1640,12 +1759,12 @@ def register():
     if email_auth_active():
         turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
         if not turnstile_ok:
-            return render_template("register.html", error=turnstile_error), 403
+            return render_email_code_template("register.html", purpose="register", scope=email, error=turnstile_error), 403
         if not re.fullmatch(r"\d{6}", email_code):
-            return render_template("register.html", error=t("verification_code_required"))
+            return render_email_code_template("register.html", purpose="register", scope=email, error=t("verification_code_required"))
         code = find_email_verification_code(email=email, purpose="register", raw_code=email_code)
         if not code:
-            return render_template("register.html", error=t("verification_code_invalid"))
+            return render_email_code_template("register.html", purpose="register", scope=email, error=t("verification_code_invalid"))
         code.used_at = datetime.utcnow()
         mark_user_email_verified(user)
 
@@ -1690,8 +1809,11 @@ def login():
     if not turnstile_ok:
         return render_template("login.html", error=turnstile_error), 403
 
-    user = User.query.filter_by(username=identifier).first()
-    if not user or not user.check_password(password):
+    user = find_user_by_identifier(identifier)
+    if not user:
+        error = t("email_not_registered") if looks_like_email(identifier) else t("invalid_login")
+        return render_template("login.html", error=error)
+    if not user.check_password(password):
         return render_template("login.html", error=t("invalid_login"))
     if not user.is_active_user:
         return render_template("login.html", error=t("account_disabled"))
@@ -1711,7 +1833,7 @@ def login_email_code():
     message = None
     error = None
     if request.method == "GET":
-        return render_template("login_email_code.html")
+        return render_email_code_template("login_email_code.html", purpose="login")
 
     intent = (request.form.get("intent") or "email_code").strip()
     email = normalize_email(request.form.get("email"))
@@ -1732,33 +1854,44 @@ def login_email_code():
         response, status_code, headers = _too_many_attempts_response("login_email_code.html")
         headers["Retry-After"] = str(retry_after)
         return response, status_code, headers
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-        return render_template("login_email_code.html", error=t("invalid_email"))
+    if not looks_like_email(email):
+        return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("invalid_email"))
 
     user = User.query.filter(func.lower(User.email) == email).first()
     if intent == "send_login_code":
+        if not user or not user.email:
+            return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("email_not_registered"))
+        if not user.is_active_user:
+            return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("account_disabled"))
+        retry_after = consume_email_code_send_budget(purpose="login", scope=user.email)
+        if retry_after is not None:
+            return render_email_code_template(
+                "login_email_code.html",
+                purpose="login",
+                scope=email,
+                error=build_email_code_limit_error(),
+            )
         try:
-            if user and user.email and user.is_active_user:
-                send_email_verification_code(email=user.email, purpose="login", user=user)
+            send_email_verification_code(email=user.email, purpose="login", user=user)
         except Exception:
             app.logger.exception("Failed to send login code to %s", email)
-            return render_template("login_email_code.html", error=t("verification_email_send_failed")), 502
-        message = t("login_code_sent_generic")
-        return render_template("login_email_code.html", message=message)
+            return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("verification_email_send_failed")), 502
+        message = build_email_code_sent_message(purpose="login", scope=user.email)
+        return render_email_code_template("login_email_code.html", purpose="login", scope=email, message=message)
 
     email_code = (request.form.get("email_code") or "").strip()
     turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
     if not turnstile_ok:
-        return render_template("login_email_code.html", error=turnstile_error), 403
+        return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=turnstile_error), 403
     if not re.fullmatch(r"\d{6}", email_code):
-        return render_template("login_email_code.html", error=t("verification_code_required"))
+        return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("verification_code_required"))
     if not user or not user.email:
-        return render_template("login_email_code.html", error=t("invalid_login"))
+        return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("email_not_registered"))
     if not user.is_active_user:
-        return render_template("login_email_code.html", error=t("account_disabled"))
+        return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("account_disabled"))
     code = find_email_verification_code(email=user.email, purpose="login", raw_code=email_code, user_id=user.id)
     if not code:
-        return render_template("login_email_code.html", error=t("verification_code_invalid"))
+        return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("verification_code_invalid"))
     code.used_at = datetime.utcnow()
     mark_user_email_verified(user)
     user.session_version = (user.session_version or 0) + 1

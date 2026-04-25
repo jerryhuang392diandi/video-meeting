@@ -4,7 +4,7 @@
 
 [中文](#stability-audit-zh) | [English](#stability-audit-en)
 
-当前项目已经迁移到 `Flask + Socket.IO + LiveKit SFU` 的分层架构。主要风险不再是浏览器 Mesh/P2P 自协商，而是业务状态、Socket.IO 房间状态、LiveKit 媒体状态之间的一致性，以及屏幕共享、虚拟背景、录屏带来的资源压力。
+当前项目已经迁移到 `Flask + Socket.IO + LiveKit SFU` 的分层架构。主要风险不再是浏览器 Mesh/P2P 自协商，而是业务状态、Socket.IO 房间状态、LiveKit 媒体状态之间的一致性，以及屏幕共享、背景虚化、录屏带来的资源压力。
 
 ## 系统边界
 
@@ -36,7 +36,7 @@
 | P0 | 在线态仍在单进程内存中 | 重启丢失在线态，多实例部署不安全 | 短期明确单实例部署；中期迁移到 Redis |
 | P0 | Socket.IO 与 LiveKit 状态不同步 | 用户已进房但媒体未就绪，或媒体已断但 UI 未恢复 | 保持清晰的加入、快照、重连、离开顺序 |
 | P0 | 屏幕共享状态清理不完整 | 刷新或异常退出后出现错误焦点、旧共享者、远端看不到共享 | 每次改动都验证开始、停止、刷新、重连和移动端 |
-| P1 | 虚拟背景和录屏资源占用高 | 弱设备卡顿、掉帧、发热，影响基础会议体验 | 把它们视为增强功能，必要时降级 |
+| P1 | 背景虚化和录屏资源占用高 | 弱设备卡顿、掉帧、发热，影响基础会议体验 | 把它们视为增强功能，必要时降级 |
 | P1 | `app.py` 继续膨胀 | 认证、房间、聊天、后台、录屏逻辑互相影响 | 后续按业务域拆分 |
 | P2 | 部署可观测性有限 | 线上问题定位依赖人工日志排查 | 补充结构化日志、健康检查和监控 |
 
@@ -77,7 +77,7 @@
 - 移动端至少能稳定观看远端共享内容。
 - 同账号双设备不会因为误判旧 socket 而互相挤掉。
 
-## 录屏与虚拟背景回归重点
+## 录屏与背景虚化回归重点
 
 这两项都属于增强功能，不应影响基础会议链路。
 
@@ -85,10 +85,10 @@
 
 - 摄像头开关正常。
 - 麦克风开关正常。
-- 开启虚拟背景后仍能发布本地视频。
-- 摄像头关闭后再开启，虚拟背景不会复用已经 ended 的旧摄像头 track。
-- 虚拟背景启动失败后会回退到原始摄像头，并清理未成功的 canvas 处理流。
-- 屏幕共享和虚拟背景不会争用同一条本地视频替换路径。
+- 开启背景虚化后仍能发布本地视频。
+- 摄像头关闭后再开启，背景虚化不会复用已经 ended 的旧摄像头 track。
+- 背景虚化启动失败后会回退到原始摄像头，并清理未成功的 canvas 处理流。
+- 屏幕共享和背景虚化不会争用同一条本地视频替换路径。
 - 浏览器录屏能生成原始结果。
 - 有 `ffmpeg` 的服务器能继续转封装为 MP4。
 
@@ -122,7 +122,7 @@
 - 不要把当前所有稳定性问题继续归因到旧版 Mesh/P2P。
 - 不要把 Socket.IO 房间状态问题误判成 LiveKit 媒体问题。
 - 不要把 LiveKit track 生命周期当作业务房间成员生命周期。
-- 不要把虚拟背景和录屏当成零成本能力。
+- 不要把背景虚化和录屏当成零成本能力。
 
 
 ---
@@ -133,7 +133,7 @@
 
 [中文](#stability-audit-zh) | [English](#stability-audit-en)
 
-The project has moved to a layered `Flask + Socket.IO + LiveKit SFU` architecture. The main risks are no longer browser Mesh/P2P negotiation. They are consistency between business state, Socket.IO room state, and LiveKit media state, plus the resource pressure introduced by screen sharing, virtual background, and recording.
+The project has moved to a layered `Flask + Socket.IO + LiveKit SFU` architecture. The main risks are no longer browser Mesh/P2P negotiation. They are consistency between business state, Socket.IO room state, and LiveKit media state, plus the resource pressure introduced by screen sharing, background blur, and recording.
 
 ## System Boundaries
 
@@ -214,10 +214,10 @@ Confirm:
 
 - Camera toggling still works.
 - Microphone toggling still works.
-- Local video can still publish after virtual background is enabled.
-- After the camera is turned off and on again, virtual background does not reuse an ended old camera track.
-- If virtual background startup fails, it falls back to the raw camera and cleans up the failed canvas processing stream.
-- Screen sharing and virtual background do not fight over the same local video replacement path.
+- Local video can still publish after background blur is enabled.
+- After the camera is turned off and on again, background blur does not reuse an ended old camera track.
+- If background-blur startup fails, it falls back to the raw camera and cleans up the failed canvas processing stream.
+- Screen sharing and background blur do not fight over the same local video replacement path.
 - Browser recording can generate the raw result.
 - Servers with `ffmpeg` can still remux to MP4.
 
@@ -251,4 +251,4 @@ Concrete split recommendations from the current code audit are tracked in [REFAC
 - Do not keep attributing current stability issues to the old Mesh/P2P path.
 - Do not mistake Socket.IO room state issues for LiveKit media issues.
 - Do not treat LiveKit track lifecycle as the business room membership lifecycle.
-- Do not treat virtual background and recording as zero-cost features.
+- Do not treat background blur and recording as zero-cost features.

@@ -975,6 +975,41 @@ body.has-simulated-fullscreen {
   gap: 10px;
   flex-wrap: wrap;
 }
+.auth-inline-actions > * {
+  flex: 1 1 160px;
+}
+.auth-code-panel {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(130,177,255,.16);
+  border-radius: 16px;
+  background: rgba(255,255,255,.04);
+}
+.auth-code-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.auth-code-attempt-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(130,177,255,.14);
+  border: 1px solid rgba(130,177,255,.22);
+  color: #dceaff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.auth-form-card button[disabled] {
+  opacity: .58;
+  cursor: not-allowed;
+}
 .auth-turnstile-block {
   display: grid;
   gap: 8px;
@@ -1197,6 +1232,9 @@ body.has-simulated-fullscreen {
     justify-self: stretch;
     max-width: none;
   }
+  .auth-inline-actions {
+    flex-direction: column;
+  }
   .auth-turnstile-block .cf-turnstile {
     min-height: 78px;
   }
@@ -1208,6 +1246,10 @@ body.has-simulated-fullscreen {
   }
 }
 @media (max-width: 560px) {
+  .auth-code-panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
   .guide-book-nav {
     grid-template-columns: 1fr;
     gap: 6px;

@@ -783,6 +783,8 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 | `EMAIL_SMTP_USE_TLS` / `EMAIL_SMTP_USE_SSL` | SMTP 加密方式；常见是 `587 + TLS` 或 `465 + SSL` 二选一 | 启用邮箱验证时推荐 |
 | `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME` | 验证邮件发件地址和显示名称 | 启用邮箱验证时必填 |
 | `EMAIL_VERIFY_CODE_TTL_MINUTES` | 邮箱验证码有效期，默认 `10` 分钟 | 可选 |
+| `EMAIL_CODE_SEND_LIMIT` | 单个页面窗口内允许发送验证码的最大次数，默认 `2` | 可选 |
+| `EMAIL_CODE_SEND_WINDOW_SECONDS` | 验证码重发次数统计窗口，默认跟随验证码有效期 | 可选 |
 | `STRICT_SECURITY_CHECKS` | 启动时拒绝弱 `SECRET_KEY` / `ADMIN_*` 配置 | 公网推荐 |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 登录/注册/找回密码的人机验证 | 可选 |
 | `TURN_PUBLIC_HOST` | 自动生成 TURN/STUN 地址时使用的公网主机名 | 可选 |
@@ -812,8 +814,9 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 
 - 注册页填写 `用户名 + 邮箱 + 密码`
 - 先通过人机验证，再发送 6 位邮箱验证码
+- 单个页面窗口内，邮箱验证码最多发送 2 次；第一次发送后按钮会切换成“重发验证码”
 - 只有邮箱验证码校验通过后，账号才会正式创建
-- 已存在但未验证的旧账号，可直接在登录页使用“绑定邮箱 + 验证码登录”
+- 已存在但未验证的旧账号，可直接在登录页使用“邮箱登录”
 - 找回密码页继续复用同一套 SMTP 配置发送密码重置验证码
 
 最省事的接法通常是 SMTP。你可以接自己域名邮箱，也可以接第三方发信服务的 SMTP。
@@ -853,7 +856,7 @@ EMAIL_VERIFY_CODE_TTL_MINUTES=10
 4. 输入邮件里的 6 位验证码，确认注册完成并能直接登录
 5. 用用户名登录一次，再用邮箱登录一次
 6. 在“找回密码”页提交一次，确认能收到密码重置验证码并成功设置新密码
-7. 给一个未验证旧账号直接使用“绑定邮箱 + 验证码登录”，确认可完成登录并补齐邮箱验证状态
+7. 给一个未验证旧账号直接使用“邮箱登录”，确认可完成登录并补齐邮箱验证状态
 
 如果收不到邮件，优先检查：
 
@@ -2534,6 +2537,8 @@ Configuration:
 | `EMAIL_SMTP_USE_TLS` / `EMAIL_SMTP_USE_SSL` | SMTP transport mode; common choices are `587 + TLS` or `465 + SSL` | Recommended when email verification is enabled |
 | `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME` | Sender address and display name for verification emails | Required when email verification is enabled |
 | `EMAIL_VERIFY_CODE_TTL_MINUTES` | Email-code lifetime, default `10` minutes | Optional |
+| `EMAIL_CODE_SEND_LIMIT` | Max email-code sends allowed in one page window, default `2` | Optional |
+| `EMAIL_CODE_SEND_WINDOW_SECONDS` | Time window used for resend counting; defaults to the code lifetime window | Optional |
 | `STRICT_SECURITY_CHECKS` | Refuse weak `SECRET_KEY` / `ADMIN_*` settings at startup | Recommended online |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Human verification for login/register/password reset | Optional |
 | `TURN_PUBLIC_HOST` | Public host used when generating TURN/STUN addresses | Optional |
@@ -2560,6 +2565,7 @@ The current code now supports an optional email-code verification flow:
 
 - the register page collects `username + email + password`
 - after the human check passes, the app sends a 6-digit email code
+- each page window allows at most two sends; after the first send, the button changes to `Resend code`
 - the account is created only after the email code is verified
 - legacy unverified accounts can sign in directly with `bound email + code`
 - the forgot-password page still reuses the same SMTP setup to send password-reset codes
