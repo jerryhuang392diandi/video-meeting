@@ -105,6 +105,7 @@ EMAIL_SMTP_USE_SSL = (os.environ.get("EMAIL_SMTP_USE_SSL", "0") or "").strip().l
 EMAIL_FROM_ADDRESS = (os.environ.get("EMAIL_FROM_ADDRESS") or "").strip()
 EMAIL_FROM_NAME = (os.environ.get("EMAIL_FROM_NAME") or "Video Meeting").strip() or "Video Meeting"
 EMAIL_VERIFY_TOKEN_TTL_HOURS = max(1, int(os.environ.get("EMAIL_VERIFY_TOKEN_TTL_HOURS", "24") or "24"))
+EMAIL_VERIFY_CODE_TTL_MINUTES = max(1, int(os.environ.get("EMAIL_VERIFY_CODE_TTL_MINUTES", "10") or "10"))
 EMAIL_VERIFY_RESEND_LIMIT_PER_IP = max(1, int(os.environ.get("EMAIL_VERIFY_RESEND_LIMIT_PER_IP", "5") or "5"))
 EMAIL_VERIFY_RESEND_WINDOW_SECONDS = max(60, int(os.environ.get("EMAIL_VERIFY_RESEND_WINDOW_SECONDS", "3600") or "3600"))
 PASSWORD_RESET_TOKEN_TTL_MINUTES = max(
@@ -183,6 +184,84 @@ def verification_email_required_for_user(user) -> bool:
 
 def email_token_hash(raw_token: str) -> str:
     return hashlib.sha256((raw_token or "").encode("utf-8")).hexdigest()
+
+
+def email_code_hash(*, email: str, purpose: str, raw_code: str, user_id: int | None = None) -> str:
+    payload = f"{normalize_email(email)}|{purpose}|{user_id or 0}|{raw_code or ''}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def generate_email_verification_code() -> str:
+    return "".join(secrets.choice(string.digits) for _ in range(6))
+
+
+def set_register_human_verification(email: str) -> None:
+    session["register_human_verification"] = {
+        "email": email,
+        "expires_at": (datetime.utcnow() + timedelta(minutes=EMAIL_VERIFY_CODE_TTL_MINUTES)).isoformat(),
+    }
+
+
+def clear_register_human_verification() -> None:
+    session.pop("register_human_verification", None)
+
+
+def register_human_verification_valid(email: str | None) -> bool:
+    if not email:
+        return False
+    state = session.get("register_human_verification")
+    if not isinstance(state, dict):
+        return False
+    if normalize_email(state.get("email")) != normalize_email(email):
+        return False
+    try:
+        expires_at = datetime.fromisoformat(state.get("expires_at") or "")
+    except (TypeError, ValueError):
+        return False
+    return expires_at >= datetime.utcnow()
+
+
+def set_password_reset_human_verification(identifier: str, email: str, user_id: int) -> None:
+    session["password_reset_human_verification"] = {
+        "identifier": (identifier or "").strip()[:255],
+        "email": email,
+        "user_id": user_id,
+        "expires_at": (datetime.utcnow() + timedelta(minutes=EMAIL_VERIFY_CODE_TTL_MINUTES)).isoformat(),
+    }
+
+
+def clear_password_reset_human_verification() -> None:
+    session.pop("password_reset_human_verification", None)
+
+
+def password_reset_human_verification_ready() -> bool:
+    state = session.get("password_reset_human_verification")
+    if not isinstance(state, dict):
+        return False
+    try:
+        expires_at = datetime.fromisoformat(state.get("expires_at") or "")
+    except (TypeError, ValueError):
+        return False
+    return expires_at >= datetime.utcnow() and bool((state.get("identifier") or "").strip())
+
+
+def password_reset_human_verification_valid(*, identifier: str | None, user: "User" | None) -> bool:
+    if not identifier or not user or not getattr(user, "email", None):
+        return False
+    state = session.get("password_reset_human_verification")
+    if not isinstance(state, dict):
+        return False
+    if (state.get("identifier") or "").strip() != (identifier or "").strip()[:255]:
+        return False
+    if normalize_email(state.get("email")) != normalize_email(user.email):
+        return False
+    if int(state.get("user_id") or 0) != int(user.id):
+        return False
+    try:
+        expires_at = datetime.fromisoformat(state.get("expires_at") or "")
+    except (TypeError, ValueError):
+        return False
+    return expires_at >= datetime.utcnow()
 
 
 def _consume_request_budget(bucket: str, scope: str, limit: int, window_seconds: int) -> int | None:
@@ -479,6 +558,21 @@ class EmailVerificationToken(db.Model):
     user = db.relationship("User", backref="email_verification_tokens", lazy=True)
 
 
+class EmailVerificationCode(db.Model):
+    __tablename__ = "email_verification_codes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    email = db.Column(db.String(255), nullable=False, index=True)
+    purpose = db.Column(db.String(32), nullable=False, index=True)
+    code_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref="email_verification_codes", lazy=True)
+
+
 class PasswordResetToken(db.Model):
     __tablename__ = "password_reset_tokens"
 
@@ -610,6 +704,7 @@ def ensure_user_columns():
         cur.execute("ALTER TABLE users ADD COLUMN auto_enable_speaker BOOLEAN DEFAULT 1")
     cur.execute("CREATE TABLE IF NOT EXISTS password_reset_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, username VARCHAR(64) NOT NULL, contact VARCHAR(128), note TEXT, status VARCHAR(16) DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)")
     cur.execute("CREATE TABLE IF NOT EXISTS email_verification_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, email VARCHAR(255) NOT NULL, token_hash VARCHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))")
+    cur.execute("CREATE TABLE IF NOT EXISTS email_verification_codes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, email VARCHAR(255) NOT NULL, purpose VARCHAR(32) NOT NULL, code_hash VARCHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))")
     cur.execute("CREATE TABLE IF NOT EXISTS password_reset_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, email VARCHAR(255) NOT NULL, token_hash VARCHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))")
     conn.commit()
     conn.close()
@@ -723,6 +818,43 @@ def create_email_verification_token(user: User) -> str:
     return raw_token
 
 
+def create_email_verification_code(*, email: str, purpose: str, user_id: int | None = None) -> str:
+    raw_code = generate_email_verification_code()
+    query = EmailVerificationCode.query.filter_by(email=email, purpose=purpose, used_at=None)
+    if user_id is None:
+        query = query.filter(EmailVerificationCode.user_id.is_(None))
+    else:
+        query = query.filter_by(user_id=user_id)
+    query.delete(synchronize_session=False)
+    code = EmailVerificationCode(
+        user_id=user_id,
+        email=email,
+        purpose=purpose,
+        code_hash=email_code_hash(email=email, purpose=purpose, raw_code=raw_code, user_id=user_id),
+        expires_at=datetime.utcnow() + timedelta(minutes=EMAIL_VERIFY_CODE_TTL_MINUTES),
+    )
+    db.session.add(code)
+    db.session.commit()
+    return raw_code
+
+
+def find_email_verification_code(*, email: str, purpose: str, raw_code: str, user_id: int | None = None) -> EmailVerificationCode | None:
+    query = EmailVerificationCode.query.filter_by(
+        email=email,
+        purpose=purpose,
+        code_hash=email_code_hash(email=email, purpose=purpose, raw_code=raw_code, user_id=user_id),
+        used_at=None,
+    )
+    if user_id is None:
+        query = query.filter(EmailVerificationCode.user_id.is_(None))
+    else:
+        query = query.filter_by(user_id=user_id)
+    code = query.order_by(EmailVerificationCode.created_at.desc()).first()
+    if not code or code.expires_at < datetime.utcnow():
+        return None
+    return code
+
+
 def create_password_reset_token(user: User) -> str:
     raw_token = secrets.token_urlsafe(32)
     token = PasswordResetToken(
@@ -739,6 +871,7 @@ def create_password_reset_token(user: User) -> str:
 
 def purge_user_auth_artifacts(user_id: int, username: str | None = None) -> None:
     EmailVerificationToken.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    EmailVerificationCode.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     PasswordResetToken.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     if username:
         PasswordResetRequest.query.filter_by(username=username).delete(synchronize_session=False)
@@ -765,6 +898,41 @@ def send_verification_email(user: User) -> None:
         text_body=text_body,
         html_body=html_body,
     )
+
+
+def send_email_verification_code(*, email: str, purpose: str, user: User | None = None) -> None:
+    raw_code = create_email_verification_code(
+        email=email,
+        purpose=purpose,
+        user_id=user.id if user else None,
+    )
+    if purpose == "register":
+        intro_key = "register_email_code_mail_intro"
+    elif purpose == "password_reset":
+        intro_key = "password_reset_code_mail_intro"
+    else:
+        intro_key = "email_verify_code_mail_intro"
+    text_body = (
+        f"{t(intro_key)}\n\n"
+        f"{raw_code}\n\n"
+        f"{t('email_verify_code_mail_expiry').format(minutes=EMAIL_VERIFY_CODE_TTL_MINUTES)}"
+    )
+    html_body = (
+        f"<p>{t(intro_key)}</p>"
+        f"<p><strong style=\"font-size:24px;letter-spacing:0.32em\">{raw_code}</strong></p>"
+        f"<p>{t('email_verify_code_mail_expiry').format(minutes=EMAIL_VERIFY_CODE_TTL_MINUTES)}</p>"
+    )
+    send_email_message(
+        to_address=email,
+        subject=build_email_subject("email_verify_subject"),
+        text_body=text_body,
+        html_body=html_body,
+    )
+
+
+def mark_user_email_verified(user: User) -> None:
+    user.email_verified = True
+    user.email_verified_at = datetime.utcnow()
 
 
 def build_password_reset_link(raw_token: str) -> str:
@@ -1505,6 +1673,7 @@ def account_page():
 def forgot_password_page():
     message = None
     error = None
+    reset_code_ready = password_reset_human_verification_ready()
     if request.method == "POST":
         retry_after = _consume_request_budget(
             "forgot_password_ip",
@@ -1516,10 +1685,10 @@ def forgot_password_page():
             response, status_code, headers = _too_many_attempts_response("forgot_password.html")
             headers["Retry-After"] = str(retry_after)
             return response, status_code, headers
-        turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
-        if not turnstile_ok:
-            return render_template("forgot_password.html", message=message, error=turnstile_error), 403
+        intent = (request.form.get("intent") or "submit").strip()
         identifier = (request.form.get("identifier") or "").strip()[:255]
+        email_code = (request.form.get("email_code") or "").strip()
+        new_password = (request.form.get("new_password") or "").strip()
         contact = (request.form.get("contact") or "").strip()[:128]
         note = (request.form.get("note") or "").strip()[:500]
         if not identifier:
@@ -1527,22 +1696,67 @@ def forgot_password_page():
         else:
             user = find_user_by_identifier(identifier)
             if email_auth_active() and email_delivery_configured():
-                if user and user.email and user.email_verified:
-                    try:
-                        send_password_reset_email(user)
-                    except Exception:
-                        create_password_reset_request(identifier, contact, note)
-                        app.logger.exception("Failed to send password reset email for user_id=%s", user.id)
-                        error = t("password_reset_email_send_failed")
+                if intent == "send_code":
+                    turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
+                    if not turnstile_ok:
+                        return render_template("forgot_password.html", message=message, error=turnstile_error), 403
+                    if user and user.email and user.email_verified:
+                        try:
+                            send_email_verification_code(email=user.email, purpose="password_reset", user=user)
+                        except Exception:
+                            app.logger.exception("Failed to send password reset code for user_id=%s", user.id)
+                            error = t("password_reset_email_send_failed")
+                        else:
+                            set_password_reset_human_verification(identifier, user.email, user.id)
+                        message = t("password_reset_code_sent")
+                        reset_code_ready = True
                     else:
-                        message = t("password_reset_email_sent")
+                        clear_password_reset_human_verification()
+                        reset_code_ready = False
+                        create_password_reset_request(identifier, contact, note)
+                        message = t("password_reset_email_sent_generic")
                 else:
-                    create_password_reset_request(identifier, contact, note)
-                    message = t("password_reset_email_sent_generic")
+                    if user and user.email and user.email_verified:
+                        if not password_reset_human_verification_valid(identifier=identifier, user=user):
+                            clear_password_reset_human_verification()
+                            error = t("turnstile_required")
+                            reset_code_ready = False
+                        elif not re.fullmatch(r"\d{6}", email_code):
+                            error = t("verification_code_required")
+                            reset_code_ready = True
+                        elif not new_password:
+                            error = t("new_password_required")
+                            reset_code_ready = True
+                        else:
+                            code = find_email_verification_code(
+                                email=user.email,
+                                purpose="password_reset",
+                                raw_code=email_code,
+                                user_id=user.id,
+                            )
+                            if not code:
+                                error = t("verification_code_invalid")
+                                reset_code_ready = True
+                            else:
+                                user.set_password(new_password)
+                                user.session_version = (user.session_version or 0) + 1
+                                code.used_at = datetime.utcnow()
+                                db.session.commit()
+                                disconnect_user_sockets(user.id, message=t("kicked"))
+                                logout_user()
+                                session.clear()
+                                return redirect(url_for("login", reset="1"))
+                    else:
+                        clear_password_reset_human_verification()
+                        reset_code_ready = False
+                        create_password_reset_request(identifier, contact, note)
+                        message = t("password_reset_request_submitted")
             else:
+                clear_password_reset_human_verification()
+                reset_code_ready = False
                 create_password_reset_request(identifier, contact, note)
                 message = t("password_reset_request_submitted")
-    return render_template("forgot_password.html", message=message, error=error)
+    return render_template("forgot_password.html", message=message, error=error, reset_code_ready=reset_code_ready)
 
 
 @app.route("/help")
@@ -1565,7 +1779,11 @@ def register():
     if not PUBLIC_REGISTRATION_ENABLED:
         return render_template("register.html", error=t("registration_disabled")), 403
     if request.method == "GET":
-        return render_template("register.html")
+        register_state = session.get("register_human_verification") if isinstance(session.get("register_human_verification"), dict) else {}
+        return render_template(
+            "register.html",
+            register_human_verified=register_human_verification_valid(register_state.get("email")),
+        )
 
     retry_after = _consume_request_budget(
         "register_ip",
@@ -1577,28 +1795,45 @@ def register():
         response, status_code, headers = _too_many_attempts_response("register.html")
         headers["Retry-After"] = str(retry_after)
         return response, status_code, headers
-    turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
-    if not turnstile_ok:
-        return render_template("register.html", error=turnstile_error), 403
 
+    intent = (request.form.get("intent") or "register").strip()
     username = (request.form.get("username") or "").strip()
     email = normalize_email(request.form.get("email"))
     password = (request.form.get("password") or "").strip()
+    email_code = (request.form.get("email_code") or "").strip()
 
     if email_auth_active() and not email_delivery_configured():
         return render_template("register.html", error=t("email_delivery_not_configured")), 503
-    if not username or not password or (email_auth_active() and not email):
-        return render_template(
-            "register.html",
-            error=t("register_fields_required") if email_auth_active() else t("username_password_required"),
-        )
-    if User.query.filter_by(username=username).first():
-        return render_template("register.html", error=t("username_exists"))
     if email_auth_active():
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
             return render_template("register.html", error=t("invalid_email"))
         if User.query.filter(func.lower(User.email) == email).first():
             return render_template("register.html", error=t("email_exists"))
+
+    if intent == "send_code" and email_auth_active():
+        turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
+        if not turnstile_ok:
+            return render_template("register.html", error=turnstile_error), 403
+        try:
+            send_email_verification_code(email=email, purpose="register")
+        except Exception:
+            app.logger.exception("Failed to send register verification code to %s", email)
+            return render_template("register.html", error=t("verification_email_send_failed")), 502
+        set_register_human_verification(email)
+        return render_template(
+            "register.html",
+            message=t("register_code_sent"),
+            register_human_verified=True,
+        )
+
+    if not username or not password or (email_auth_active() and not email):
+        return render_template(
+            "register.html",
+            error=t("register_fields_required") if email_auth_active() else t("username_password_required"),
+            register_human_verified=register_human_verification_valid(email),
+        )
+    if User.query.filter_by(username=username).first():
+        return render_template("register.html", error=t("username_exists"), register_human_verified=register_human_verification_valid(email))
 
     user = User(
         username=username,
@@ -1609,21 +1844,22 @@ def register():
         is_active_user=True,
         session_version=0,
     )
+
+    if email_auth_active():
+        if not register_human_verification_valid(email):
+            return render_template("register.html", error=t("turnstile_required"), register_human_verified=False), 403
+        if not re.fullmatch(r"\d{6}", email_code):
+            return render_template("register.html", error=t("verification_code_required"), register_human_verified=True)
+        code = find_email_verification_code(email=email, purpose="register", raw_code=email_code)
+        if not code:
+            return render_template("register.html", error=t("verification_code_invalid"), register_human_verified=True)
+        code.used_at = datetime.utcnow()
+        mark_user_email_verified(user)
+        clear_register_human_verification()
+
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
-
-    if email_auth_active():
-        try:
-            send_verification_email(user)
-        except Exception:
-            app.logger.exception("Failed to send verification email for user_id=%s", user.id)
-            return render_template(
-                "register.html",
-                message=t("register_success_verify_pending"),
-                error=t("verification_email_send_failed"),
-            )
-        return redirect(url_for("login", verify="sent"))
 
     user.session_version = (user.session_version or 0) + 1
     db.session.commit()
@@ -1718,11 +1954,38 @@ def resend_verification():
     if not email_delivery_configured():
         return render_template("resend_verification.html", error=t("email_delivery_not_configured")), 503
     try:
-        send_verification_email(user)
+        send_email_verification_code(email=user.email, purpose="verify_email", user=user)
     except Exception:
         app.logger.exception("Failed to resend verification email for user_id=%s", user.id)
         return render_template("resend_verification.html", error=t("verification_email_send_failed")), 502
     return render_template("resend_verification.html", message=t("verification_email_resent"))
+
+
+@app.route("/verify-email-code", methods=["GET", "POST"])
+def verify_email_code():
+    if not email_auth_active():
+        return redirect(url_for("login"))
+    if request.method == "GET":
+        return render_template("verify_email_code.html")
+
+    identifier = (request.form.get("identifier") or "").strip()
+    email_code = (request.form.get("email_code") or "").strip()
+    if not identifier:
+        return render_template("verify_email_code.html", error=t("login_identifier_required"))
+    if not re.fullmatch(r"\d{6}", email_code):
+        return render_template("verify_email_code.html", error=t("verification_code_required"))
+    user = find_user_by_identifier(identifier)
+    if not user or not user.email:
+        return render_template("verify_email_code.html", error=t("verification_code_invalid"))
+    if user.email_verified:
+        return render_template("verify_email_code.html", message=t("email_already_verified"))
+    code = find_email_verification_code(email=user.email, purpose="verify_email", raw_code=email_code, user_id=user.id)
+    if not code:
+        return render_template("verify_email_code.html", error=t("verification_code_invalid"))
+    code.used_at = datetime.utcnow()
+    mark_user_email_verified(user)
+    db.session.commit()
+    return redirect(url_for("login", verified="1"))
 
 
 @app.get("/verify-email")
@@ -1736,8 +1999,7 @@ def verify_email():
     user = db.session.get(User, token.user_id)
     if not user:
         return render_template("login.html", error=t("verification_link_invalid")), 400
-    user.email_verified = True
-    user.email_verified_at = datetime.utcnow()
+    mark_user_email_verified(user)
     token.used_at = datetime.utcnow()
     db.session.commit()
     return redirect(url_for("login", verified="1"))

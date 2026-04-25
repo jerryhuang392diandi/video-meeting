@@ -47,14 +47,26 @@
     <label>{{ t('email') }}</label>
     <input name="email" type="email" maxlength="255" value="{{ request.form.get('email', '') }}" required />
     <div class="muted small-note">{{ t('register_email_help') }}</div>
+    <label>{{ t('email_verification_code') }}</label>
+    <input name="email_code" inputmode="numeric" pattern="\d{6}" maxlength="6" value="{{ request.form.get('email_code', '') }}" />
+    <div class="muted small-note">
+      {% if register_human_verified %}
+        {{ t('register_code_ready_help') }}
+      {% else %}
+        {{ t('register_code_send_help') }}
+      {% endif %}
+    </div>
     {% endif %}
     <label>{{ t('password') }}</label>
     <input name="password" type="password" required />
-    {% if turnstile_enabled %}
+    {% if turnstile_enabled and not register_human_verified %}
     <div class="auth-turnstile-block">
       <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>
       <div class="muted small-note">{{ t('turnstile_help') }}</div>
     </div>
+    {% endif %}
+    {% if email_auth_enabled %}
+    <button class="ghost-btn" type="submit" name="intent" value="send_code">{{ t('send_email_verification_code') }}</button>
     {% endif %}
     <button class="primary-btn" type="submit">{{ t('submit_register') }}</button>
     {% endif %}

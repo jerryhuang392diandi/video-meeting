@@ -71,6 +71,7 @@
       {% if public_registration_enabled %}<a class="text-link" href="{{ url_for('register') }}">{{ t('nav_register') }}</a>{% endif %}
       <a class="text-link" href="{{ url_for('forgot_password_page') }}">{{ t('forgot_password') }}</a>
       {% if email_auth_enabled %}<a class="text-link" href="{{ url_for('resend_verification') }}">{{ t('resend_verification') }}</a>{% endif %}
+      {% if email_auth_enabled %}<a class="text-link" href="{{ url_for('verify_email_code') }}">{{ t('verify_email_code') }}</a>{% endif %}
     </div>
   </form>
 </section>

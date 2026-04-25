@@ -777,13 +777,14 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 | `LIVEKIT_API_SECRET` | Flask 后端签发 LiveKit token 用的 secret | 是 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 初始管理员账号和密码 | 推荐 |
 | `PUBLIC_REGISTRATION_ENABLED` | 是否允许任何人自助注册；公网建议关闭 | 推荐 |
-| `EMAIL_AUTH_ENABLED` | 是否启用“用户名/邮箱 + 密码 + 邮箱验证”注册登录链路 | 按需 |
+| `EMAIL_AUTH_ENABLED` | 是否启用“用户名/邮箱 + 密码 + 邮箱验证码”注册登录链路 | 按需 |
 | `EMAIL_SMTP_HOST` / `EMAIL_SMTP_PORT` | SMTP 服务器地址和端口 | 启用邮箱验证时必填 |
 | `EMAIL_SMTP_USERNAME` / `EMAIL_SMTP_PASSWORD` | SMTP 用户名和密码；很多服务商这里用 API Key | 启用邮箱验证时通常必填 |
 | `EMAIL_SMTP_USE_TLS` / `EMAIL_SMTP_USE_SSL` | SMTP 加密方式；常见是 `587 + TLS` 或 `465 + SSL` 二选一 | 启用邮箱验证时推荐 |
 | `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME` | 验证邮件发件地址和显示名称 | 启用邮箱验证时必填 |
-| `EMAIL_VERIFY_TOKEN_TTL_HOURS` | 邮箱验证链接有效期，默认 `24` 小时 | 可选 |
-| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | 密码重置链接有效期，默认 `10` 分钟 | 可选 |
+| `EMAIL_VERIFY_CODE_TTL_MINUTES` | 邮箱验证码有效期，默认 `10` 分钟 | 可选 |
+| `EMAIL_VERIFY_TOKEN_TTL_HOURS` | 旧链接式邮箱验证兼容有效期，默认 `24` 小时 | 可选 |
+| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | 旧链接式密码重置兼容有效期，默认 `10` 分钟 | 可选 |
 | `STRICT_SECURITY_CHECKS` | 启动时拒绝弱 `SECRET_KEY` / `ADMIN_*` 配置 | 公网推荐 |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 登录/注册/找回密码的人机验证 | 可选 |
 | `TURN_PUBLIC_HOST` | 自动生成 TURN/STUN 地址时使用的公网主机名 | 可选 |
@@ -798,7 +799,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 - 公网部署建议设置 `PUBLIC_REGISTRATION_ENABLED=0`，避免任何人直接创建账号。
 - 公网部署建议设置 `STRICT_SECURITY_CHECKS=1`，避免弱 `SECRET_KEY`、弱管理员密码或默认 `root` 管理员名直接带到线上。
 - 不要因为你是用 `root` 登录服务器，就顺手把 `ADMIN_USERNAME` 也设成 `root`。这是两个完全不同的概念。
-- 如果开启 `EMAIL_AUTH_ENABLED=1`，请确保 `PUBLIC_SCHEME` / `PUBLIC_HOST` 已正确设置；验证邮件里的链接会按这里生成。
+- 如果开启 `EMAIL_AUTH_ENABLED=1`，请确保 SMTP 发信配置正确；注册验证码和密码重置验证码都会直接发到用户邮箱。`PUBLIC_SCHEME` / `PUBLIC_HOST` 仍会影响旧兼容链接。
 - 线上 systemd 不要直接运行 `python app.py`。那会启动 Werkzeug 开发服务器；如果你在 `systemctl status video-meeting` 里看到 `Werkzeug appears to be used in a production deployment` 或 `This is a development server`，说明当前运行方式不对。
 - 如果你不熟悉终端编辑器，可以直接保留 EOF 写法；最后那个单独一行的 `EOF` 表示写入结束。
 - `TURNSTILE_SECRET_KEY` 不能自己随便生成，必须和 `TURNSTILE_SITE_KEY` 一起从同一个 Cloudflare Turnstile 站点页面复制。
@@ -809,13 +810,13 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 
 ### 5.1 邮箱验证注册 / 登录接入
 
-当前代码支持可选的邮箱验证流程：
+当前代码支持可选的邮箱验证码流程：
 
-- 注册页可填写 `用户名 + 邮箱 + 密码`
-- 注册成功后发送验证邮件
-- 用户点击链接后，才允许用“用户名或邮箱 + 密码”登录
-- 如果没收到邮件，可在登录页进入“重发验证邮件”
-- 找回密码页会复用同一套 SMTP 配置发送密码重置链接
+- 注册页填写 `用户名 + 邮箱 + 密码`
+- 先通过人机验证，再发送 6 位邮箱验证码
+- 只有邮箱验证码校验通过后，账号才会正式创建
+- 已存在但未验证的账号，可在登录页进入“重发验证码”或“输入验证码”
+- 找回密码页继续复用同一套 SMTP 配置发送密码重置验证码
 
 最省事的接法通常是 SMTP。你可以接自己域名邮箱，也可以接第三方发信服务的 SMTP。
 
@@ -836,6 +837,7 @@ EMAIL_SMTP_USE_TLS=0
 EMAIL_SMTP_USE_SSL=1
 EMAIL_FROM_ADDRESS=noreply@meeting.example.com
 EMAIL_FROM_NAME=Video Meeting
+EMAIL_VERIFY_CODE_TTL_MINUTES=10
 EMAIL_VERIFY_TOKEN_TTL_HOURS=24
 PASSWORD_RESET_TOKEN_TTL_MINUTES=10
 ```
@@ -851,11 +853,11 @@ PASSWORD_RESET_TOKEN_TTL_MINUTES=10
 
 1. 重启服务：`sudo systemctl restart video-meeting`
 2. 用新邮箱注册一个普通账号
-3. 确认收件箱或垃圾邮件箱收到验证邮件
-4. 点击邮件里的验证链接，确认能回到登录页并显示“邮箱验证成功”
+3. 确认收件箱或垃圾邮件箱收到验证码邮件
+4. 输入邮件里的 6 位验证码，确认注册完成并能直接登录
 5. 用用户名登录一次，再用邮箱登录一次
-6. 在“找回密码”页提交一次，确认能收到密码重置链接并成功设置新密码
-7. 用未验证账号直接登录，确认会被拦住并提示重发验证邮件
+6. 在“找回密码”页提交一次，确认能收到密码重置验证码并成功设置新密码
+7. 给一个未验证旧账号重发验证码，确认“输入验证码”页能完成邮箱验证
 
 如果收不到邮件，优先检查：
 
@@ -2530,13 +2532,14 @@ Configuration:
 | `LIVEKIT_API_SECRET` | Backend secret for signing LiveKit tokens | Yes |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Initial admin account | Recommended |
 | `PUBLIC_REGISTRATION_ENABLED` | Whether anyone can self-register; disable it for public deployments | Recommended |
-| `EMAIL_AUTH_ENABLED` | Enable the username/email + password + email-verification auth flow | Optional |
+| `EMAIL_AUTH_ENABLED` | Enable the username/email + password + email-code verification auth flow | Optional |
 | `EMAIL_SMTP_HOST` / `EMAIL_SMTP_PORT` | SMTP host and port | Required when email verification is enabled |
 | `EMAIL_SMTP_USERNAME` / `EMAIL_SMTP_PASSWORD` | SMTP username and password; many providers use an API key here | Usually required when email verification is enabled |
 | `EMAIL_SMTP_USE_TLS` / `EMAIL_SMTP_USE_SSL` | SMTP transport mode; common choices are `587 + TLS` or `465 + SSL` | Recommended when email verification is enabled |
 | `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME` | Sender address and display name for verification emails | Required when email verification is enabled |
-| `EMAIL_VERIFY_TOKEN_TTL_HOURS` | Verification-link lifetime, default `24` hours | Optional |
-| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | Password-reset link lifetime, default `10` minutes | Optional |
+| `EMAIL_VERIFY_CODE_TTL_MINUTES` | Email-code lifetime, default `10` minutes | Optional |
+| `EMAIL_VERIFY_TOKEN_TTL_HOURS` | Legacy link-verification compatibility lifetime, default `24` hours | Optional |
+| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | Legacy password-reset link compatibility lifetime, default `10` minutes | Optional |
 | `STRICT_SECURITY_CHECKS` | Refuse weak `SECRET_KEY` / `ADMIN_*` settings at startup | Recommended online |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Human verification for login/register/password reset | Optional |
 | `TURN_PUBLIC_HOST` | Public host used when generating TURN/STUN addresses | Optional |
@@ -2551,7 +2554,7 @@ Notes:
 - For public deployments, set `PUBLIC_REGISTRATION_ENABLED=0` so anyone cannot create accounts directly.
 - For public deployments, set `STRICT_SECURITY_CHECKS=1` so weak `SECRET_KEY`, weak admin passwords, and the default `root` admin name are rejected at startup.
 - Do not reuse the Linux login name just because you SSH as `root`; that is unrelated to `ADMIN_USERNAME`.
-- If you enable `EMAIL_AUTH_ENABLED=1`, make sure `PUBLIC_SCHEME` and `PUBLIC_HOST` are correct; verification links are generated from them.
+- If you enable `EMAIL_AUTH_ENABLED=1`, make sure SMTP delivery is configured correctly; registration codes and password-reset codes are sent directly by email. `PUBLIC_SCHEME` and `PUBLIC_HOST` still affect the legacy compatibility links.
 - If your users are mainly in mainland China, test `challenges.cloudflare.com` from a real mainland network before enforcing Turnstile.
 - Restart the service after changing `.env`; the `systemd` section below will do that.
 - If LiveKit values are missing, room pages intentionally return `503`.
@@ -2559,13 +2562,13 @@ Notes:
 
 ### 5.1 Email Verification Registration / Login
 
-The current code now supports an optional email-verification flow:
+The current code now supports an optional email-code verification flow:
 
-- the register page can collect `username + email + password`
-- a verification email is sent after sign-up
-- the user can sign in with `username or email + password` only after the email is verified
-- if the email was not received, the login page links to `Resend verification email`
-- the forgot-password page reuses the same SMTP setup to send password-reset links
+- the register page collects `username + email + password`
+- after the human check passes, the app sends a 6-digit email code
+- the account is created only after the email code is verified
+- for existing unverified accounts, the login page links to `Resend code` and `Verify with code`
+- the forgot-password page still reuses the same SMTP setup to send password-reset codes
 
 The easiest setup is SMTP. You can point it at your own domain mailbox or a provider SMTP endpoint.
 
@@ -2586,6 +2589,7 @@ EMAIL_SMTP_USE_TLS=0
 EMAIL_SMTP_USE_SSL=1
 EMAIL_FROM_ADDRESS=noreply@meeting.example.com
 EMAIL_FROM_NAME=Video Meeting
+EMAIL_VERIFY_CODE_TTL_MINUTES=10
 EMAIL_VERIFY_TOKEN_TTL_HOURS=24
 PASSWORD_RESET_TOKEN_TTL_MINUTES=10
 ```
@@ -2601,16 +2605,16 @@ Minimum manual test after setup:
 
 1. Restart the service: `sudo systemctl restart video-meeting`
 2. Register a new normal account with a real email
-3. Confirm the verification email arrives in inbox or spam
-4. Open the verification link and confirm the login page shows the success notice
+3. Confirm the verification-code email arrives in inbox or spam
+4. Enter the 6-digit code from the email and confirm registration finishes successfully
 5. Sign in once with the username, then once with the email
-6. Submit one forgot-password request, confirm the reset email arrives, and set a new password successfully
-7. Try signing in before verification and confirm the app blocks it and points to resend verification
+6. Submit one forgot-password request, confirm the reset code email arrives, and set a new password successfully
+7. Resend a code for one legacy unverified account and confirm `Verify with code` completes the email verification
 
 If mail does not arrive, check these first:
 
 - whether `EMAIL_FROM_ADDRESS` has already been verified by the provider
-- whether `PUBLIC_HOST` is correct, otherwise the verification link may point to the wrong domain
+- whether SMTP delivery is working and whether `EMAIL_FROM_ADDRESS` is accepted by the provider
 - whether the provider DNS verification is complete
 - whether `journalctl -u video-meeting -n 100 --no-pager` shows SMTP authentication or connection errors
 
