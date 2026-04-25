@@ -901,7 +901,7 @@ def notify_admin_room_joined(*, user: "User", meeting: "Meeting", display_name: 
         "User joined meeting room",
         {
             "Room ID": meeting.room_id,
-            "Meeting title": meeting.title,
+            "Meeting title": getattr(meeting, "title", ""),
             "Username": user.username,
             "Display name": display_name,
             "Email": user.email or "not set",
@@ -2481,7 +2481,7 @@ def admin_enable_user(user_id):
 def admin_end_meeting(meeting_id):
     meeting = Meeting.query.get_or_404(meeting_id)
     room_id = meeting.room_id
-    title = meeting.title
+    title = getattr(meeting, "title", "")
     end_meeting_by_room_id(room_id, "meeting_closed")
     notify_admin_dangerous_action("end meeting", {"Meeting ID": meeting_id, "Room ID": room_id, "Meeting title": title})
     return redirect(url_for("admin_dashboard"))
@@ -2527,7 +2527,7 @@ def delete_meeting_record(meeting):
 def admin_delete_meeting(meeting_id):
     meeting = Meeting.query.get_or_404(meeting_id)
     room_id = meeting.room_id
-    title = meeting.title
+    title = getattr(meeting, "title", "")
     delete_meeting_record(meeting)
     db.session.commit()
     notify_admin_dangerous_action("delete meeting", {"Meeting ID": meeting_id, "Room ID": room_id, "Meeting title": title})
