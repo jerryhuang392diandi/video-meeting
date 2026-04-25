@@ -3,6 +3,7 @@
 {% block shell_class %}auth-shell{% endblock %}
 {% block head %}
   {{ super() }}
+  <link rel="stylesheet" href="{{ url_for('static', filename='auth.css', v=asset_version('auth.css')) }}" />
   {% if turnstile_enabled %}
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   {% endif %}

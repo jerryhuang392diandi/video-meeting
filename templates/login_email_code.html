@@ -50,13 +50,20 @@
     </div>
 
     <label>{{ t('email') }}</label>
-    <input name="email" type="email" required />
+    <input name="email" type="email" maxlength="255" autocomplete="email" value="{{ request.form.get('email', '') }}" required />
 
     <label>{{ t('email_verification_code') }}</label>
-    <input name="email_code" required />
+    <input name="email_code" inputmode="numeric" pattern="\d{6}" maxlength="6" autocomplete="one-time-code" value="{{ request.form.get('email_code', '') }}" />
+
+    {% if turnstile_enabled %}
+    <div class="auth-turnstile-block">
+      <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>
+      <div class="muted small-note">{{ t('turnstile_help') }}</div>
+    </div>
+    {% endif %}
 
     <div class="auth-inline-actions">
-      <button class="ghost-btn" type="submit" value="send_login_code" formnovalidate data-code-submit="1">{{ t(email_code_button_key) }}</button>
+      <button class="ghost-btn" type="submit" value="send_login_code" formnovalidate data-code-submit="1" {% if email_code_send_locked %}disabled{% endif %}>{{ t(email_code_button_key) }}</button>
       <button class="primary-btn" type="submit" value="email_code" data-full-submit="1">{{ t('login_with_email_login') }}</button>
     </div>
 
@@ -76,4 +83,36 @@
     </div>
   </form>
 </section>
+
+<script>
+(() => {
+  const form = document.getElementById('loginEmailCodeForm');
+  if (!form) return;
+  const intentInput = document.getElementById('loginEmailIntent');
+
+  form.querySelector('[data-code-submit="1"]')?.addEventListener('click', () => {
+    if (intentInput) intentInput.value = 'send_login_code';
+    form.noValidate = true;
+  });
+
+  form.querySelector('[data-full-submit="1"]')?.addEventListener('click', () => {
+    if (intentInput) intentInput.value = 'email_code';
+    form.noValidate = false;
+  });
+
+  form.addEventListener('submit', (event) => {
+    const submitter = event.submitter;
+    if (submitter?.dataset?.codeSubmit === '1' && intentInput) {
+      intentInput.value = 'send_login_code';
+    }
+    if (submitter?.dataset?.fullSubmit === '1' && intentInput) {
+      intentInput.value = 'email_code';
+    }
+    if (intentInput?.value !== 'send_login_code') return;
+    if (!submitter) return;
+    submitter.disabled = true;
+    submitter.textContent = {{ t('sending_email_verification_code')|tojson }};
+  });
+})();
+</script>
 {% endblock %}

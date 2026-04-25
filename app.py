@@ -248,6 +248,8 @@ def _too_many_attempts_response(template_name: str, *, status_code: int = 429):
         response = render_email_code_template(template_name, purpose="register", error=error)
     elif template_name == "login_email_code.html":
         response = render_email_code_template(template_name, purpose="login", error=error)
+    elif template_name == "admin_login.html":
+        response = render_template(template_name, error=error, admin_login_path=ADMIN_LOGIN_PATH)
     else:
         response = render_template(template_name, error=error)
     return response, status_code, {"Retry-After": "60"}
