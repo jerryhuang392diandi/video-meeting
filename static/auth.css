@@ -1,0 +1,21 @@
+.auth-form-card{position:relative;z-index:1}
+.auth-inline-actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.auth-inline-actions .primary-btn,.auth-inline-actions .ghost-btn{width:100%;margin-top:0}
+.auth-action-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:18px}
+.auth-action-grid.compact{margin-top:16px}
+.auth-action-card{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;padding:12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045)}
+.auth-action-card:hover{transform:translateY(-1px);border-color:rgba(95,211,255,.34);background:rgba(95,211,255,.09)}
+.auth-action-icon,.auth-process-icon{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:14px;color:var(--primary-2);background:rgba(95,211,255,.12);border:1px solid rgba(95,211,255,.22);font-weight:900}
+.auth-action-card strong,.auth-action-card small{display:block}
+.auth-action-card strong{font-size:14px;margin-bottom:3px}
+.auth-action-card small{color:var(--muted);font-size:12px;line-height:1.35}
+.auth-code-panel{margin:12px 0 16px;padding:14px;border-radius:16px;border:1px solid rgba(130,177,255,.18);background:rgba(130,177,255,.08)}
+.auth-code-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.auth-code-attempt-chip{padding:5px 9px;border-radius:999px;color:var(--primary-2);background:rgba(95,211,255,.12);border:1px solid rgba(95,211,255,.22);font-size:12px;font-weight:800}
+.auth-process-list{display:grid;gap:12px;margin-top:18px}
+.auth-process-list>div{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:12px;row-gap:3px;align-items:center;padding:14px;border:1px solid rgba(255,255,255,.09);border-radius:16px;background:rgba(255,255,255,.04)}
+.auth-process-list strong,.auth-process-list small{display:block}
+.auth-process-list small{color:var(--muted);line-height:1.5}
+.auth-process-icon{grid-row:span 2;width:34px;height:34px;border-radius:12px}
+button[disabled],.ghost-btn[disabled],.primary-btn[disabled]{opacity:.55;cursor:not-allowed;transform:none}
+@media(max-width:520px){.auth-inline-actions{grid-template-columns:1fr}.auth-action-card{padding:11px 12px}.auth-action-icon{width:34px;height:34px;border-radius:12px}}
