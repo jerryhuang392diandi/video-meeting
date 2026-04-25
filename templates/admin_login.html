@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('admin_login_title') }}{% endblock %}
+{% block shell_class %}auth-shell{% endblock %}
+{% block head %}
+  {{ super() }}
+  {% if turnstile_enabled %}
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  {% endif %}
+{% endblock %}
+{% block content %}
+<header class="topbar compact">
+  <div>
+    <div class="brand">{{ t('admin_login_title') }}</div>
+    <div class="muted">{{ t('admin_login_subtitle') }}</div>
+  </div>
+  <div class="top-actions">
+    {% include '_language_switch.html' %}
+    <a class="chip" href="{{ url_for('login') }}">{{ t('normal_login_mode') }}</a>
+  </div>
+</header>
+
+<section class="hero-card auth-landing-card glass-highlight">
+  <div class="landing-copy">
+    <span class="eyebrow">{{ t('admin_short') }}</span>
+    <h1>{{ t('admin_login_title') }}</h1>
+    <p class="landing-tagline">{{ t('admin_login_desc') }}</p>
+    <div class="feature-list">
+      <span class="feature-chip">{{ t('admin_mode') }}</span>
+      <span class="feature-chip">{{ t('single_device_mode') }}</span>
+      <span class="feature-chip">{{ t('security_first') }}</span>
+    </div>
+    <p class="muted small-note">{{ t('admin_login_hidden_hint') }}</p>
+  </div>
+
+  <form method="post" action="{{ admin_login_path }}" class="form-card elevated-card auth-form-card">
+    {% if error %}
+      <div class="notice error">{{ error }}</div>
+    {% endif %}
+    <label>{{ t('login_identifier') }}</label>
+    <input name="identifier" maxlength="255" autocomplete="username" value="{{ request.form.get('identifier', '') }}" required />
+    <div class="muted small-note">{{ t('admin_login_identifier_help') }}</div>
+    <label>{{ t('password') }}</label>
+    <input name="password" type="password" autocomplete="current-password" required />
+    {% if turnstile_enabled %}
+    <div class="auth-turnstile-block">
+      <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>
+      <div class="muted small-note">{{ t('turnstile_help') }}</div>
+    </div>
+    {% endif %}
+    <button class="primary-btn" type="submit">{{ t('submit_admin_login') }}</button>
+  </form>
+</section>
+{% endblock %}

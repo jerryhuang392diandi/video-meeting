@@ -695,6 +695,7 @@ LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 
 ADMIN_USERNAME=meetingadmin
 ADMIN_PASSWORD=replace-with-strong-admin-password
+ADMIN_LOGIN_PATH=/manage-choose-a-long-random-path
 PUBLIC_REGISTRATION_ENABLED=0
 EMAIL_AUTH_ENABLED=1
 EMAIL_SMTP_HOST=smtp.resend.com
@@ -705,6 +706,14 @@ EMAIL_SMTP_USE_TLS=0
 EMAIL_SMTP_USE_SSL=1
 EMAIL_FROM_ADDRESS=noreply@meeting.example.com
 EMAIL_FROM_NAME=Video Meeting
+
+ADMIN_ALERT_EMAIL=admin@example.com
+ADMIN_EMAIL_NOTIFY_ENABLED=1
+ADMIN_NOTIFY_ON_USER_REGISTER=1
+ADMIN_NOTIFY_ON_ROOM_JOIN=1
+ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS=1
+ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS=300
+
 STRICT_SECURITY_CHECKS=1
 TURNSTILE_SITE_KEY=replace-with-turnstile-site-key
 TURNSTILE_SECRET_KEY=replace-with-turnstile-secret-key
@@ -734,6 +743,7 @@ LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 
 ADMIN_USERNAME=meetingadmin
 ADMIN_PASSWORD=replace-with-strong-admin-password
+ADMIN_LOGIN_PATH=/manage-choose-a-long-random-path
 PUBLIC_REGISTRATION_ENABLED=0
 EMAIL_AUTH_ENABLED=1
 EMAIL_SMTP_HOST=smtp.resend.com
@@ -744,6 +754,14 @@ EMAIL_SMTP_USE_TLS=0
 EMAIL_SMTP_USE_SSL=1
 EMAIL_FROM_ADDRESS=noreply@meeting.example.com
 EMAIL_FROM_NAME=Video Meeting
+
+ADMIN_ALERT_EMAIL=admin@example.com
+ADMIN_EMAIL_NOTIFY_ENABLED=1
+ADMIN_NOTIFY_ON_USER_REGISTER=1
+ADMIN_NOTIFY_ON_ROOM_JOIN=1
+ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS=1
+ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS=300
+
 STRICT_SECURITY_CHECKS=1
 TURNSTILE_SITE_KEY=replace-with-turnstile-site-key
 TURNSTILE_SECRET_KEY=replace-with-turnstile-secret-key
@@ -776,6 +794,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 | `LIVEKIT_API_KEY` | Flask 后端签发 LiveKit token 用的 key | 是 |
 | `LIVEKIT_API_SECRET` | Flask 后端签发 LiveKit token 用的 secret | 是 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 初始管理员账号和密码 | 推荐 |
+| `ADMIN_LOGIN_PATH` | 独立管理员登录入口路径，例如 `/manage-choose-a-long-random-path`；普通登录页会拒绝管理员账号 | 公网推荐 |
 | `PUBLIC_REGISTRATION_ENABLED` | 是否允许任何人自助注册；公网建议关闭 | 推荐 |
 | `EMAIL_AUTH_ENABLED` | 是否启用“用户名/邮箱 + 密码 + 邮箱验证码”注册登录链路 | 按需 |
 | `EMAIL_SMTP_HOST` / `EMAIL_SMTP_PORT` | SMTP 服务器地址和端口 | 启用邮箱验证时必填 |
@@ -785,6 +804,12 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 | `EMAIL_VERIFY_CODE_TTL_MINUTES` | 邮箱验证码有效期，默认 `10` 分钟 | 可选 |
 | `EMAIL_CODE_SEND_LIMIT` | 单个页面窗口内允许发送验证码的最大次数，默认 `2` | 可选 |
 | `EMAIL_CODE_SEND_WINDOW_SECONDS` | 验证码重发次数统计窗口，默认跟随验证码有效期 | 可选 |
+| `ADMIN_ALERT_EMAIL` | 管理员接收提醒的邮箱；只写在服务器 `.env`，不要提交到 Git | 开启提醒时必填 |
+| `ADMIN_EMAIL_NOTIFY_ENABLED` | 是否启用管理员邮箱提醒；依赖同一套 SMTP 发信配置 | 可选 |
+| `ADMIN_NOTIFY_ON_USER_REGISTER` | 新用户注册成功时是否通知管理员，默认 `1` | 可选 |
+| `ADMIN_NOTIFY_ON_ROOM_JOIN` | 用户进入会议房间时是否通知管理员，默认 `1` | 可选 |
+| `ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS` | 管理员执行踢人、删用户、重置密码、停用/启用账号、处理重置申请、结束/删除会议等高危操作时是否通知，默认 `1` | 可选 |
+| `ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS` | 同一用户在同一房间重复进入的提醒冷却时间，默认 `300` 秒，避免刷屏 | 可选 |
 | `STRICT_SECURITY_CHECKS` | 启动时拒绝弱 `SECRET_KEY` / `ADMIN_*` 配置 | 公网推荐 |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 登录/注册/找回密码的人机验证 | 可选 |
 | `TURN_PUBLIC_HOST` | 自动生成 TURN/STUN 地址时使用的公网主机名 | 可选 |
@@ -798,8 +823,10 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 - `.env` 推荐权限为 `600`，文件所有者建议就是运行服务的 Linux 用户，例如 `deploy`。
 - 公网部署建议设置 `PUBLIC_REGISTRATION_ENABLED=0`，避免任何人直接创建账号。
 - 公网部署建议设置 `STRICT_SECURITY_CHECKS=1`，避免弱 `SECRET_KEY`、弱管理员密码或默认 `root` 管理员名直接带到线上。
+- 管理员和普通用户现在是分开的：普通用户继续访问 `/login`；管理员访问 `.env` 中的 `ADMIN_LOGIN_PATH`。这个路径不要写进 README 首页、页面导航或提交到公开仓库。
 - 不要因为你是用 `root` 登录服务器，就顺手把 `ADMIN_USERNAME` 也设成 `root`。这是两个完全不同的概念。
 - 如果开启 `EMAIL_AUTH_ENABLED=1`，请确保 SMTP 发信配置正确；注册验证码和密码重置验证码都会直接发到用户邮箱。
+- 管理员提醒复用同一套 SMTP 配置：设置 `ADMIN_EMAIL_NOTIFY_ENABLED=1` 和 `ADMIN_ALERT_EMAIL=你的管理员邮箱` 后，新用户注册、用户进入会议房间以及高危管理操作都会按开关发送提醒。管理员邮箱只放服务器 `.env`，不要提交到 GitHub。
 - 线上 systemd 不要直接运行 `python app.py`。那会启动 Werkzeug 开发服务器；如果你在 `systemctl status video-meeting` 里看到 `Werkzeug appears to be used in a production deployment` 或 `This is a development server`，说明当前运行方式不对。
 - 如果你不熟悉终端编辑器，可以直接保留 EOF 写法；最后那个单独一行的 `EOF` 表示写入结束。
 - `TURNSTILE_SECRET_KEY` 不能自己随便生成，必须和 `TURNSTILE_SITE_KEY` 一起从同一个 Cloudflare Turnstile 站点页面复制。
@@ -838,7 +865,21 @@ EMAIL_SMTP_USE_TLS=0
 EMAIL_SMTP_USE_SSL=1
 EMAIL_FROM_ADDRESS=noreply@meeting.example.com
 EMAIL_FROM_NAME=Video Meeting
+
+ADMIN_ALERT_EMAIL=admin@example.com
+ADMIN_EMAIL_NOTIFY_ENABLED=1
+ADMIN_NOTIFY_ON_USER_REGISTER=1
+ADMIN_NOTIFY_ON_ROOM_JOIN=1
+ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS=1
+ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS=300
 EMAIL_VERIFY_CODE_TTL_MINUTES=10
+
+ADMIN_ALERT_EMAIL=admin@example.com
+ADMIN_EMAIL_NOTIFY_ENABLED=1
+ADMIN_NOTIFY_ON_USER_REGISTER=1
+ADMIN_NOTIFY_ON_ROOM_JOIN=1
+ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS=1
+ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS=300
 ```
 
 如果你用 Brevo、企业邮箱或其他 SMTP 服务，只需要把主机、端口、用户名、密码和加密方式换成对方给你的值。常见组合是：
@@ -2449,6 +2490,7 @@ LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 
 ADMIN_USERNAME=meetingadmin
 ADMIN_PASSWORD=replace-with-strong-admin-password
+ADMIN_LOGIN_PATH=/manage-choose-a-long-random-path
 PUBLIC_REGISTRATION_ENABLED=0
 EMAIL_AUTH_ENABLED=1
 EMAIL_SMTP_HOST=smtp.resend.com
@@ -2459,6 +2501,14 @@ EMAIL_SMTP_USE_TLS=0
 EMAIL_SMTP_USE_SSL=1
 EMAIL_FROM_ADDRESS=noreply@meeting.example.com
 EMAIL_FROM_NAME=Video Meeting
+
+ADMIN_ALERT_EMAIL=admin@example.com
+ADMIN_EMAIL_NOTIFY_ENABLED=1
+ADMIN_NOTIFY_ON_USER_REGISTER=1
+ADMIN_NOTIFY_ON_ROOM_JOIN=1
+ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS=1
+ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS=300
+
 STRICT_SECURITY_CHECKS=1
 TURNSTILE_SITE_KEY=replace-with-turnstile-site-key
 TURNSTILE_SECRET_KEY=replace-with-turnstile-secret-key
@@ -2488,6 +2538,7 @@ LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 
 ADMIN_USERNAME=meetingadmin
 ADMIN_PASSWORD=replace-with-strong-admin-password
+ADMIN_LOGIN_PATH=/manage-choose-a-long-random-path
 PUBLIC_REGISTRATION_ENABLED=0
 EMAIL_AUTH_ENABLED=1
 EMAIL_SMTP_HOST=smtp.resend.com
@@ -2498,6 +2549,14 @@ EMAIL_SMTP_USE_TLS=0
 EMAIL_SMTP_USE_SSL=1
 EMAIL_FROM_ADDRESS=noreply@meeting.example.com
 EMAIL_FROM_NAME=Video Meeting
+
+ADMIN_ALERT_EMAIL=admin@example.com
+ADMIN_EMAIL_NOTIFY_ENABLED=1
+ADMIN_NOTIFY_ON_USER_REGISTER=1
+ADMIN_NOTIFY_ON_ROOM_JOIN=1
+ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS=1
+ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS=300
+
 STRICT_SECURITY_CHECKS=1
 TURNSTILE_SITE_KEY=replace-with-turnstile-site-key
 TURNSTILE_SECRET_KEY=replace-with-turnstile-secret-key
@@ -2530,6 +2589,7 @@ Configuration:
 | `LIVEKIT_API_KEY` | Backend key for signing LiveKit tokens | Yes |
 | `LIVEKIT_API_SECRET` | Backend secret for signing LiveKit tokens | Yes |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Initial admin account | Recommended |
+| `ADMIN_LOGIN_PATH` | Separate admin login path, for example `/manage-choose-a-long-random-path`; the normal login page rejects admin accounts | Recommended online |
 | `PUBLIC_REGISTRATION_ENABLED` | Whether anyone can self-register; disable it for public deployments | Recommended |
 | `EMAIL_AUTH_ENABLED` | Enable the username/email + password + email-code verification auth flow | Optional |
 | `EMAIL_SMTP_HOST` / `EMAIL_SMTP_PORT` | SMTP host and port | Required when email verification is enabled |
@@ -2539,6 +2599,12 @@ Configuration:
 | `EMAIL_VERIFY_CODE_TTL_MINUTES` | Email-code lifetime, default `10` minutes | Optional |
 | `EMAIL_CODE_SEND_LIMIT` | Max email-code sends allowed in one page window, default `2` | Optional |
 | `EMAIL_CODE_SEND_WINDOW_SECONDS` | Time window used for resend counting; defaults to the code lifetime window | Optional |
+| `ADMIN_ALERT_EMAIL` | Email inbox that receives admin alerts; keep it only in server-side `.env`, never commit it to Git | Required when alerts are enabled |
+| `ADMIN_EMAIL_NOTIFY_ENABLED` | Enable admin email alerts; uses the same SMTP delivery settings | Optional |
+| `ADMIN_NOTIFY_ON_USER_REGISTER` | Notify the admin when a new user registers successfully, default `1` | Optional |
+| `ADMIN_NOTIFY_ON_ROOM_JOIN` | Notify the admin when a user joins a meeting room, default `1` | Optional |
+| `ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS` | Notify the admin when high-risk admin actions occur, such as kicking/deleting users, password resets, disabling/enabling accounts, password-reset request updates, and ending/deleting meetings | Optional |
+| `ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS` | Cooldown for duplicate room-join alerts from the same user in the same room, default `300` seconds | Optional |
 | `STRICT_SECURITY_CHECKS` | Refuse weak `SECRET_KEY` / `ADMIN_*` settings at startup | Recommended online |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Human verification for login/register/password reset | Optional |
 | `TURN_PUBLIC_HOST` | Public host used when generating TURN/STUN addresses | Optional |
@@ -2552,8 +2618,10 @@ Notes:
 - Keep `.env` at permission `600`, ideally owned by the runtime Linux user such as `deploy`.
 - For public deployments, set `PUBLIC_REGISTRATION_ENABLED=0` so anyone cannot create accounts directly.
 - For public deployments, set `STRICT_SECURITY_CHECKS=1` so weak `SECRET_KEY`, weak admin passwords, and the default `root` admin name are rejected at startup.
+- Admin and normal-user login are now separated: normal users use `/login`; administrators use the `ADMIN_LOGIN_PATH` from `.env`. Do not publish that path in README home pages, navigation, or public commits.
 - Do not reuse the Linux login name just because you SSH as `root`; that is unrelated to `ADMIN_USERNAME`.
 - If you enable `EMAIL_AUTH_ENABLED=1`, make sure SMTP delivery is configured correctly; registration codes and password-reset codes are sent directly by email.
+- Admin alerts reuse the same SMTP settings: set `ADMIN_EMAIL_NOTIFY_ENABLED=1` and `ADMIN_ALERT_EMAIL=your-admin@example.com` to receive alerts for new registrations, room joins, and high-risk admin actions. Keep the admin inbox only in the server `.env`; do not commit it to GitHub.
 - If your users are mainly in mainland China, test `challenges.cloudflare.com` from a real mainland network before enforcing Turnstile.
 - Restart the service after changing `.env`; the `systemd` section below will do that.
 - If LiveKit values are missing, room pages intentionally return `503`.
@@ -2589,7 +2657,21 @@ EMAIL_SMTP_USE_TLS=0
 EMAIL_SMTP_USE_SSL=1
 EMAIL_FROM_ADDRESS=noreply@meeting.example.com
 EMAIL_FROM_NAME=Video Meeting
+
+ADMIN_ALERT_EMAIL=admin@example.com
+ADMIN_EMAIL_NOTIFY_ENABLED=1
+ADMIN_NOTIFY_ON_USER_REGISTER=1
+ADMIN_NOTIFY_ON_ROOM_JOIN=1
+ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS=1
+ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS=300
 EMAIL_VERIFY_CODE_TTL_MINUTES=10
+
+ADMIN_ALERT_EMAIL=admin@example.com
+ADMIN_EMAIL_NOTIFY_ENABLED=1
+ADMIN_NOTIFY_ON_USER_REGISTER=1
+ADMIN_NOTIFY_ON_ROOM_JOIN=1
+ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS=1
+ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS=300
 ```
 
 If you use Brevo, a company mailbox, or another SMTP provider, replace the host, port, username, password, and transport mode with that provider's values. The two common combinations are:

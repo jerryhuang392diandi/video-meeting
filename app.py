@@ -104,14 +104,32 @@ EMAIL_SMTP_USE_TLS = (os.environ.get("EMAIL_SMTP_USE_TLS", "1") or "").strip().l
 EMAIL_SMTP_USE_SSL = (os.environ.get("EMAIL_SMTP_USE_SSL", "0") or "").strip().lower() in {"1", "true", "yes", "on"}
 EMAIL_FROM_ADDRESS = (os.environ.get("EMAIL_FROM_ADDRESS") or "").strip()
 EMAIL_FROM_NAME = (os.environ.get("EMAIL_FROM_NAME") or "Video Meeting").strip() or "Video Meeting"
+ADMIN_ALERT_EMAIL = (os.environ.get("ADMIN_ALERT_EMAIL") or "").strip().lower()
+ADMIN_EMAIL_NOTIFY_ENABLED = (os.environ.get("ADMIN_EMAIL_NOTIFY_ENABLED", "0") or "").strip().lower() in {"1", "true", "yes", "on"}
+ADMIN_NOTIFY_ON_USER_REGISTER = (os.environ.get("ADMIN_NOTIFY_ON_USER_REGISTER", "1") or "").strip().lower() in {"1", "true", "yes", "on"}
+ADMIN_NOTIFY_ON_ROOM_JOIN = (os.environ.get("ADMIN_NOTIFY_ON_ROOM_JOIN", "1") or "").strip().lower() in {"1", "true", "yes", "on"}
+ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS = (os.environ.get("ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS", "1") or "").strip().lower() in {"1", "true", "yes", "on"}
+ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS = max(0, int(os.environ.get("ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS", "300") or "300"))
 EMAIL_VERIFY_CODE_TTL_MINUTES = max(1, int(os.environ.get("EMAIL_VERIFY_CODE_TTL_MINUTES", "10") or "10"))
 EMAIL_CODE_SEND_LIMIT = max(1, int(os.environ.get("EMAIL_CODE_SEND_LIMIT", "2") or "2"))
+
+def normalize_admin_login_path(value: str | None) -> str:
+    raw = (value or "/admin-login").strip() or "/admin-login"
+    if not raw.startswith("/"):
+        raw = "/" + raw
+    if raw in {"/", "/login", "/register", "/forgot-password", "/forgot-password-support", "/admin"}:
+        raw = "/admin-login"
+    return raw
+
+ADMIN_LOGIN_PATH = normalize_admin_login_path(os.environ.get("ADMIN_LOGIN_PATH"))
 EMAIL_CODE_SEND_WINDOW_SECONDS = max(
     60,
     int(os.environ.get("EMAIL_CODE_SEND_WINDOW_SECONDS", str(EMAIL_VERIFY_CODE_TTL_MINUTES * 60)) or str(EMAIL_VERIFY_CODE_TTL_MINUTES * 60)),
 )
 REQUEST_THROTTLE = {}
 REQUEST_THROTTLE_LOCK = threading.Lock()
+ADMIN_NOTIFICATION_THROTTLE = {}
+ADMIN_NOTIFICATION_THROTTLE_LOCK = threading.Lock()
 WEAK_SECRET_VALUES = {
     "",
     "changeme",
@@ -167,6 +185,10 @@ def looks_like_email(value: str | None) -> bool:
 
 def email_delivery_configured() -> bool:
     return bool(EMAIL_SMTP_HOST and EMAIL_FROM_ADDRESS)
+
+
+def admin_email_notifications_configured() -> bool:
+    return bool(ADMIN_EMAIL_NOTIFY_ENABLED and ADMIN_ALERT_EMAIL and email_delivery_configured())
 
 
 def email_auth_active() -> bool:
@@ -317,6 +339,8 @@ def _validate_public_security_settings() -> list[str]:
         issues.append("REMEMBER_COOKIE_SECURE must be enabled when PUBLIC_SCHEME=https and STRICT_SECURITY_CHECKS=1.")
     if EMAIL_AUTH_ENABLED and not email_delivery_configured():
         issues.append("EMAIL_AUTH_ENABLED requires EMAIL_SMTP_HOST and EMAIL_FROM_ADDRESS to be configured when STRICT_SECURITY_CHECKS=1.")
+    if ADMIN_EMAIL_NOTIFY_ENABLED and not admin_email_notifications_configured():
+        issues.append("ADMIN_EMAIL_NOTIFY_ENABLED requires ADMIN_ALERT_EMAIL plus EMAIL_SMTP_HOST and EMAIL_FROM_ADDRESS when STRICT_SECURITY_CHECKS=1.")
     return issues
 
 
@@ -731,7 +755,7 @@ def apply_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(), browsing-topics=()")
-    if request.path in {"/login", "/register", "/forgot-password", "/admin"}:
+    if request.path in {"/login", "/register", "/forgot-password", "/admin", ADMIN_LOGIN_PATH}:
         response.headers.setdefault("Cache-Control", "no-store, private")
     return response
 
@@ -781,6 +805,115 @@ def send_email_message(*, to_address: str, subject: str, text_body: str, html_bo
         if EMAIL_SMTP_USERNAME:
             server.login(EMAIL_SMTP_USERNAME, EMAIL_SMTP_PASSWORD)
         server.send_message(message)
+
+
+def _request_snapshot() -> dict[str, str]:
+    try:
+        return {
+            "ip": _client_address(),
+            "user_agent": (request.headers.get("User-Agent") or "")[:200],
+            "path": (request.path or "")[:200],
+        }
+    except RuntimeError:
+        return {"ip": "unknown", "user_agent": "", "path": ""}
+
+
+def _format_admin_notification_body(title: str, fields: dict[str, object]) -> str:
+    lines = [title, "", f"Time (UTC): {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}"]
+    for key, value in fields.items():
+        if value is None or value == "":
+            continue
+        lines.append(f"{key}: {value}")
+    return "\n".join(lines)
+
+
+def send_admin_notification(subject: str, body: str) -> None:
+    if not admin_email_notifications_configured():
+        return
+
+    def _send():
+        try:
+            send_email_message(
+                to_address=ADMIN_ALERT_EMAIL,
+                subject=f"[Admin Alert] {subject}",
+                text_body=body,
+            )
+        except Exception:
+            app.logger.exception("Failed to send admin notification email")
+
+    threading.Thread(target=_send, daemon=True).start()
+
+
+def notify_admin_event(event_key: str, subject: str, fields: dict[str, object], *, cooldown_key: str | None = None, cooldown_seconds: int = 0) -> None:
+    if not admin_email_notifications_configured():
+        return
+    if cooldown_key and cooldown_seconds > 0:
+        now = time.time()
+        key = f"{event_key}:{cooldown_key}"[:180]
+        with ADMIN_NOTIFICATION_THROTTLE_LOCK:
+            last_sent = ADMIN_NOTIFICATION_THROTTLE.get(key, 0)
+            if now - last_sent < cooldown_seconds:
+                return
+            ADMIN_NOTIFICATION_THROTTLE[key] = now
+    send_admin_notification(subject, _format_admin_notification_body(subject, fields))
+
+
+def notify_admin_user_registered(user: "User") -> None:
+    if not ADMIN_NOTIFY_ON_USER_REGISTER:
+        return
+    snap = _request_snapshot()
+    notify_admin_event(
+        "user_register",
+        "New user registered",
+        {
+            "Username": user.username,
+            "Email": user.email or "not set",
+            "Verified email": bool(user.email_verified),
+            "User ID": user.id,
+            "IP": snap["ip"],
+            "User-Agent": snap["user_agent"],
+        },
+    )
+
+
+def notify_admin_room_joined(*, user: "User", meeting: "Meeting", display_name: str) -> None:
+    if not ADMIN_NOTIFY_ON_ROOM_JOIN:
+        return
+    snap = _request_snapshot()
+    notify_admin_event(
+        "room_join",
+        "User joined meeting room",
+        {
+            "Room ID": meeting.room_id,
+            "Meeting title": meeting.title,
+            "Username": user.username,
+            "Display name": display_name,
+            "Email": user.email or "not set",
+            "User ID": user.id,
+            "Host user ID": meeting.host_user_id,
+            "IP": snap["ip"],
+            "User-Agent": snap["user_agent"],
+        },
+        cooldown_key=f"{meeting.room_id}:{user.id}",
+        cooldown_seconds=ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS,
+    )
+
+
+def notify_admin_dangerous_action(action: str, fields: dict[str, object]) -> None:
+    if not ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS:
+        return
+    snap = _request_snapshot()
+    admin_name = getattr(current_user, "username", "unknown") if getattr(current_user, "is_authenticated", False) else "unknown"
+    payload = {
+        "Action": action,
+        "Admin": admin_name,
+        "Admin user ID": getattr(current_user, "id", None),
+        **fields,
+        "IP": snap["ip"],
+        "Path": snap["path"],
+        "User-Agent": snap["user_agent"],
+    }
+    notify_admin_event("dangerous_action", f"Dangerous action: {action}", payload)
 
 
 def create_email_verification_code(*, email: str, purpose: str, user_id: int | None = None) -> str:
@@ -1777,6 +1910,7 @@ def register():
 
     user.session_version = (user.session_version or 0) + 1
     db.session.commit()
+    notify_admin_user_registered(user)
     login_user(user)
     session["session_version"] = user.session_version
     disconnect_user_sockets(user.id, message=t("kicked"))
@@ -1818,6 +1952,8 @@ def login():
         return render_template("login.html", error=error)
     if not user.check_password(password):
         return render_template("login.html", error=t("invalid_login"))
+    if user.is_admin:
+        return render_template("login.html", error=t("admin_use_admin_login"))
     if not user.is_active_user:
         return render_template("login.html", error=t("account_disabled"))
     if verification_email_required_for_user(user):
@@ -1830,6 +1966,41 @@ def login():
     disconnect_user_sockets(user.id, message=t("kicked"))
     return redirect(url_for("index"))
 
+
+
+@app.route(ADMIN_LOGIN_PATH, methods=["GET", "POST"], endpoint="admin_login")
+def admin_login():
+    if current_user.is_authenticated and current_user.is_admin:
+        return redirect(url_for("admin_dashboard"))
+    if request.method == "GET":
+        return render_template("admin_login.html", admin_login_path=ADMIN_LOGIN_PATH)
+
+    identifier = (request.form.get("identifier") or "").strip()
+    retry_after_ip = _consume_request_budget("admin_login_ip", _client_address(), LOGIN_RATE_LIMIT_PER_IP, LOGIN_RATE_LIMIT_WINDOW_SECONDS)
+    retry_after_user = _consume_request_budget("admin_login_user", identifier or "<empty>", LOGIN_RATE_LIMIT_PER_USER, LOGIN_RATE_LIMIT_WINDOW_SECONDS)
+    retry_after = retry_after_ip if retry_after_ip is not None else retry_after_user
+    if retry_after is not None:
+        response, status_code, headers = _too_many_attempts_response("admin_login.html")
+        headers["Retry-After"] = str(retry_after)
+        return response, status_code, headers
+
+    password = (request.form.get("password") or "").strip()
+    turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
+    if not turnstile_ok:
+        return render_template("admin_login.html", error=turnstile_error, admin_login_path=ADMIN_LOGIN_PATH), 403
+
+    user = find_user_by_identifier(identifier)
+    if not user or not user.check_password(password) or not user.is_admin:
+        return render_template("admin_login.html", error=t("invalid_admin_login"), admin_login_path=ADMIN_LOGIN_PATH)
+    if not user.is_active_user:
+        return render_template("admin_login.html", error=t("account_disabled"), admin_login_path=ADMIN_LOGIN_PATH)
+
+    user.session_version = (user.session_version or 0) + 1
+    db.session.commit()
+    login_user(user)
+    session["session_version"] = user.session_version
+    disconnect_user_sockets(user.id, message=t("kicked"))
+    return redirect(url_for("admin_dashboard"))
 
 @app.route("/login-email-code", methods=["GET", "POST"])
 def login_email_code():
@@ -1864,6 +2035,8 @@ def login_email_code():
     if intent == "send_login_code":
         if not user or not user.email:
             return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("email_not_registered"))
+        if user.is_admin:
+            return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("admin_use_admin_login"))
         if not user.is_active_user:
             return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("account_disabled"))
         retry_after = consume_email_code_send_budget(purpose="login", scope=user.email)
@@ -1890,6 +2063,8 @@ def login_email_code():
         return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("verification_code_required"))
     if not user or not user.email:
         return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("email_not_registered"))
+    if user.is_admin:
+        return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("admin_use_admin_login"))
     if not user.is_active_user:
         return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("account_disabled"))
     code = find_email_verification_code(email=user.email, purpose="login", raw_code=email_code, user_id=user.id)
@@ -2184,6 +2359,7 @@ def admin_kick_user(user_id):
     remove_user_from_runtime_rooms(user.id, reason_message=kick_message)
     disconnect_user_sockets(user.id, message=kick_message)
     debug_log('ADMIN_KICK_DONE', user_id=user.id, remaining_sids=list(user_active_sids.get(user.id, set())), rooms={rid: {'participant_user_ids': [info.get('user_id') for info in info_map.get('participants', {}).values()], 'participant_sids': list(info_map.get('participants', {}).keys())} for rid, info_map in rooms.items()})
+    notify_admin_dangerous_action("kick user", {"Target username": user.username, "Target user ID": user.id})
     return redirect(url_for("admin_dashboard"))
 
 
@@ -2210,6 +2386,7 @@ def admin_delete_user(user_id):
     purge_user_auth_artifacts(user.id, username)
     db.session.delete(user)
     db.session.commit()
+    notify_admin_dangerous_action("delete user", {"Target username": username, "Target user ID": user_id})
     return redirect(url_for("admin_dashboard"))
 
 
@@ -2226,6 +2403,7 @@ def admin_reset_user_password(user_id):
     user.session_version = (user.session_version or 0) + 1
     db.session.commit()
     disconnect_user_sockets(user.id, message=t("password_reset_done"))
+    notify_admin_dangerous_action("reset user password", {"Target username": user.username, "Target user ID": user.id})
     return redirect(url_for("admin_dashboard"))
 
 
@@ -2233,8 +2411,9 @@ def admin_reset_user_password(user_id):
 @login_required
 @admin_required
 def admin_cleanup_reset_requests():
-    PasswordResetRequest.query.filter(PasswordResetRequest.status != "pending").delete(synchronize_session=False)
+    deleted_count = PasswordResetRequest.query.filter(PasswordResetRequest.status != "pending").delete(synchronize_session=False)
     db.session.commit()
+    notify_admin_dangerous_action("cleanup reset requests", {"Deleted requests": deleted_count})
     return redirect(url_for("admin_dashboard"))
 
 
@@ -2248,6 +2427,7 @@ def admin_disable_user(user_id):
     user.is_active_user = False
     user.session_version = (user.session_version or 0) + 1
     db.session.commit()
+    notify_admin_dangerous_action("disable user", {"Target username": user.username, "Target user ID": user.id})
     return redirect(url_for("admin_dashboard"))
 
 
@@ -2258,6 +2438,7 @@ def admin_enable_user(user_id):
     user = User.query.get_or_404(user_id)
     user.is_active_user = True
     db.session.commit()
+    notify_admin_dangerous_action("enable user", {"Target username": user.username, "Target user ID": user.id})
     return redirect(url_for("admin_dashboard"))
 
 
@@ -2266,7 +2447,10 @@ def admin_enable_user(user_id):
 @admin_required
 def admin_end_meeting(meeting_id):
     meeting = Meeting.query.get_or_404(meeting_id)
-    end_meeting_by_room_id(meeting.room_id, "meeting_closed")
+    room_id = meeting.room_id
+    title = meeting.title
+    end_meeting_by_room_id(room_id, "meeting_closed")
+    notify_admin_dangerous_action("end meeting", {"Meeting ID": meeting_id, "Room ID": room_id, "Meeting title": title})
     return redirect(url_for("admin_dashboard"))
 
 
@@ -2279,9 +2463,12 @@ def admin_bulk_end_meetings():
         return redirect(url_for("admin_dashboard"))
 
     meetings = Meeting.query.filter(Meeting.id.in_(meeting_ids)).all()
+    ended_rooms = []
     for meeting in meetings:
         if meeting.status == "active":
+            ended_rooms.append(meeting.room_id)
             end_meeting_by_room_id(meeting.room_id, "meeting_closed")
+    notify_admin_dangerous_action("bulk end meetings", {"Meeting IDs": ",".join(map(str, meeting_ids)), "Ended rooms": ",".join(ended_rooms)})
     return redirect(url_for("admin_dashboard"))
 
 
@@ -2306,8 +2493,11 @@ def delete_meeting_record(meeting):
 @admin_required
 def admin_delete_meeting(meeting_id):
     meeting = Meeting.query.get_or_404(meeting_id)
+    room_id = meeting.room_id
+    title = meeting.title
     delete_meeting_record(meeting)
     db.session.commit()
+    notify_admin_dangerous_action("delete meeting", {"Meeting ID": meeting_id, "Room ID": room_id, "Meeting title": title})
     return redirect(url_for("admin_dashboard"))
 
 
@@ -2320,9 +2510,11 @@ def admin_bulk_delete_meetings():
         return redirect(url_for("admin_dashboard"))
 
     meetings = Meeting.query.filter(Meeting.id.in_(meeting_ids)).all()
+    deleted_rooms = [meeting.room_id for meeting in meetings]
     for meeting in meetings:
         delete_meeting_record(meeting)
     db.session.commit()
+    notify_admin_dangerous_action("bulk delete meetings", {"Meeting IDs": ",".join(map(str, meeting_ids)), "Deleted rooms": ",".join(deleted_rooms)})
     return redirect(url_for("admin_dashboard"))
 
 @app.post("/admin/reset-request/<int:request_id>/<status>")
@@ -2332,8 +2524,13 @@ def admin_update_reset_request(request_id, status):
     reset_request = PasswordResetRequest.query.get_or_404(request_id)
     if status not in {"pending", "resolved", "rejected"}:
         status = "pending"
+    old_status = reset_request.status
     reset_request.status = status
     db.session.commit()
+    notify_admin_dangerous_action(
+        "update password reset request",
+        {"Request ID": request_id, "Username": reset_request.username, "Old status": old_status, "New status": status},
+    )
     return redirect(url_for("admin_dashboard"))
 
 
@@ -2427,6 +2624,7 @@ def on_join_room(data):
     )
     db.session.add(participant)
     db.session.commit()
+    notify_admin_room_joined(user=fresh_user, meeting=meeting, display_name=user_name)
 
     is_room_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
     visible_chat_history = visible_chat_history_for_user(room, current_user.id, sid, is_room_host=is_room_host)
