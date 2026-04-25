@@ -81,9 +81,9 @@
     </div>
     {% endif %}
     {% if email_auth_enabled %}
-    <button class="ghost-btn" type="submit" name="intent" value="send_code" formnovalidate {% if email_code_send_locked %}disabled{% endif %}>{{ t(email_code_button_key) }}</button>
+    <button class="ghost-btn" type="submit" name="intent" value="send_code" formnovalidate data-code-submit="1" {% if email_code_send_locked %}disabled{% endif %}>{{ t(email_code_button_key) }}</button>
     {% endif %}
-    <button class="primary-btn" type="submit">{{ t('submit_register') }}</button>
+    <button class="primary-btn" type="submit" data-full-submit="1">{{ t('submit_register') }}</button>
     {% endif %}
     <a class="text-link" href="{{ url_for('login') }}">{{ t('nav_login') }}</a>
   </form>
@@ -92,6 +92,12 @@
 (() => {
   const form = document.getElementById('registerForm');
   if (!form) return;
+  form.querySelector('[data-code-submit="1"]')?.addEventListener('click', () => {
+    form.noValidate = true;
+  });
+  form.querySelector('[data-full-submit="1"]')?.addEventListener('click', () => {
+    form.noValidate = false;
+  });
   form.addEventListener('submit', (event) => {
     const submitter = event.submitter;
     if (!submitter || submitter.name !== 'intent' || submitter.value !== 'send_code') return;

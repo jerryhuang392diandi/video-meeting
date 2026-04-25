@@ -150,6 +150,7 @@ let isSharingScreen = false;
 let activeRecorder = null;
 let recorderStream = null;
 let virtualBgEnabled = false;
+let virtualBgRawStream = null;
 let segmentationModel = null;
 let segmentationSending = false;
 let virtualBgLoopActive = false;
@@ -1121,12 +1122,22 @@ function cleanupProcessedVideoStream({ stopCanvas = false } = {}) {
   }
 }
 
-function disableVirtualBackgroundState({ stopCanvas = false, cleanupProcessed = true } = {}) {
+function cleanupVirtualBackgroundRawStream() {
+  if (!virtualBgRawStream) return;
+  if (rawPreviewVideo.srcObject === virtualBgRawStream) {
+    rawPreviewVideo.srcObject = null;
+  }
+  stopStreamTracks(virtualBgRawStream);
+  virtualBgRawStream = null;
+}
+
+function disableVirtualBackgroundState({ stopCanvas = false, cleanupProcessed = true, stopRaw = false } = {}) {
   virtualBgEnabled = false;
   virtualBgLoopActive = false;
   segmentationSending = false;
   virtualBgActivationToken += 1;
   activeVirtualBgToken = 0;
+  if (stopRaw) cleanupVirtualBackgroundRawStream();
   if (cleanupProcessed) {
     cleanupProcessedVideoStream({ stopCanvas });
   } else if (stopCanvas && processedCanvasStream) {
@@ -1144,11 +1155,24 @@ function hasLiveVideoTrack(stream) {
 }
 
 function getVirtualBackgroundSourceStream() {
+  if (hasLiveVideoTrack(virtualBgRawStream)) return virtualBgRawStream;
   if (hasLiveVideoTrack(rawCameraStream)) return rawCameraStream;
   if (IS_LIVEKIT_MODE && !isSharingScreen && hasLiveVideoTrack(localStream)) {
     return localStream;
   }
   return null;
+}
+
+function ensureVirtualBackgroundRawStream() {
+  if (hasLiveVideoTrack(virtualBgRawStream)) return virtualBgRawStream;
+  cleanupVirtualBackgroundRawStream();
+  const sourceStream = getVirtualBackgroundSourceStream();
+  const sourceTrack = getLiveVideoTrack(sourceStream);
+  if (!sourceTrack) return null;
+  const rawTrack = sourceTrack.clone();
+  setMediaTrackContentHint(rawTrack, 'motion');
+  virtualBgRawStream = new MediaStream([rawTrack]);
+  return virtualBgRawStream;
 }
 
 async function replaceLiveKitCameraTrackFromStream(stream) {
@@ -1655,7 +1679,7 @@ async function startSegmentationLoop() {
 }
 
 async function activateVirtualBackground() {
-  const sourceStream = getVirtualBackgroundSourceStream();
+  const sourceStream = ensureVirtualBackgroundRawStream();
   if (!sourceStream) {
     setStatus(TEXT_VIRTUAL_BG_NEEDS_CAMERA, 'warning');
     return false;
@@ -1668,7 +1692,6 @@ async function activateVirtualBackground() {
     if (!hasLiveVideoTrack(sourceStream)) {
       throw new Error(TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE);
     }
-    rawCameraStream = sourceStream;
     if (rawPreviewVideo.srcObject !== sourceStream) {
       rawPreviewVideo.srcObject = sourceStream;
       rawPreviewVideo.load?.();
@@ -2163,7 +2186,7 @@ function cleanupMeetingSession() {
     joinMediaBootstrapTimer = null;
   }
   try {
-    disableVirtualBackgroundState({ stopCanvas: true });
+    disableVirtualBackgroundState({ stopCanvas: true, stopRaw: true });
   } catch (_) {}
   rawPreviewVideo.srcObject = null;
   updateVirtualBackgroundButtonState();
@@ -2445,8 +2468,10 @@ document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-
   if (!controller) return;
   if (virtualBgEnabled) {
     await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { stopCanvas: true });
+    cleanupVirtualBackgroundRawStream();
   }
   const enabled = await controller.setCameraEnabled();
+  if (!enabled) cleanupVirtualBackgroundRawStream();
   const localCard = ensureCard('local', getDisplayName('local'), true);
   updatePlaceholder(localCard, !!enabled);
   setStatus(enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
@@ -2464,6 +2489,7 @@ document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-sc
   if (!mediaState.screenShareEnabled) {
     if (virtualBgEnabled) {
       await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { stopCanvas: true });
+      cleanupVirtualBackgroundRawStream();
     }
     if (speakerStateBeforeShare === null) speakerStateBeforeShare = speakerEnabled;
     setSpeakerEnabled(true, { userGesture: true, persist: true, showStatus: false });
