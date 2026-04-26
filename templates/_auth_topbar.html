@@ -1,0 +1,12 @@
+<header class="topbar compact">
+  <div>
+    <div class="brand">{{ auth_brand_title }}</div>
+    <div class="muted">{{ auth_brand_subtitle }}</div>
+  </div>
+  <div class="top-actions">
+    {% include '_language_switch.html' %}
+    {% if auth_topbar_href and auth_topbar_label %}
+    <a class="chip" href="{{ auth_topbar_href }}">{{ auth_topbar_label }}</a>
+    {% endif %}
+  </div>
+</header>

@@ -9,16 +9,11 @@
   {% endif %}
 {% endblock %}
 {% block content %}
-<header class="topbar compact">
-  <div>
-    <div class="brand">{{ t('admin_login_title') }}</div>
-    <div class="muted">{{ t('admin_login_subtitle') }}</div>
-  </div>
-  <div class="top-actions">
-    {% include '_language_switch.html' %}
-    <a class="chip" href="{{ url_for('login') }}">{{ t('normal_login_mode') }}</a>
-  </div>
-</header>
+{% set auth_brand_title = t('admin_login_title') %}
+{% set auth_brand_subtitle = t('admin_login_subtitle') %}
+{% set auth_topbar_href = url_for('login') %}
+{% set auth_topbar_label = t('normal_login_mode') %}
+{% include '_auth_topbar.html' %}
 
 <section class="hero-card auth-landing-card glass-highlight">
   <div class="landing-copy">

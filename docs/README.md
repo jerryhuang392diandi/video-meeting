@@ -23,7 +23,6 @@
 | [STABILITY_AUDIT.md](STABILITY_AUDIT.md) / [English](STABILITY_AUDIT.md#stability-audit) | 当前架构边界、风险、回归重点和演进方向 | 修改核心逻辑的人 |
 | [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md) / [English](REFACTOR_AUDIT.md#refactor-audit) | 当前重构巡检结论、优先级、推荐拆分顺序和改动前检查 | 准备重构或长期维护的人 |
 | [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md#project-guide-and-code-index) | 项目逻辑、核心流程、代码索引和常见问题回答 | 准备展示或维护代码的人 |
-| `视觉媒体通信期末大作业实践报告.docx` | 课程报告原稿归档 | 需要提交课程材料的人 |
 
 ## 维护规则
 
@@ -34,7 +33,7 @@
 - 中英文文案、移动端扫码、移动端聊天布局、桌面端会议网格或设备默认策略变化时，同步更新根 README 和项目说明文档。
 - 重构优先级、拆分顺序或模块边界变化时更新 `REFACTOR_AUDIT.md`。
 - 课程展示口径、核心流程或代码索引变化时更新 `项目说明与代码索引.md`。
-- `.docx` 报告是归档材料，除非明确需要重新出报告，否则不要把它当作代码文档同步更新。
+- 不要保留编码异常或重复的文档副本，`docs/` 中同一文档只保留一个规范文件名。
 
 
 ---
@@ -64,8 +63,6 @@ This folder contains the project overview, deployment guide, stability audit, an
 | [STABILITY_AUDIT.md](STABILITY_AUDIT.md) / [English](STABILITY_AUDIT.md#stability-audit) | Architecture boundaries, risks, regression focus, and future direction | People changing core logic |
 | [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md) / [English](REFACTOR_AUDIT.md#refactor-audit) | Current refactor audit, priorities, recommended split order, and pre-change checks | People planning refactors or long-term maintenance |
 | [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md#project-guide-and-code-index) | Project logic, core flows, code index, and common Q&A | Presenters and maintainers |
-| `视觉媒体通信期末大作业实践报告.docx` | Archived course report source | Course submission readers |
-
 ## Maintenance Rules
 
 - Update the root README first when project behavior changes.
@@ -75,4 +72,4 @@ This folder contains the project overview, deployment guide, stability audit, an
 - Update the root README and project guide when UI text, mobile QR join, mobile chat layout, desktop meeting grid, or default device behavior changes.
 - Update `REFACTOR_AUDIT.md` when refactor priorities, split order, or module boundaries change.
 - Update `项目说明与代码索引.md` when presentation wording, core flows, or code index changes.
-- The `.docx` report is archived material; do not treat it as live code documentation unless a new report is explicitly required.
+- Do not keep duplicate or encoding-corrupted document copies in `docs/`; one canonical filename per document only.

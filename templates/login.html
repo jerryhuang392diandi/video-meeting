@@ -9,16 +9,11 @@
   {% endif %}
 {% endblock %}
 {% block content %}
-<header class="topbar compact">
-  <div>
-    <div class="brand">{{ t('app_name') }}</div>
-    <div class="muted">{{ t('subtitle') }}</div>
-  </div>
-  <div class="top-actions">
-    {% include '_language_switch.html' %}
-    <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
-  </div>
-</header>
+{% set auth_brand_title = t('app_name') %}
+{% set auth_brand_subtitle = t('subtitle') %}
+{% set auth_topbar_href = url_for('quickstart_page') %}
+{% set auth_topbar_label = t('quickstart_nav') %}
+{% include '_auth_topbar.html' %}
 
 <section class="hero-card auth-landing-card glass-highlight">
   <div class="landing-copy">
@@ -65,30 +60,24 @@
 
     <div class="auth-action-grid" aria-label="{{ t('quick_actions') }}">
       {% if email_auth_enabled %}
-      <a class="auth-action-card" href="{{ url_for('login_email_code') }}">
-        <span class="auth-action-icon" aria-hidden="true">✉</span>
-        <span>
-          <strong>{{ t('login_with_email_login') }}</strong>
-          <small>{{ t('email_verification_code') }}</small>
-        </span>
-      </a>
+      {% set href = url_for('login_email_code') %}
+      {% set icon = '✉' %}
+      {% set title = t('login_with_email_login') %}
+      {% set subtitle = t('email_verification_code') %}
+      {% include '_auth_action_card.html' %}
       {% endif %}
       {% if public_registration_enabled %}
-      <a class="auth-action-card" href="{{ url_for('register') }}">
-        <span class="auth-action-icon" aria-hidden="true">＋</span>
-        <span>
-          <strong>{{ t('nav_register') }}</strong>
-          <small>{{ t('register_title') }}</small>
-        </span>
-      </a>
+      {% set href = url_for('register') %}
+      {% set icon = '＋' %}
+      {% set title = t('nav_register') %}
+      {% set subtitle = t('register_title') %}
+      {% include '_auth_action_card.html' %}
       {% endif %}
-      <a class="auth-action-card" href="{{ url_for('forgot_password_page') }}">
-        <span class="auth-action-icon" aria-hidden="true">?</span>
-        <span>
-          <strong>{{ t('forgot_password') }}</strong>
-          <small>{{ t('account_recovery') }}</small>
-        </span>
-      </a>
+      {% set href = url_for('forgot_password_page') %}
+      {% set icon = '?' %}
+      {% set title = t('forgot_password') %}
+      {% set subtitle = t('account_recovery') %}
+      {% include '_auth_action_card.html' %}
     </div>
   </form>
 </section>

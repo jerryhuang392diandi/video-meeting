@@ -4,21 +4,17 @@
 {% block head %}
   {{ super() }}
   <link rel="stylesheet" href="{{ url_for('static', filename='auth.css', v=asset_version('auth.css')) }}" />
+  <script src="{{ url_for('static', filename='auth_flow.js') }}?v={{ asset_version('auth_flow.js') }}"></script>
   {% if turnstile_enabled %}
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   {% endif %}
 {% endblock %}
 {% block content %}
-<header class="topbar compact">
-  <div>
-    <div class="brand">{{ t('app_name') }}</div>
-    <div class="muted">{{ t('subtitle') }}</div>
-  </div>
-  <div class="top-actions">
-    {% include '_language_switch.html' %}
-    <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
-  </div>
-</header>
+{% set auth_brand_title = t('app_name') %}
+{% set auth_brand_subtitle = t('subtitle') %}
+{% set auth_topbar_href = url_for('quickstart_page') %}
+{% set auth_topbar_label = t('quickstart_nav') %}
+{% include '_auth_topbar.html' %}
 
 <section class="hero-card auth-landing-card glass-highlight">
   <div class="landing-copy">
@@ -92,46 +88,28 @@
     {% endif %}
     {% endif %}
     <div class="auth-action-grid compact">
-      <a class="auth-action-card" href="{{ url_for('login') }}">
-        <span class="auth-action-icon" aria-hidden="true">↩</span>
-        <span>
-          <strong>{{ t('nav_login') }}</strong>
-          <small>{{ t('login_with_password') }}</small>
-        </span>
-      </a>
+      {% set href = url_for('login') %}
+      {% set icon = '↩' %}
+      {% set title = t('nav_login') %}
+      {% set subtitle = t('login_with_password') %}
+      {% include '_auth_action_card.html' %}
       {% if email_auth_enabled %}
-      <a class="auth-action-card" href="{{ url_for('login_email_code') }}">
-        <span class="auth-action-icon" aria-hidden="true">✉</span>
-        <span>
-          <strong>{{ t('login_with_email_login') }}</strong>
-          <small>{{ t('email_verification_code') }}</small>
-        </span>
-      </a>
+      {% set href = url_for('login_email_code') %}
+      {% set icon = '✉' %}
+      {% set title = t('login_with_email_login') %}
+      {% set subtitle = t('email_verification_code') %}
+      {% include '_auth_action_card.html' %}
       {% endif %}
     </div>
   </form>
 </section>
 <script>
-(() => {
-  const form = document.getElementById('registerForm');
-  if (!form) return;
-  const intentInput = document.getElementById('registerIntent');
-  form.querySelector('[data-code-submit="1"]')?.addEventListener('click', () => {
-    if (intentInput) intentInput.value = 'send_code';
-    form.noValidate = true;
-  });
-  form.querySelector('[data-full-submit="1"]')?.addEventListener('click', () => {
-    if (intentInput) intentInput.value = 'register';
-    form.noValidate = false;
-  });
-  form.addEventListener('submit', (event) => {
-    const submitter = event.submitter;
-    if (submitter?.dataset?.codeSubmit === '1' && intentInput) intentInput.value = 'send_code';
-    if (intentInput?.value !== 'send_code') return;
-    if (!submitter) return;
-    submitter.disabled = true;
-    submitter.textContent = {{ t('sending_email_verification_code')|tojson }};
-  });
-})();
+window.AuthFlow?.bindIntentForm?.({
+  formId: 'registerForm',
+  intentInputId: 'registerIntent',
+  sendIntent: 'send_code',
+  submitIntent: 'register',
+  sendingText: {{ t('sending_email_verification_code')|tojson }},
+});
 </script>
 {% endblock %}

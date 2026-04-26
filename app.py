@@ -1051,6 +1051,39 @@ def find_admin_by_identifier(identifier: str) -> User | None:
     return None
 
 
+def validate_login_target_user(
+    user: User | None,
+    *,
+    identifier: str | None = None,
+    require_admin: bool = False,
+    allow_admin: bool = False,
+) -> str | None:
+    if not user:
+        if require_admin:
+            return t("invalid_admin_login")
+        if identifier and looks_like_email(identifier):
+            return t("email_not_registered")
+        return t("invalid_login")
+    if require_admin:
+        if not user.is_admin:
+            return t("invalid_admin_login")
+    elif user.is_admin and not allow_admin:
+        return t("admin_use_admin_login")
+    if not user.is_active_user:
+        return t("account_disabled")
+    if not require_admin and verification_email_required_for_user(user):
+        return t("email_not_verified")
+    return None
+
+
+def finalize_authenticated_session(user: User, *, force_logout_message: str | None = None) -> None:
+    user.session_version = (user.session_version or 0) + 1
+    db.session.commit()
+    login_user(user)
+    session["session_version"] = user.session_version
+    disconnect_user_sockets(user.id, message=force_logout_message or t("kicked"))
+
+
 def format_mb(mb_value):
     value = float(mb_value or 0.0)
     if value >= 1024:
@@ -1175,6 +1208,48 @@ def reconcile_rejoining_active_sharer(room_id, room, user_id):
         )
 
 
+def set_active_sharer(room, sid, user_id):
+    room["active_sharer_sid"] = sid
+    room["active_sharer_user_id"] = user_id
+
+
+def clear_active_sharer(room):
+    room["active_sharer_sid"] = None
+    room["active_sharer_user_id"] = None
+
+
+def normalize_active_sharer_state(room):
+    active_sharer_sid = room.get("active_sharer_sid")
+    active_sharer_user_id = room.get("active_sharer_user_id")
+    if not active_sharer_sid and not active_sharer_user_id:
+        return
+    participants = room.get("participants", {})
+    if active_sharer_sid and active_sharer_sid in participants and sid_to_user.get(active_sharer_sid):
+        return
+    replacement_sid = None
+    if active_sharer_user_id:
+        replacement_sid = next(
+            (
+                candidate
+                for candidate in user_active_sids.get(active_sharer_user_id, set())
+                if candidate in participants and sid_to_user.get(candidate)
+            ),
+            None,
+        )
+    if replacement_sid:
+        set_active_sharer(room, replacement_sid, active_sharer_user_id)
+        return
+    clear_active_sharer(room)
+
+
+def build_active_sharer_payload(room):
+    normalize_active_sharer_state(room)
+    return {
+        "active_sharer_sid": room.get("active_sharer_sid"),
+        "active_sharer_user_id": room.get("active_sharer_user_id"),
+    }
+
+
 def reconcile_departing_active_sharer(room_id, room, sid, user_id):
     if room.get("active_sharer_sid") != sid:
         return
@@ -1184,15 +1259,14 @@ def reconcile_departing_active_sharer(room_id, room, sid, user_id):
         None,
     )
     if replacement_sid:
-        room["active_sharer_sid"] = replacement_sid
+        set_active_sharer(room, replacement_sid, user_id)
         socketio.emit(
             "room_ui_event",
             {"type": "screen_share_started", "from": replacement_sid, "hideSidebar": True, "restored": True},
             room=room_id,
         )
         return
-    room["active_sharer_sid"] = None
-    room["active_sharer_user_id"] = None
+    clear_active_sharer(room)
     socketio.emit("room_ui_event", {"type": "screen_share_stopped", "from": sid}, room=room_id)
 
 
@@ -1591,6 +1665,7 @@ def broadcast_room_participant_snapshot(room_id):
             for sid, info in room.get("participants", {}).items()
         ],
         "participant_count": len(room.get("participants", {})),
+        **build_active_sharer_payload(room),
     }
     socketio.emit("participant_snapshot", payload, room=room_id)
 
@@ -1941,12 +2016,8 @@ def register():
     db.session.add(user)
     db.session.commit()
 
-    user.session_version = (user.session_version or 0) + 1
-    db.session.commit()
     notify_admin_user_registered(user)
-    login_user(user)
-    session["session_version"] = user.session_version
-    disconnect_user_sockets(user.id, message=t("kicked"))
+    finalize_authenticated_session(user)
     return redirect(url_for("index"))
 
 
@@ -1981,22 +2052,15 @@ def login():
 
     user = find_user_by_identifier(identifier)
     if not user:
-        error = t("email_not_registered") if looks_like_email(identifier) else t("invalid_login")
-        return render_template("login.html", error=error)
+        validation_error = validate_login_target_user(user, identifier=identifier)
+        return render_template("login.html", error=validation_error)
     if not user.check_password(password):
         return render_template("login.html", error=t("invalid_login"))
-    if user.is_admin:
-        return render_template("login.html", error=t("admin_use_admin_login"))
-    if not user.is_active_user:
-        return render_template("login.html", error=t("account_disabled"))
-    if verification_email_required_for_user(user):
-        return render_template("login.html", error=t("email_not_verified"))
+    validation_error = validate_login_target_user(user, identifier=identifier)
+    if validation_error:
+        return render_template("login.html", error=validation_error)
 
-    user.session_version = (user.session_version or 0) + 1
-    db.session.commit()
-    login_user(user)
-    session["session_version"] = user.session_version
-    disconnect_user_sockets(user.id, message=t("kicked"))
+    finalize_authenticated_session(user)
     return redirect(url_for("index"))
 
 
@@ -2023,16 +2087,13 @@ def admin_login():
         return render_template("admin_login.html", error=turnstile_error, admin_login_path=ADMIN_LOGIN_PATH), 403
 
     user = find_admin_by_identifier(identifier)
-    if not user or not user.check_password(password) or not user.is_admin:
+    if not user or not user.check_password(password):
         return render_template("admin_login.html", error=t("invalid_admin_login"), admin_login_path=ADMIN_LOGIN_PATH)
-    if not user.is_active_user:
-        return render_template("admin_login.html", error=t("account_disabled"), admin_login_path=ADMIN_LOGIN_PATH)
+    validation_error = validate_login_target_user(user, require_admin=True)
+    if validation_error:
+        return render_template("admin_login.html", error=validation_error, admin_login_path=ADMIN_LOGIN_PATH)
 
-    user.session_version = (user.session_version or 0) + 1
-    db.session.commit()
-    login_user(user)
-    session["session_version"] = user.session_version
-    disconnect_user_sockets(user.id, message=t("kicked"))
+    finalize_authenticated_session(user)
     return redirect(url_for("admin_dashboard"))
 
 @app.route("/login-email-code", methods=["GET", "POST"])
@@ -2094,22 +2155,15 @@ def login_email_code():
         return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=turnstile_error), 403
     if not re.fullmatch(r"\d{6}", email_code):
         return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("verification_code_required"))
-    if not user or not user.email:
-        return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("email_not_registered"))
-    if user.is_admin:
-        return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("admin_use_admin_login"))
-    if not user.is_active_user:
-        return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("account_disabled"))
+    validation_error = validate_login_target_user(user, identifier=email)
+    if validation_error or not user or not user.email:
+        return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=validation_error or t("email_not_registered"))
     code = find_email_verification_code(email=user.email, purpose="login", raw_code=email_code, user_id=user.id)
     if not code:
         return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("verification_code_invalid"))
     code.used_at = datetime.utcnow()
     mark_user_email_verified(user)
-    user.session_version = (user.session_version or 0) + 1
-    db.session.commit()
-    login_user(user)
-    session["session_version"] = user.session_version
-    disconnect_user_sockets(user.id, message=t("kicked"))
+    finalize_authenticated_session(user)
     return redirect(url_for("index"))
 
 
@@ -2672,9 +2726,8 @@ def on_join_room(data):
             "participant_count": len(room["participants"]),
             "host_present": bool(room.get("host_present")),
             "danmaku_enabled": bool(room.get("danmaku_enabled")),
-            "active_sharer_sid": room.get("active_sharer_sid"),
-            "active_sharer_user_id": room.get("active_sharer_user_id"),
             "chat_history": visible_chat_history,
+            **build_active_sharer_payload(room),
         },
     )
     emit(
@@ -3327,12 +3380,10 @@ def on_room_ui_event(data):
                 "message": TRANSLATIONS.get(room.get("lang"), TRANSLATIONS["zh"]).get("another_participant_sharing_screen", "已有其他用户正在共享屏幕"),
             }, to=sid)
             return
-        room["active_sharer_sid"] = sid
-        room["active_sharer_user_id"] = requester_user_id
+        set_active_sharer(room, sid, requester_user_id)
     elif event_type == "screen_share_stopped":
         if room.get("active_sharer_sid") == sid or room.get("active_sharer_user_id") == info.get("user_id"):
-            room["active_sharer_sid"] = None
-            room["active_sharer_user_id"] = None
+            clear_active_sharer(room)
     payload["from"] = sid
     emit("room_ui_event", payload, room=room_id, include_self=False)
 

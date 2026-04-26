@@ -6,6 +6,9 @@
 <script src="{{ url_for('static', filename='room_diagnostics.js') }}?v={{ asset_version('room_diagnostics.js') }}"></script>
 <script src="{{ url_for('static', filename='room_chat.js') }}?v={{ asset_version('room_chat.js') }}"></script>
 <script src="{{ url_for('static', filename='room_livekit.js') }}?v={{ asset_version('room_livekit.js') }}"></script>
+<script src="{{ url_for('static', filename='room_recording.js') }}?v={{ asset_version('room_recording.js') }}"></script>
+<script src="{{ url_for('static', filename='room_virtual_background.js') }}?v={{ asset_version('room_virtual_background.js') }}"></script>
+<script src="{{ url_for('static', filename='room_bootstrap.js') }}?v={{ asset_version('room_bootstrap.js') }}"></script>
 <script>
 const ROOM_ID = {{ room_id|tojson }};
 const ROOM_PASSWORD = {{ room_password|tojson }};
@@ -247,6 +250,70 @@ window.TEXT_RETRACT_BUTTON = TEXT_RETRACT_BUTTON;
 window.TEXT_CHAT_WITHDRAWN = TEXT_CHAT_WITHDRAWN;
 window.CURRENT_USER_ID = CURRENT_USER_ID;
 
+const virtualBackgroundController = window.RoomPageVirtualBackground.createController({
+  getProcessedVideoStream: () => processedVideoStream,
+  setProcessedVideoStream: (value) => { processedVideoStream = value; },
+  getRawCameraStream: () => rawCameraStream,
+  getProcessedCanvasStream: () => processedCanvasStream,
+  setProcessedCanvasStream: (value) => { processedCanvasStream = value; },
+  stopStreamTracks,
+  getVirtualBgRawStream: () => virtualBgRawStream,
+  setVirtualBgRawStream: (value) => { virtualBgRawStream = value; },
+  rawPreviewVideo,
+  getVirtualBgEnabled: () => virtualBgEnabled,
+  setVirtualBgEnabled: (value) => { virtualBgEnabled = value; },
+  getVirtualBgLoopActive: () => virtualBgLoopActive,
+  setVirtualBgLoopActive: (value) => { virtualBgLoopActive = value; },
+  getSegmentationSending: () => segmentationSending,
+  setSegmentationSending: (value) => { segmentationSending = value; },
+  bumpVirtualBgActivationToken: () => (++virtualBgActivationToken),
+  getVirtualBgActivationToken: () => virtualBgActivationToken,
+  setActiveVirtualBgToken: (value) => { activeVirtualBgToken = value; },
+  setMediaTrackContentHint,
+  IS_LIVEKIT_MODE,
+  getIsSharingScreen: () => isSharingScreen,
+  getLocalStream: () => localStream,
+  ensureLiveKitConnected,
+  updateVirtualBackgroundButtonState,
+  setStatus,
+  TEXT_VIRTUAL_BG_OFF,
+  TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE,
+  MAX_VBG_WIDTH,
+  MAX_VBG_HEIGHT,
+  processingCanvas,
+  VBG_CAPTURE_FPS,
+  applyMediaStreamContentHints,
+  getSegmentationModel: () => segmentationModel,
+  setSegmentationModel: (value) => { segmentationModel = value; },
+  processingCtx,
+  IS_MOBILE,
+  incrementProcessedFrameCount: () => { processedFrameCount += 1; },
+  getProcessedFrameCount: () => processedFrameCount,
+  TEXT_VIRTUAL_BG_NEEDS_CAMERA,
+  TEXT_VIRTUAL_BG_LOADING,
+  TEXT_VIRTUAL_BG_PROCESSING_TIMEOUT,
+  TEXT_VIRTUAL_BG_READY,
+  TEXT_VIRTUAL_BG_FAILED,
+});
+
+const recordingController = window.RoomPageRecording.createController({
+  getRecorderStream: () => recorderStream,
+  setRecorderStream: (value) => { recorderStream = value; },
+  getActiveRecorder: () => activeRecorder,
+  setActiveRecorder: (value) => { activeRecorder = value; },
+  setStatus,
+  TEXT_RECORD_NOT_SUPPORTED,
+  TEXT_RECORD_DIRECT_MP4,
+  TEXT_RECORD_CONVERTING,
+  TEXT_RECORD_SAVED,
+  TEXT_RECORD_MP4_SERVER_ERROR,
+  TEXT_RECORD_MP4_FAILED,
+  TEXT_RECORD_STOP,
+  TEXT_RECORDING: {{ t('recording')|tojson }},
+  recordingBtn,
+  downloadBlob,
+});
+
 function getDisplayName(sid) {
   return sid === 'local' ? `${USER_NAME} · {{ t('local_you') }}` : (participantMeta[sid]?.name || sid);
 }
@@ -339,6 +406,29 @@ function updateShareUiState() {
       : (occupiedByOther ? {{ t('another_participant_sharing_screen')|tojson }} : '');
   }
   updateVirtualBackgroundButtonState();
+}
+
+function applySnapshotSharerState(nextSharerSid) {
+  let normalizedSid = normalizeParticipantSid(nextSharerSid || null);
+  if (normalizedSid && normalizedSid !== socket.id && !participantMeta[normalizedSid]) {
+    normalizedSid = null;
+  }
+  if (normalizedSid === socket.id && !isSharingScreen && !livekitLocalShareActive) {
+    normalizedSid = null;
+  }
+  currentSharerSid = normalizedSid;
+  if (currentSharerSid) {
+    focusedSid = currentSharerSid;
+    hiddenSidebar = true;
+  } else {
+    if (focusedSid !== 'local' && !participantMeta[focusedSid]) {
+      focusedSid = 'local';
+    }
+    hiddenSidebar = false;
+  }
+  syncScreenShareSpeakerRule({ userGesture: false });
+  updateShareUiState();
+  queueRenderLayout();
 }
 
 function updateVirtualBackgroundButtonState() {
@@ -1108,164 +1198,20 @@ function updateParticipantCount() {
   participantCountEl.textContent = 1 + Object.keys(participantMeta).length;
 }
 
-function cleanupProcessedVideoStream({ stopCanvas = false } = {}) {
-  if (processedVideoStream && processedVideoStream !== rawCameraStream) {
-    const extraVideoTracks = processedVideoStream.getVideoTracks();
-    extraVideoTracks.forEach(track => {
-      try { track.stop(); } catch (_) {}
-    });
-  }
-  processedVideoStream = null;
-  if (stopCanvas && processedCanvasStream) {
-    stopStreamTracks(processedCanvasStream);
-    processedCanvasStream = null;
-  }
-}
-
-function cleanupVirtualBackgroundRawStream() {
-  if (!virtualBgRawStream) return;
-  if (rawPreviewVideo.srcObject === virtualBgRawStream) {
-    rawPreviewVideo.srcObject = null;
-  }
-  stopStreamTracks(virtualBgRawStream);
-  virtualBgRawStream = null;
-}
-
-function disableVirtualBackgroundState({ stopCanvas = false, cleanupProcessed = true, stopRaw = false } = {}) {
-  virtualBgEnabled = false;
-  virtualBgLoopActive = false;
-  segmentationSending = false;
-  virtualBgActivationToken += 1;
-  activeVirtualBgToken = 0;
-  if (stopRaw) cleanupVirtualBackgroundRawStream();
-  if (cleanupProcessed) {
-    cleanupProcessedVideoStream({ stopCanvas });
-  } else if (stopCanvas && processedCanvasStream) {
-    stopStreamTracks(processedCanvasStream);
-    processedCanvasStream = null;
-  }
-}
-
-function getLiveVideoTrack(stream) {
-  return stream?.getVideoTracks?.().find((track) => track && track.readyState === 'live' && track.enabled !== false) || null;
-}
-
-function hasLiveVideoTrack(stream) {
-  return !!getLiveVideoTrack(stream);
-}
-
-function getVirtualBackgroundSourceStream() {
-  if (hasLiveVideoTrack(virtualBgRawStream)) return virtualBgRawStream;
-  if (hasLiveVideoTrack(rawCameraStream)) return rawCameraStream;
-  if (IS_LIVEKIT_MODE && !isSharingScreen && hasLiveVideoTrack(localStream)) {
-    return localStream;
-  }
-  return null;
-}
-
-function ensureVirtualBackgroundRawStream() {
-  if (hasLiveVideoTrack(virtualBgRawStream)) return virtualBgRawStream;
-  cleanupVirtualBackgroundRawStream();
-  const sourceStream = getVirtualBackgroundSourceStream();
-  const sourceTrack = getLiveVideoTrack(sourceStream);
-  if (!sourceTrack) return null;
-  const rawTrack = sourceTrack.clone();
-  setMediaTrackContentHint(rawTrack, 'motion');
-  virtualBgRawStream = new MediaStream([rawTrack]);
-  return virtualBgRawStream;
-}
-
-async function replaceLiveKitCameraTrackFromStream(stream) {
-  if (!IS_LIVEKIT_MODE) return false;
-  const controller = await ensureLiveKitConnected();
-  if (!controller?.replaceCameraTrack) return false;
-  const sourceTrack = getLiveVideoTrack(stream);
-  if (!sourceTrack) return false;
-  setMediaTrackContentHint(sourceTrack, 'motion');
-  return await controller.replaceCameraTrack(sourceTrack.clone());
-}
-
-async function fallbackToRawCamera(message = null, { stopCanvas = false } = {}) {
-  const rawSourceStream = getVirtualBackgroundSourceStream();
-  disableVirtualBackgroundState({ stopCanvas, cleanupProcessed: false });
-  if (rawSourceStream) {
-    try {
-      await replaceLiveKitCameraTrackFromStream(rawSourceStream);
-    } catch (err) {
-      console.error(err);
-    }
-  }
-  cleanupProcessedVideoStream({ stopCanvas });
-  updateVirtualBackgroundButtonState();
-  if (message) setStatus(message, 'warning');
-}
-
-async function deactivateVirtualBackground(message = null, { stopCanvas = false } = {}) {
-  await fallbackToRawCamera(message || TEXT_VIRTUAL_BG_OFF, { stopCanvas });
-}
-
-function getScaledSize(width, height) {
-  if (!width || !height) return { width: 640, height: 360 };
-  const scale = Math.min(MAX_VBG_WIDTH / width, MAX_VBG_HEIGHT / height, 1);
-  const scaledWidth = Math.max(2, Math.round((width * scale) / 2) * 2);
-  const scaledHeight = Math.max(2, Math.round((height * scale) / 2) * 2);
-  return { width: scaledWidth, height: scaledHeight };
-}
-
-async function waitForVideoReady(videoEl, timeoutMs = 2000) {
-  if (!videoEl?.srcObject || !hasLiveVideoTrack(videoEl.srcObject)) {
-    throw new Error(TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE);
-  }
-  if (videoEl.readyState >= 2 && videoEl.videoWidth && videoEl.videoHeight) return true;
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE));
-    }, timeoutMs);
-    const onReady = () => {
-      if (!videoEl.videoWidth || !videoEl.videoHeight) return;
-      cleanup();
-      resolve(true);
-    };
-    const cleanup = () => {
-      clearTimeout(timer);
-      videoEl.removeEventListener('loadedmetadata', onReady);
-      videoEl.removeEventListener('canplay', onReady);
-    };
-    videoEl.addEventListener('loadedmetadata', onReady);
-    videoEl.addEventListener('canplay', onReady);
-  });
-  return true;
-}
-
-async function ensureProcessedCanvasStream() {
-  if (processedCanvasStream && processedCanvasStream.getVideoTracks()[0] && processedCanvasStream.getVideoTracks()[0].readyState === 'live') {
-    return processedCanvasStream;
-  }
-  if (processedCanvasStream) {
-    stopStreamTracks(processedCanvasStream);
-    processedCanvasStream = null;
-  }
-  if (!processingCanvas.width || !processingCanvas.height) throw new Error('Processed canvas is empty');
-  processedCanvasStream = processingCanvas.captureStream(VBG_CAPTURE_FPS);
-  applyMediaStreamContentHints(processedCanvasStream, { videoHint: 'motion' });
-  return processedCanvasStream;
-}
-
-async function transcodeRecordingBlob(blob, filename = 'meeting-recording.webm') {
-  const formData = new FormData();
-  formData.append('recording', blob, filename);
-  const response = await fetch('/api/remux-recording', { method: 'POST', body: formData, credentials: 'same-origin' });
-  if (!response.ok) {
-    let message = 'convert failed';
-    try {
-      const data = await response.json();
-      message = data?.message || message;
-    } catch (_) {}
-    throw new Error(message);
-  }
-  return await response.blob();
-}
+const cleanupProcessedVideoStream = (...args) => virtualBackgroundController.cleanupProcessedVideoStream(...args);
+const cleanupVirtualBackgroundRawStream = (...args) => virtualBackgroundController.cleanupVirtualBackgroundRawStream(...args);
+const disableVirtualBackgroundState = (...args) => virtualBackgroundController.disableVirtualBackgroundState(...args);
+const getLiveVideoTrack = (...args) => virtualBackgroundController.getLiveVideoTrack(...args);
+const hasLiveVideoTrack = (...args) => virtualBackgroundController.hasLiveVideoTrack(...args);
+const getVirtualBackgroundSourceStream = (...args) => virtualBackgroundController.getVirtualBackgroundSourceStream(...args);
+const ensureVirtualBackgroundRawStream = (...args) => virtualBackgroundController.ensureVirtualBackgroundRawStream(...args);
+const replaceLiveKitCameraTrackFromStream = (...args) => virtualBackgroundController.replaceLiveKitCameraTrackFromStream(...args);
+const fallbackToRawCamera = (...args) => virtualBackgroundController.fallbackToRawCamera(...args);
+const deactivateVirtualBackground = (...args) => virtualBackgroundController.deactivateVirtualBackground(...args);
+const getScaledSize = (...args) => virtualBackgroundController.getScaledSize(...args);
+const waitForVideoReady = (...args) => virtualBackgroundController.waitForVideoReady(...args);
+const ensureProcessedCanvasStream = (...args) => virtualBackgroundController.ensureProcessedCanvasStream(...args);
+const transcodeRecordingBlob = (...args) => recordingController.transcodeRecordingBlob(...args);
 
 function setParticipantMeta(sid, { name = null, isHost = false } = {}) {
   if (!sid || sid === socket.id) return null;
@@ -1482,27 +1428,128 @@ async function ensureLiveKitConnected() {
   }
 }
 
+function shouldAutoBootstrapJoinMedia() {
+  return !!(
+    IS_LIVEKIT_MODE
+    && !joinMediaBootstrapDone
+    && !joinMediaBootstrapTimer
+    && (PREF_AUTO_ENABLE_CAMERA || PREF_AUTO_ENABLE_MICROPHONE)
+  );
+}
+
+async function bootstrapPreferredJoinMedia() {
+  const controller = await ensureLiveKitConnected();
+  if (!controller) return false;
+  await Promise.allSettled([
+    PREF_AUTO_ENABLE_CAMERA ? controller.setCameraEnabled(true) : Promise.resolve(),
+    PREF_AUTO_ENABLE_MICROPHONE ? controller.setMicrophoneEnabled(true) : Promise.resolve(),
+  ]);
+  joinMediaBootstrapDone = true;
+  return true;
+}
+
 function scheduleJoinMediaBootstrap() {
-  if (!IS_LIVEKIT_MODE || joinMediaBootstrapDone || joinMediaBootstrapTimer) return;
-  if (!PREF_AUTO_ENABLE_CAMERA && !PREF_AUTO_ENABLE_MICROPHONE) {
-    joinMediaBootstrapDone = true;
+  if (!shouldAutoBootstrapJoinMedia()) {
+    if (IS_LIVEKIT_MODE && !PREF_AUTO_ENABLE_CAMERA && !PREF_AUTO_ENABLE_MICROPHONE) {
+      joinMediaBootstrapDone = true;
+    }
     return;
   }
   joinMediaBootstrapTimer = window.setTimeout(async () => {
     joinMediaBootstrapTimer = null;
     if (hasLeftMeeting) return;
     try {
-      const controller = await ensureLiveKitConnected();
-      if (!controller) return;
-      await Promise.allSettled([
-        PREF_AUTO_ENABLE_CAMERA ? controller.setCameraEnabled(true) : Promise.resolve(),
-        PREF_AUTO_ENABLE_MICROPHONE ? controller.setMicrophoneEnabled(true) : Promise.resolve(),
-      ]);
-      joinMediaBootstrapDone = true;
+      await bootstrapPreferredJoinMedia();
     } catch (err) {
       console.error(err);
     }
   }, 180);
+}
+
+async function toggleMicrophoneAction() {
+  const controller = await ensureLiveKitConnected();
+  if (!controller) return;
+  const enabled = await controller.setMicrophoneEnabled();
+  setStatus(enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
+}
+
+async function toggleCameraAction() {
+  const controller = await ensureLiveKitConnected();
+  if (!controller) return;
+  if (virtualBgEnabled) {
+    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { stopCanvas: true });
+    cleanupVirtualBackgroundRawStream();
+  }
+  const enabled = await controller.setCameraEnabled();
+  if (!enabled) cleanupVirtualBackgroundRawStream();
+  const localCard = ensureCard('local', getDisplayName('local'), true);
+  updatePlaceholder(localCard, !!enabled);
+  setStatus(enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
+}
+
+async function toggleScreenShareAction() {
+  const controller = await ensureLiveKitConnected();
+  if (!controller) return;
+  await controller.setScreenShareProfile?.(shareProfilePreference, { applyToActiveShare: false });
+  const mediaState = controller.getLocalMediaState?.() || {};
+  let includeAudio = screenShareAudioPrefs.includeAudio;
+  let keepMicWhenAudio = screenShareAudioPrefs.keepMicWhenAudio;
+  if (!mediaState.screenShareEnabled) {
+    if (virtualBgEnabled) {
+      await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { stopCanvas: true });
+      cleanupVirtualBackgroundRawStream();
+    }
+    if (speakerStateBeforeShare === null) speakerStateBeforeShare = speakerEnabled;
+    setSpeakerEnabled(true, { userGesture: true, persist: true, showStatus: false });
+    speakerForcedByShareRule = !speakerStateBeforeShare;
+    const audioMode = chooseScreenShareAudioMode();
+    includeAudio = !!audioMode.includeAudio;
+    keepMicWhenAudio = !!audioMode.keepMic;
+    screenShareAudioPrefs.includeAudio = includeAudio;
+    screenShareAudioPrefs.keepMicWhenAudio = keepMicWhenAudio;
+    await applyScreenShareMicPolicy(controller, mediaState, { includeAudio, keepMic: keepMicWhenAudio });
+    if (includeAudio && !keepMicWhenAudio && contentOnlyShareMicState.micTemporarilyMuted) {
+      setStatus(TEXT_SCREEN_SHARE_AUDIO_CONTENT_ONLY);
+    } else {
+      setStatus(includeAudio ? TEXT_SCREEN_SHARE_AUDIO_ON : TEXT_SCREEN_SHARE_AUDIO_OFF);
+    }
+  }
+  try {
+    await controller.setScreenShareEnabled(undefined, {
+      includeAudio: mediaState.screenShareEnabled ? undefined : includeAudio,
+      profile: shareProfilePreference,
+    });
+    if (!mediaState.screenShareEnabled && includeAudio) {
+      verifySharedAudioAvailability(controller).catch(() => {});
+    }
+  } catch (err) {
+    if (!mediaState.screenShareEnabled) {
+      await restoreMicrophoneAfterContentOnlyShare(controller).catch(() => {});
+    }
+    setStatus(err?.message || TEXT_LIVEKIT_CONNECT_FAILED, 'error');
+    throw err;
+  }
+}
+
+async function toggleVirtualBackgroundAction() {
+  if (virtualBgEnabled) {
+    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF);
+    return;
+  }
+  await activateVirtualBackground();
+}
+
+async function finalizeJoinBootstrap(data) {
+  applySnapshotSharerState(data?.active_sharer_sid || null);
+  await ensureLiveKitConnected();
+  if (pendingReloadRecoveryHint) {
+    const reloadHint = pendingReloadRecoveryHint;
+    pendingReloadRecoveryHint = null;
+    await restoreLiveKitMediaAfterReload(reloadHint);
+    joinMediaBootstrapDone = true;
+    return;
+  }
+  scheduleJoinMediaBootstrap();
 }
 
 function downloadBlob(blob, filename) {
@@ -1516,237 +1563,10 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
-async function toggleScreenRecording() {
-  if (activeRecorder) {
-    activeRecorder.stop();
-    recorderStream?.getTracks().forEach(track => track.stop());
-    return;
-  }
-
-  if (!navigator.mediaDevices?.getDisplayMedia || typeof MediaRecorder === 'undefined') {
-    setStatus(TEXT_RECORD_NOT_SUPPORTED, 'error');
-    return;
-  }
-
-  try {
-    try {
-      recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        sampleRate: 48000
-      } });
-    } catch (audioErr) {
-      recorderStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-    }
-    const chunks = [];
-
-    let mimeType = '';
-    let outputExt = 'webm';
-    if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E,mp4a.40.2')) {
-      mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
-      outputExt = 'mp4';
-    } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-      mimeType = 'video/mp4';
-      outputExt = 'mp4';
-    } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
-      mimeType = 'video/webm;codecs=vp9,opus';
-    } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
-      mimeType = 'video/webm;codecs=vp8,opus';
-    } else if (MediaRecorder.isTypeSupported('video/webm')) {
-      mimeType = 'video/webm';
-    } else {
-      setStatus(TEXT_RECORD_NOT_SUPPORTED, 'error');
-      recorderStream.getTracks().forEach(track => track.stop());
-      recorderStream = null;
-      return;
-    }
-
-    activeRecorder = new MediaRecorder(recorderStream, mimeType ? { mimeType } : undefined);
-    activeRecorder.ondataavailable = (event) => {
-      if (event.data && event.data.size > 0) chunks.push(event.data);
-    };
-    activeRecorder.onstop = async () => {
-      const recordedBlob = new Blob(chunks, { type: mimeType || 'video/webm' });
-      recordingBtn.textContent = {{ t('recording')|tojson }};
-      activeRecorder = null;
-      recorderStream = null;
-
-      if (outputExt === 'mp4' || (recordedBlob.type || '').includes('mp4')) {
-        downloadBlob(recordedBlob, `meeting-recording-${Date.now()}.mp4`);
-        setStatus(TEXT_RECORD_DIRECT_MP4);
-        return;
-      }
-
-      try {
-        setStatus(TEXT_RECORD_CONVERTING, 'warning');
-        const mp4Blob = await transcodeRecordingBlob(recordedBlob, 'meeting-recording.webm');
-        downloadBlob(mp4Blob, `meeting-recording-${Date.now()}.mp4`);
-        setStatus(TEXT_RECORD_SAVED);
-      } catch (err) {
-        console.error(err);
-        downloadBlob(recordedBlob, `meeting-recording-${Date.now()}.webm`);
-        const reason = err?.message ? `${TEXT_RECORD_MP4_SERVER_ERROR}: ${err.message}` : TEXT_RECORD_MP4_FAILED;
-        setStatus(reason, 'warning');
-      }
-    };
-    recorderStream.getVideoTracks()[0].onended = () => {
-      if (activeRecorder && activeRecorder.state !== 'inactive') activeRecorder.stop();
-    };
-    activeRecorder.start(1000);
-    recordingBtn.textContent = TEXT_RECORD_STOP;
-    setStatus(TEXT_RECORD_STOP);
-  } catch (err) {
-    activeRecorder = null;
-    recorderStream?.getTracks().forEach(track => track.stop());
-    recorderStream = null;
-    setStatus(err.message || TEXT_RECORD_NOT_SUPPORTED, 'error');
-  }
-}
-
-async function loadSegmentationModel() {
-  if (segmentationModel) return segmentationModel;
-  if (typeof SelfieSegmentation === 'undefined') {
-    throw new Error('SelfieSegmentation not loaded');
-  }
-  segmentationModel = new SelfieSegmentation({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
-  });
-  segmentationModel.setOptions({ modelSelection: 1 });
-  segmentationModel.onResults(onSegmentationResults);
-  return segmentationModel;
-}
-
-function onSegmentationResults(results) {
-  if (!virtualBgEnabled) return;
-
-  const sourceWidth = results.image.videoWidth || results.image.width || 1280;
-  const sourceHeight = results.image.videoHeight || results.image.height || 720;
-  const { width, height } = getScaledSize(sourceWidth, sourceHeight);
-  if (processingCanvas.width !== width || processingCanvas.height !== height) {
-    processingCanvas.width = width;
-    processingCanvas.height = height;
-  }
-
-  processingCtx.save();
-  processingCtx.clearRect(0, 0, width, height);
-  processingCtx.drawImage(results.segmentationMask, 0, 0, width, height);
-  processingCtx.globalCompositeOperation = 'source-in';
-  processingCtx.drawImage(results.image, 0, 0, width, height);
-  processingCtx.globalCompositeOperation = 'destination-over';
-  processingCtx.filter = IS_MOBILE ? 'blur(10px)' : 'blur(18px)';
-  processingCtx.drawImage(results.image, 0, 0, width, height);
-  processingCtx.filter = 'none';
-  processingCtx.restore();
-  processedFrameCount += 1;
-}
-
-async function startSegmentationLoop() {
-  if (virtualBgLoopActive) return;
-  virtualBgLoopActive = true;
-
-  const scheduleNext = () => {
-    if (!virtualBgEnabled) return;
-    if (typeof rawPreviewVideo.requestVideoFrameCallback === 'function') {
-      rawPreviewVideo.requestVideoFrameCallback(() => {
-        if (virtualBgEnabled) loop();
-      });
-      return;
-    }
-    setTimeout(loop, Math.round(1000 / VBG_CAPTURE_FPS));
-  };
-
-  const loop = async () => {
-    if (!virtualBgEnabled) {
-      virtualBgLoopActive = false;
-      return;
-    }
-    if (segmentationSending || !rawPreviewVideo.srcObject) {
-      scheduleNext();
-      return;
-    }
-    try {
-      segmentationSending = true;
-      await segmentationModel.send({ image: rawPreviewVideo });
-    } catch (err) {
-      console.error(err);
-    } finally {
-      segmentationSending = false;
-      scheduleNext();
-    }
-  };
-
-  scheduleNext();
-}
-
-async function activateVirtualBackground() {
-  const sourceStream = ensureVirtualBackgroundRawStream();
-  if (!sourceStream) {
-    setStatus(TEXT_VIRTUAL_BG_NEEDS_CAMERA, 'warning');
-    return false;
-  }
-  const activationToken = ++virtualBgActivationToken;
-  setStatus(TEXT_VIRTUAL_BG_LOADING, 'warning');
-
-  try {
-    await loadSegmentationModel();
-    if (!hasLiveVideoTrack(sourceStream)) {
-      throw new Error(TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE);
-    }
-    if (rawPreviewVideo.srcObject !== sourceStream) {
-      rawPreviewVideo.srcObject = sourceStream;
-      rawPreviewVideo.load?.();
-    }
-    await rawPreviewVideo.play().catch(() => {});
-    await waitForVideoReady(rawPreviewVideo, 4000);
-
-    const startCount = processedFrameCount;
-
-    virtualBgEnabled = true;
-    updateVirtualBackgroundButtonState();
-    await startSegmentationLoop();
-
-    const deadline = Date.now() + 5000;
-    while (processedFrameCount < startCount + 2) {
-      if (activationToken !== virtualBgActivationToken) return false;
-      if (Date.now() > deadline) throw new Error(TEXT_VIRTUAL_BG_PROCESSING_TIMEOUT);
-      await new Promise(resolve => setTimeout(resolve, 60));
-    }
-
-    await ensureProcessedCanvasStream();
-    const processedTrack = processedCanvasStream.getVideoTracks()[0];
-    if (!processedTrack) throw new Error('Processed video track unavailable');
-
-    const nextOutputStream = new MediaStream();
-    nextOutputStream.addTrack(processedTrack.clone());
-    sourceStream.getAudioTracks().forEach(track => nextOutputStream.addTrack(track));
-
-    if (activationToken !== virtualBgActivationToken) {
-      stopStreamTracks(nextOutputStream);
-      return false;
-    }
-
-    if (IS_LIVEKIT_MODE) {
-      const replaced = await replaceLiveKitCameraTrackFromStream(nextOutputStream);
-      if (!replaced) {
-        throw new Error('LiveKit camera replacement unavailable');
-      }
-      cleanupProcessedVideoStream();
-      processedVideoStream = nextOutputStream;
-      activeVirtualBgToken = activationToken;
-    } else {
-      cleanupProcessedVideoStream();
-      processedVideoStream = nextOutputStream;
-      activeVirtualBgToken = activationToken;
-    }
-    updateVirtualBackgroundButtonState();
-    setStatus(TEXT_VIRTUAL_BG_READY);
-    return true;
-  } catch (err) {
-    console.error(err);
-    await fallbackToRawCamera(TEXT_VIRTUAL_BG_FAILED + ': ' + (err.message || 'unknown error'), { stopCanvas: true });
-    return false;
-  }
-}
+const toggleScreenRecording = (...args) => recordingController.toggleScreenRecording(...args);
+const loadSegmentationModel = (...args) => virtualBackgroundController.loadSegmentationModel(...args);
+const startSegmentationLoop = (...args) => virtualBackgroundController.startSegmentationLoop(...args);
+const activateVirtualBackground = (...args) => virtualBackgroundController.activateVirtualBackground(...args);
 
 let activeChatMode = 'all';
 let pendingAttachment = null;
@@ -2185,20 +2005,14 @@ function cleanupMeetingSession() {
     clearTimeout(joinMediaBootstrapTimer);
     joinMediaBootstrapTimer = null;
   }
-  try {
-    disableVirtualBackgroundState({ stopCanvas: true, stopRaw: true });
-  } catch (_) {}
+  try { virtualBackgroundController.cleanup(); } catch (_) {}
   rawPreviewVideo.srcObject = null;
   updateVirtualBackgroundButtonState();
   if (livekitController) {
     try { livekitController.disconnect(); } catch (_) {}
     livekitController = null;
   }
-  try {
-    if (activeRecorder && activeRecorder.state !== 'inactive') activeRecorder.stop();
-  } catch (_) {}
-  try { recorderStream?.getTracks?.().forEach(track => track.stop()); } catch (_) {}
-  recorderStream = null;
+  try { recordingController.cleanup(); } catch (_) {}
   try { stopStreamTracks(localStream); } catch (_) {}
   try { stopStreamTracks(processedCanvasStream); } catch (_) {}
   remoteMediaStreams = {};
@@ -2216,414 +2030,131 @@ function leaveMeetingAndExit(message = TEXT_YOU_LEFT_MEETING, redirectUrl = '/')
   window.location.href = redirectUrl;
 }
 
-socket.on('connect', () => {
-  ensureCard('local', getDisplayName('local'), true);
-  queueRenderLayout();
-  socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME });
-  ensureLiveKitController()?.prepareConnection?.(LIVEKIT_URL);
+window.RoomPageBootstrap?.initialize?.({
+  socket,
+  ensureCard,
+  getDisplayName,
+  queueRenderLayout,
+  ROOM_ID,
+  ROOM_PASSWORD,
+  USER_NAME: () => USER_NAME,
+  ensureLiveKitController,
+  LIVEKIT_URL,
+  participantCountEl,
+  chatMessages,
+  syncParticipantRoster,
+  appendChatMessage,
+  focusParticipant,
+  finalizeJoinBootstrap,
+  refreshRtcDiagnostics,
+  setStatus,
+  TEXT_HOST_RETURNED_ROOM,
+  TEXT_HOST_LEFT_ROOM,
+  IS_HOST,
+  addRemoteParticipant,
+  removeRemoteVideo,
+  renderMentionPicker,
+  applySnapshotSharerState,
+  participantMetaRef: () => participantMeta,
+  documentRef: document,
+  normalizeParticipantSid,
+  syncScreenShareSpeakerRule,
+  updateShareUiState,
+  TEXT_SCREEN_SHARE_MODE,
+  TEXT_SCREEN_SHARE_STOPPED,
+  TEXT_DANMAKU_ON,
+  TEXT_DANMAKU_OFF,
+  hideFloatingPanels,
+  renderChatMessageState,
+  cleanupMeetingSession,
+  TEXT_MEETING_CLOSED,
+  TEXT_KICKED: {{ t('kicked')|tojson }},
+  TEXT_SCREEN_SHARE_DENIED: {{ t('another_participant_sharing_screen')|tojson }},
+  TEXT_CHAT_CLEARED_SELF,
+  TEXT_CHAT_CLEARED_ALL,
+  getFullscreenElement,
+  screenRef: screen,
+  clearSimulatedFullscreen,
+  flushPendingLayoutIfNeeded,
+  roomDebugLog,
+  getSimulatedFullscreenCard,
+  nativeFullscreenState: {
+    get: () => nativeFullscreenVideoEl,
+    set: (value) => { nativeFullscreenVideoEl = value; },
+  },
+  getRenderableCards,
+  getGridPageSize,
+  hasActiveFullscreenSession,
+  layoutScheduler,
+  writeReloadRecoveryHint,
+  hasLeftMeetingRef: () => hasLeftMeeting,
+  videoPrevPageBtn,
+  videoNextPageBtn,
+  videoHomePageBtn,
+  toggleSpeakerBtn,
+  runMediaTask,
+  setSpeakerEnabled,
+  toggleMicBtn: document.getElementById('toggleMicBtn'),
+  toggleMicrophoneAction,
+  toggleCameraBtn: document.getElementById('toggleCameraBtn'),
+  toggleCameraAction,
+  shareProfileBtn,
+  toggleShareProfileMode,
+  shareScreenBtn: document.getElementById('shareScreenBtn'),
+  toggleScreenShareAction,
+  virtualBgBtn: document.getElementById('virtualBgBtn'),
+  toggleVirtualBackgroundAction,
+  recordingBtn,
+  toggleScreenRecording,
+  leaveMeetingBtn: document.getElementById('leaveMeetingBtn'),
+  TEXT_HOST_MUST_END_MEETING,
+  TEXT_LEAVE_CONFIRM,
+  TEXT_YOU_LEFT_MEETING,
+  leaveMeetingAndExit,
+  hostEndMeetingBtn,
+  TEXT_HOST_END_CONFIRM,
+  IS_LIVEKIT_MODE,
+  saveProfileBtn: document.getElementById('saveProfileBtn'),
+  displayNameInput: document.getElementById('displayNameInput'),
+  localStorageRef: localStorage,
+  livekitControllerRef: () => livekitController,
+  TEXT_PROFILE_UPDATED,
+  inviteInput: document.getElementById('inviteInput'),
+  copyInviteBtn: document.getElementById('copyInviteBtn'),
+  copyText,
+  showQrBtn: document.getElementById('showQrBtn'),
+  inviteQrWrap: document.getElementById('inviteQrWrap'),
+  inviteQrImage: document.getElementById('inviteQrImage'),
+  TEXT_HIDE_QR: {{ t('hide_qr')|tojson }},
+  TEXT_SHOW_QR: {{ t('show_qr')|tojson }},
+  TEXT_MANUAL_COPY_LINK: {{ t('manual_copy_link')|tojson }},
+  switchRoomBtn: document.getElementById('switchRoomBtn'),
+  switchRoomIdInput: document.getElementById('switchRoomId'),
+  switchRoomPasswordInput: document.getElementById('switchRoomPassword'),
+  setStatusError: (message) => setStatus(message, 'error'),
+  initChatUi,
+  readReloadRecoveryHint,
+  updateShareProfileUi,
+  refreshRtcStatsBtn,
+  updateVirtualBackgroundButtonState,
+  startRtcDiagnosticsLoop,
+  roomState: {
+    getCurrentGridPage: () => currentGridPage,
+    setCurrentGridPage: (value) => { currentGridPage = value; },
+    getCurrentSharerSid: () => currentSharerSid,
+    setCurrentSharerSid: (value) => { currentSharerSid = value; },
+    getFocusedSid: () => focusedSid,
+    setFocusedSid: (value) => { focusedSid = value; },
+    setHiddenSidebar: (value) => { hiddenSidebar = value; },
+    getSpeakerEnabled: () => speakerEnabled,
+    setSpeakerStateBeforeShare: (value) => { speakerStateBeforeShare = value; },
+    setSpeakerForcedByShareRule: (value) => { speakerForcedByShareRule = value; },
+    getIsSharingScreen: () => isSharingScreen,
+    getLivekitLocalShareActive: () => livekitLocalShareActive,
+    setDanmakuEnabled: (value) => { danmakuEnabled = value; window.danmakuEnabled = value; },
+    setUserName: (value) => { USER_NAME = value; window.USER_NAME = value; },
+    setPendingReloadRecoveryHint: (value) => { pendingReloadRecoveryHint = value; },
+  },
 });
-
-socket.on('join_ok', async (data) => {
-  participantCountEl.textContent = data.participant_count;
-  chatMessages.innerHTML = '';
-  const existingParticipants = Array.isArray(data?.participants) ? data.participants : [];
-  const existingSidSet = new Set(existingParticipants.map((p) => p?.sid).filter(Boolean));
-  syncParticipantRoster(existingParticipants);
-  (data.chat_history || []).forEach(item => appendChatMessage(item));
-  focusParticipant('local');
-  danmakuEnabled = !!data.danmaku_enabled;
-  window.danmakuEnabled = danmakuEnabled;
-  currentSharerSid = normalizeParticipantSid(data?.active_sharer_sid || null);
-  if (currentSharerSid && currentSharerSid !== socket.id && !existingSidSet.has(currentSharerSid)) {
-    currentSharerSid = null;
-  }
-  if (currentSharerSid === socket.id && !isSharingScreen) {
-    currentSharerSid = null;
-  }
-  if (currentSharerSid) {
-    focusedSid = currentSharerSid;
-    hiddenSidebar = true;
-    syncScreenShareSpeakerRule({ userGesture: false });
-    queueRenderLayout();
-  } else {
-    syncScreenShareSpeakerRule({ userGesture: false });
-    updateShareUiState();
-  }
-  await ensureLiveKitConnected();
-  if (pendingReloadRecoveryHint) {
-    const reloadHint = pendingReloadRecoveryHint;
-    pendingReloadRecoveryHint = null;
-    await restoreLiveKitMediaAfterReload(reloadHint);
-    joinMediaBootstrapDone = true;
-  } else {
-    scheduleJoinMediaBootstrap();
-  }
-  refreshRtcDiagnostics().catch(() => {});
-  if (data && data.host_present === false && IS_HOST) {
-    setStatus(TEXT_HOST_RETURNED_ROOM);
-  } else if (data && data.host_present === false) {
-    setStatus(TEXT_HOST_LEFT_ROOM, 'warning');
-  }
-});
-
-socket.on('participant_joined', async (data) => {
-  addRemoteParticipant(data.sid, data.name, !!data.is_host);
-  participantCountEl.textContent = data.participant_count;
-  refreshRtcDiagnostics().catch(() => {});
-});
-
-socket.on('participant_left', (data) => {
-  participantCountEl.textContent = data.participant_count;
-  if (currentGridPage > 0) currentGridPage = Math.max(0, currentGridPage - 1);
-  removeRemoteVideo(data.sid);
-  renderMentionPicker();
-  refreshRtcDiagnostics().catch(() => {});
-});
-
-socket.on('participant_snapshot', async (data) => {
-  const list = Array.isArray(data?.participants) ? data.participants : [];
-  const count = Number(data?.participant_count || list.length || 0);
-  syncParticipantRoster(list, { pruneMissing: true });
-  participantCountEl.textContent = String(Math.max(1, count));
-  renderMentionPicker();
-  refreshRtcDiagnostics().catch(() => {});
-});
-
-socket.on('participant_updated', (data) => {
-  if (!data || !data.sid) return;
-  if (data.sid === socket.id) { USER_NAME = data.name; window.USER_NAME = USER_NAME; }
-  if (participantMeta[data.sid]) participantMeta[data.sid].name = data.name;
-  const card = document.getElementById('card-' + data.sid);
-  const labelEl = card?.querySelector('.video-label');
-  if (labelEl) labelEl.textContent = data.name;
-  renderMentionPicker();
-});
-
-socket.on('meeting_chat_message', (data) => appendChatMessage(data));
-socket.on('meeting_chat_cleared', (data) => {
-  if (chatMessages) chatMessages.innerHTML = '';
-  const scope = data?.scope || 'all';
-  setStatus(scope === 'self' ? TEXT_CHAT_CLEARED_SELF : TEXT_CHAT_CLEARED_ALL);
-  hideFloatingPanels();
-});
-socket.on('meeting_chat_retracted', (data) => {
-  const item = data?.id ? chatMessages?.querySelector(`.chat-message[data-message-id="${data.id}"]`) : null;
-  if (!item) return;
-  renderChatMessageState(item, {
-    id: data.id,
-    senderName: data.senderName || item.querySelector('strong')?.textContent || 'Guest',
-    mode: item.classList.contains('host-only') ? 'host' : 'all',
-    createdAt: item.querySelector('.chat-message-head span:last-child')?.textContent || '',
-    message: '',
-    mentions: [],
-    attachment: null,
-    withdrawn: true,
-    senderUserId: item.dataset.senderUserId || '' ,
-    from: item.dataset.senderSid || ''
-  });
-});
-
-socket.on('join_error', (data) => {
-  alert(data.message || 'Join failed');
-  window.location.href = '/';
-});
-
-socket.on('force_leave', (data) => {
-  cleanupMeetingSession();
-  alert(data.message || TEXT_MEETING_CLOSED);
-  window.location.href = '/';
-});
-
-socket.on('force_logout', (data) => {
-  cleanupMeetingSession();
-  try { socket.disconnect(); } catch (_) {}
-  alert(data?.message || {{ t('kicked')|tojson }});
-  window.location.href = '/login?kicked=1';
-});
-
-socket.on('host_presence_changed', (data) => {
-  if (!data) return;
-  setStatus(data.message || (data.host_present ? TEXT_HOST_RETURNED_ROOM : TEXT_HOST_LEFT_ROOM), data.host_present ? '' : 'warning');
-});
-
-socket.on('host_action_error', (data) => {
-  setStatus(data?.message || 'Action failed', 'error');
-});
-
-socket.on('room_ui_event', (data) => {
-  if (!data || !data.type) return;
-  if (data.type === 'screen_share_started') {
-    const sharerSid = normalizeParticipantSid(data.from);
-    currentSharerSid = sharerSid;
-    focusedSid = sharerSid;
-    focusParticipant(sharerSid, { hideSidebar: true, screenShare: true });
-    syncScreenShareSpeakerRule({ userGesture: false });
-    setStatus(TEXT_SCREEN_SHARE_MODE);
-  } else if (data.type === 'screen_share_stopped') {
-    currentSharerSid = null;
-    hiddenSidebar = false;
-    focusedSid = 'local';
-    syncScreenShareSpeakerRule({ userGesture: false });
-    queueRenderLayout();
-    setStatus(TEXT_SCREEN_SHARE_STOPPED);
-  } else if (data.type === 'screen_share_denied') {
-    currentSharerSid = normalizeParticipantSid(data.activeSharerSid || currentSharerSid);
-    syncScreenShareSpeakerRule({ userGesture: false });
-    updateShareUiState();
-    setStatus(data.message || {{ t('another_participant_sharing_screen')|tojson }}, 'warning');
-  } else if (data.type === 'danmaku_toggled') {
-    danmakuEnabled = !!data.enabled;
-    window.danmakuEnabled = danmakuEnabled;
-    setStatus(danmakuEnabled ? TEXT_DANMAKU_ON : TEXT_DANMAKU_OFF);
-  }
-});
-
-document.addEventListener('fullscreenchange', () => {
-  if (!getFullscreenElement() && screen.orientation?.unlock) {
-    try { screen.orientation.unlock(); } catch (_) {}
-  }
-  if (getFullscreenElement()) {
-    clearSimulatedFullscreen();
-  } else {
-    flushPendingLayoutIfNeeded();
-  }
-  roomDebugLog('fullscreenchange', { active: !!getFullscreenElement(), simulated: !!getSimulatedFullscreenCard() });
-});
-
-document.addEventListener('webkitfullscreenchange', () => {
-  if (!getFullscreenElement() && screen.orientation?.unlock) {
-    try { screen.orientation.unlock(); } catch (_) {}
-  }
-  if (getFullscreenElement()) {
-    clearSimulatedFullscreen();
-  } else {
-    flushPendingLayoutIfNeeded();
-  }
-  roomDebugLog('webkitfullscreenchange', { active: !!getFullscreenElement(), simulated: !!getSimulatedFullscreenCard() });
-});
-
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && getSimulatedFullscreenCard()) {
-    clearSimulatedFullscreen();
-  }
-});
-
-window.addEventListener('pageshow', () => {
-  if (nativeFullscreenVideoEl && !nativeFullscreenVideoEl.webkitDisplayingFullscreen) nativeFullscreenVideoEl = null;
-  flushPendingLayoutIfNeeded();
-});
-
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && nativeFullscreenVideoEl && !nativeFullscreenVideoEl.webkitDisplayingFullscreen) {
-    nativeFullscreenVideoEl = null;
-    flushPendingLayoutIfNeeded();
-  }
-});
-
-window.addEventListener('resize', () => {
-  const totalCards = getRenderableCards().length;
-  const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
-  currentGridPage = Math.min(currentGridPage, totalPages - 1);
-  if (hasActiveFullscreenSession()) {
-    layoutScheduler.defer();
-    roomDebugLog('resize while fullscreen active; layout deferred');
-    return;
-  }
-  queueRenderLayout();
-});
-
-videoPrevPageBtn?.addEventListener('click', () => {
-  if (currentGridPage <= 0) return;
-  currentGridPage -= 1;
-  queueRenderLayout();
-});
-videoNextPageBtn?.addEventListener('click', () => {
-  const totalCards = getRenderableCards().length;
-  const totalPages = Math.max(1, Math.ceil(totalCards / getGridPageSize()));
-  if (currentGridPage >= totalPages - 1) return;
-  currentGridPage += 1;
-  queueRenderLayout();
-});
-videoHomePageBtn?.addEventListener('click', () => {
-  if (currentGridPage <= 0) return;
-  currentGridPage = 0;
-  queueRenderLayout();
-});
-
-toggleSpeakerBtn && (toggleSpeakerBtn.onclick = () => runMediaTask('toggle-speaker', async () => {
-  setSpeakerEnabled(!speakerEnabled, { userGesture: true, persist: true, showStatus: true });
-  if (currentSharerSid || isSharingScreen || livekitLocalShareActive) {
-    speakerForcedByShareRule = false;
-    speakerStateBeforeShare = speakerEnabled;
-  }
-}));
-document.getElementById('toggleMicBtn').onclick = () => runMediaTask('toggle-mic', async () => {
-  const controller = await ensureLiveKitConnected();
-  if (!controller) return;
-  const enabled = await controller.setMicrophoneEnabled();
-  setStatus(enabled ? TEXT_MIC_ON : TEXT_MIC_OFF);
-});
-document.getElementById('toggleCameraBtn').onclick = () => runMediaTask('toggle-camera', async () => {
-  const controller = await ensureLiveKitConnected();
-  if (!controller) return;
-  if (virtualBgEnabled) {
-    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { stopCanvas: true });
-    cleanupVirtualBackgroundRawStream();
-  }
-  const enabled = await controller.setCameraEnabled();
-  if (!enabled) cleanupVirtualBackgroundRawStream();
-  const localCard = ensureCard('local', getDisplayName('local'), true);
-  updatePlaceholder(localCard, !!enabled);
-  setStatus(enabled ? TEXT_CAMERA_ON : TEXT_CAMERA_OFF);
-});
-shareProfileBtn && (shareProfileBtn.onclick = () => runMediaTask('share-profile-toggle', async () => {
-  await toggleShareProfileMode();
-}));
-document.getElementById('shareScreenBtn').onclick = () => runMediaTask('share-screen', async () => {
-  const controller = await ensureLiveKitConnected();
-  if (!controller) return;
-  await controller.setScreenShareProfile?.(shareProfilePreference, { applyToActiveShare: false });
-  const mediaState = controller.getLocalMediaState?.() || {};
-  let includeAudio = screenShareAudioPrefs.includeAudio;
-  let keepMicWhenAudio = screenShareAudioPrefs.keepMicWhenAudio;
-  if (!mediaState.screenShareEnabled) {
-    if (virtualBgEnabled) {
-      await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF, { stopCanvas: true });
-      cleanupVirtualBackgroundRawStream();
-    }
-    if (speakerStateBeforeShare === null) speakerStateBeforeShare = speakerEnabled;
-    setSpeakerEnabled(true, { userGesture: true, persist: true, showStatus: false });
-    speakerForcedByShareRule = !speakerStateBeforeShare;
-    const audioMode = chooseScreenShareAudioMode();
-    includeAudio = !!audioMode.includeAudio;
-    keepMicWhenAudio = !!audioMode.keepMic;
-    screenShareAudioPrefs.includeAudio = includeAudio;
-    screenShareAudioPrefs.keepMicWhenAudio = keepMicWhenAudio;
-    await applyScreenShareMicPolicy(controller, mediaState, { includeAudio, keepMic: keepMicWhenAudio });
-    if (includeAudio && !keepMicWhenAudio && contentOnlyShareMicState.micTemporarilyMuted) {
-      setStatus(TEXT_SCREEN_SHARE_AUDIO_CONTENT_ONLY);
-    } else {
-      setStatus(includeAudio ? TEXT_SCREEN_SHARE_AUDIO_ON : TEXT_SCREEN_SHARE_AUDIO_OFF);
-    }
-  }
-  try {
-    await controller.setScreenShareEnabled(undefined, {
-      includeAudio: mediaState.screenShareEnabled ? undefined : includeAudio,
-      profile: shareProfilePreference,
-    });
-    if (!mediaState.screenShareEnabled && includeAudio) {
-      verifySharedAudioAvailability(controller).catch(() => {});
-    }
-  } catch (err) {
-    if (!mediaState.screenShareEnabled) {
-      await restoreMicrophoneAfterContentOnlyShare(controller).catch(() => {});
-    }
-    setStatus(err?.message || TEXT_LIVEKIT_CONNECT_FAILED, 'error');
-    throw err;
-  }
-});
-document.getElementById('virtualBgBtn').onclick = () => runMediaTask('virtual-background-toggle', async () => {
-  if (virtualBgEnabled) {
-    await deactivateVirtualBackground(TEXT_VIRTUAL_BG_OFF);
-    return;
-  }
-  await activateVirtualBackground();
-});
-recordingBtn.onclick = () => toggleScreenRecording();
-document.getElementById('leaveMeetingBtn').onclick = () => {
-  const otherParticipantCount = Object.keys(participantMeta).length;
-  if (IS_HOST && otherParticipantCount > 0) {
-    setStatus(TEXT_HOST_MUST_END_MEETING, 'warning');
-    alert(TEXT_HOST_MUST_END_MEETING);
-    return;
-  }
-  if (confirm(TEXT_LEAVE_CONFIRM)) {
-    leaveMeetingAndExit(TEXT_YOU_LEFT_MEETING);
-  }
-};
-if (hostEndMeetingBtn) {
-  hostEndMeetingBtn.onclick = () => {
-    if (confirm(TEXT_HOST_END_CONFIRM)) {
-      socket.emit('host_end_meeting', { room_id: ROOM_ID });
-    }
-  };
-}
-
-document.getElementById('saveProfileBtn').onclick = () => {
-  const name = (document.getElementById('displayNameInput').value || '').trim();
-  if (!name) return;
-  USER_NAME = name;
-  window.USER_NAME = USER_NAME;
-  localStorage.setItem('meeting_display_name', name);
-  socket.emit('update_profile', { name });
-  if (IS_LIVEKIT_MODE && livekitController) {
-    livekitController.updateDisplayName(name).catch((err) => console.error(err));
-  }
-  ensureCard('local', getDisplayName('local'), true);
-  renderMentionPicker();
-  setStatus(TEXT_PROFILE_UPDATED);
-};
-const inviteInput = document.getElementById('inviteInput');
-const copyInviteBtn = document.getElementById('copyInviteBtn');
-const showQrBtn = document.getElementById('showQrBtn');
-const inviteQrWrap = document.getElementById('inviteQrWrap');
-const inviteQrImage = document.getElementById('inviteQrImage');
-
-if (inviteInput) {
-  inviteInput.value = window.location.href;
-}
-
-if (copyInviteBtn) {
-  copyInviteBtn.onclick = async () => {
-    const text = inviteInput?.value || window.location.href;
-    const ok = await copyText(text);
-    if (!ok) {
-      try { window.prompt({{ t('manual_copy_link')|tojson }}, text); } catch (_) {}
-    }
-  };
-}
-
-if (showQrBtn && inviteQrWrap && inviteQrImage) {
-  showQrBtn.onclick = () => {
-    const text = encodeURIComponent(inviteInput?.value || window.location.href);
-    inviteQrImage.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${text}`;
-    inviteQrWrap.classList.toggle('hidden');
-    const showing = !inviteQrWrap.classList.contains('hidden');
-    showQrBtn.textContent = showing
-      ? {{ t('hide_qr')|tojson }}
-      : {{ t('show_qr')|tojson }};
-  };
-}
-const switchRoomBtn = document.getElementById('switchRoomBtn');
-if (switchRoomBtn) {
-  switchRoomBtn.onclick = async () => {
-    const switchRoomIdInput = document.getElementById('switchRoomId');
-    const switchRoomPasswordInput = document.getElementById('switchRoomPassword');
-    const nextRoomId = (switchRoomIdInput?.value || '').trim();
-    const nextPwd = (switchRoomPasswordInput?.value || '').trim();
-    if (!nextRoomId || !nextPwd) return;
-    const res = await fetch('/api/join_room', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room_id: nextRoomId, password: nextPwd }) });
-    const data = await res.json();
-    if (!res.ok || !data.success) { setStatus(data.message || 'failed', 'error'); return; }
-    leaveMeetingAndExit(null, `/room/${nextRoomId}?pwd=${encodeURIComponent(nextPwd)}`);
-  };
-}
-
-window.addEventListener('beforeunload', () => {
-  writeReloadRecoveryHint();
-  if (!hasLeftMeeting) {
-    try { socket.emit('leave_room'); } catch (_) {}
-  }
-});
-
-initChatUi();
-pendingReloadRecoveryHint = readReloadRecoveryHint();
-setSpeakerEnabled(speakerEnabled, { userGesture: false, persist: false, showStatus: false });
-updateShareProfileUi();
-refreshRtcStatsBtn?.addEventListener('click', () => { refreshRtcDiagnostics().catch(() => {}); });
-ensureCard('local', getDisplayName('local'), true);
-updateVirtualBackgroundButtonState();
-queueRenderLayout();
-startRtcDiagnosticsLoop();
 
 </script>
