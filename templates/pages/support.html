@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'pages/base.html' %}
 {% block title %}{{ t('support_page_title') }}{% endblock %}
 {% block shell_class %}auth-shell narrow-shell{% endblock %}
 {% block content %}
@@ -8,7 +8,7 @@
     <div class="muted">{{ t('subtitle') }}</div>
   </div>
   <div class="top-actions">
-    {% include '_language_switch.html' %}
+    {% include 'partials/_language_switch.html' %}
     <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
   </div>
 </header>

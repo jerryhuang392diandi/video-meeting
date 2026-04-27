@@ -5,7 +5,7 @@
     <div class="muted">{{ t('record_password_label') }}: {{ room_password }}</div>
   </div>
   <div class="top-actions">
-    {% include '_language_switch.html' %}
+    {% include 'partials/_language_switch.html' %}
     <span class="user-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
     <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
   </div>

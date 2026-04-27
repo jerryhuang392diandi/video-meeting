@@ -1592,7 +1592,7 @@ grep LIVEKIT /opt/video-meeting/.env
 ```bash
 git status
 python check_i18n.py
-python -m py_compile app.py translations.py
+python -m py_compile app.py translations.py i18n/translations.py scripts/check_i18n.py
 git add .
 git commit -m "Improve deployment documentation"
 git push origin main
@@ -3371,7 +3371,7 @@ Local commit:
 ```bash
 git status
 python check_i18n.py
-python -m py_compile app.py translations.py
+python -m py_compile app.py translations.py i18n/translations.py scripts/check_i18n.py
 git add .
 git commit -m "Improve deployment documentation"
 git push origin main

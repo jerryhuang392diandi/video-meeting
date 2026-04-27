@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'pages/base.html' %}
 {% block content %}
 <header class="topbar dashboard-topbar">
   <div>
@@ -6,7 +6,7 @@
     <div class="muted">{{ t('subtitle') }}</div>
   </div>
   <div class="top-actions dashboard-top-actions">
-    {% include '_language_switch.html' %}
+    {% include 'partials/_language_switch.html' %}
     <span class="user-pill">{{ t('current_user') }}: {{ current_user.username }}</span>
     <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
     <a class="chip" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>

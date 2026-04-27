@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'pages/base.html' %}
 {% block title %}{{ t('quickstart_page_title') }}{% endblock %}
 {% block shell_class %}auth-shell quickstart-shell{% endblock %}
 {% block content %}
@@ -8,7 +8,7 @@
     <div class="muted">{{ t('quickstart_intro') }}</div>
   </div>
   <div class="top-actions">
-    {% include '_language_switch.html' %}
+    {% include 'partials/_language_switch.html' %}
     {% if current_user.is_authenticated %}
       <a class="chip" href="{{ url_for('index') }}">{{ t('back_home') }}</a>
     {% else %}

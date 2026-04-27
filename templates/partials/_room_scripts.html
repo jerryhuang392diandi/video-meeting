@@ -1,14 +1,14 @@
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
-<script src="{{ url_for('static', filename='room_utils.js') }}?v={{ asset_version('room_utils.js') }}"></script>
-<script src="{{ url_for('static', filename='room_ui.js') }}?v={{ asset_version('room_ui.js') }}"></script>
-<script src="{{ url_for('static', filename='room_diagnostics.js') }}?v={{ asset_version('room_diagnostics.js') }}"></script>
-<script src="{{ url_for('static', filename='room_chat.js') }}?v={{ asset_version('room_chat.js') }}"></script>
-<script src="{{ url_for('static', filename='room_livekit.js') }}?v={{ asset_version('room_livekit.js') }}"></script>
-<script src="{{ url_for('static', filename='room_recording.js') }}?v={{ asset_version('room_recording.js') }}"></script>
-<script src="{{ url_for('static', filename='room_virtual_background.js') }}?v={{ asset_version('room_virtual_background.js') }}"></script>
-<script src="{{ url_for('static', filename='room_bootstrap.js') }}?v={{ asset_version('room_bootstrap.js') }}"></script>
+<script src="{{ url_for('static', filename='js/room/room_utils.js') }}?v={{ asset_version('js/room/room_utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/room/room_ui.js') }}?v={{ asset_version('js/room/room_ui.js') }}"></script>
+<script src="{{ url_for('static', filename='js/room/room_diagnostics.js') }}?v={{ asset_version('js/room/room_diagnostics.js') }}"></script>
+<script src="{{ url_for('static', filename='js/room/room_chat.js') }}?v={{ asset_version('js/room/room_chat.js') }}"></script>
+<script src="{{ url_for('static', filename='js/room/room_livekit.js') }}?v={{ asset_version('js/room/room_livekit.js') }}"></script>
+<script src="{{ url_for('static', filename='js/room/room_recording.js') }}?v={{ asset_version('js/room/room_recording.js') }}"></script>
+<script src="{{ url_for('static', filename='js/room/room_virtual_background.js') }}?v={{ asset_version('js/room/room_virtual_background.js') }}"></script>
+<script src="{{ url_for('static', filename='js/room/room_bootstrap.js') }}?v={{ asset_version('js/room/room_bootstrap.js') }}"></script>
 <script>
 const ROOM_ID = {{ room_id|tojson }};
 const ROOM_PASSWORD = {{ room_password|tojson }};

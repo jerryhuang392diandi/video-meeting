@@ -1,9 +1,9 @@
-{% extends 'base.html' %}
+{% extends 'pages/base.html' %}
 {% block title %}{{ t('login_title') }}{% endblock %}
 {% block shell_class %}auth-shell{% endblock %}
 {% block head %}
   {{ super() }}
-  <link rel="stylesheet" href="{{ url_for('static', filename='auth.css', v=asset_version('auth.css')) }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css', v=asset_version('css/auth.css')) }}" />
   {% if turnstile_enabled %}
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   {% endif %}
@@ -13,7 +13,7 @@
 {% set auth_brand_subtitle = t('subtitle') %}
 {% set auth_topbar_href = url_for('quickstart_page') %}
 {% set auth_topbar_label = t('quickstart_nav') %}
-{% include '_auth_topbar.html' %}
+{% include 'partials/_auth_topbar.html' %}
 
 <section class="hero-card auth-landing-card glass-highlight">
   <div class="landing-copy">
@@ -64,20 +64,20 @@
       {% set icon = '✉' %}
       {% set title = t('login_with_email_login') %}
       {% set subtitle = t('email_verification_code') %}
-      {% include '_auth_action_card.html' %}
+      {% include 'partials/_auth_action_card.html' %}
       {% endif %}
       {% if public_registration_enabled %}
       {% set href = url_for('register') %}
       {% set icon = '＋' %}
       {% set title = t('nav_register') %}
       {% set subtitle = t('register_title') %}
-      {% include '_auth_action_card.html' %}
+      {% include 'partials/_auth_action_card.html' %}
       {% endif %}
       {% set href = url_for('forgot_password_page') %}
       {% set icon = '?' %}
       {% set title = t('forgot_password') %}
       {% set subtitle = t('account_recovery') %}
-      {% include '_auth_action_card.html' %}
+      {% include 'partials/_auth_action_card.html' %}
     </div>
   </form>
 </section>

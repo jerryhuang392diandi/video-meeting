@@ -249,9 +249,10 @@ def _too_many_attempts_response(template_name: str, *, status_code: int = 429):
     elif template_name == "login_email_code.html":
         response = render_email_code_template(template_name, purpose="login", error=error)
     elif template_name == "admin_login.html":
-        response = render_template(template_name, error=error, admin_login_path=ADMIN_LOGIN_PATH)
+        response = render_template("pages/admin_login.html", error=error, admin_login_path=ADMIN_LOGIN_PATH)
     else:
-        response = render_template(template_name, error=error)
+        normalized_template = template_name if "/" in template_name else f"pages/{template_name}"
+        response = render_template(normalized_template, error=error)
     return response, status_code, {"Retry-After": "60"}
 
 
@@ -310,7 +311,8 @@ def build_email_code_flow_context(*, purpose: str, scope: str | None = None) -> 
 def render_email_code_template(template_name: str, *, purpose: str, scope: str | None = None, **context):
     merged = build_email_code_flow_context(purpose=purpose, scope=scope)
     merged.update(context)
-    return render_template(template_name, **merged)
+    normalized_template = template_name if '/' in template_name else f'pages/{template_name}'
+    return render_template(normalized_template, **merged)
 
 
 def build_email_code_sent_message(*, purpose: str, scope: str | None) -> str:
@@ -514,7 +516,7 @@ REGION_TIMEZONE_LABELS = {
     },
 }
 
-from translations import TRANSLATIONS
+from i18n.translations import TRANSLATIONS
 
 class User(UserMixin, db.Model):
     __tablename__ = "users"
@@ -1634,7 +1636,8 @@ def disconnect_user_sockets(user_id, exclude_sid=None, message=None):
     if not user_id:
         debug_log('SOCKET_KICK_SKIP', reason='empty_user_id', exclude_sid=exclude_sid)
         return
-    active_sids = list(user_active_sids.get(user_id, set()))
+    with runtime_state_lock:
+        active_sids = list(user_active_sids.get(user_id, set()))
     debug_log('SOCKET_KICK_BEGIN', user_id=user_id, exclude_sid=exclude_sid, active_sids=active_sids, message=message or t('kicked'))
     for sid in active_sids:
         if exclude_sid and sid == exclude_sid:
@@ -1658,20 +1661,26 @@ def remove_user_from_runtime_rooms(user_id, reason_message=None):
     if not user_id:
         debug_log('RUNTIME_REMOVE_SKIP', reason='empty_user_id')
         return
-    debug_log('RUNTIME_REMOVE_BEGIN', user_id=user_id, room_ids=list(rooms.keys()), reason_message=reason_message)
+    with runtime_state_lock:
+        room_ids_snapshot = list(rooms.keys())
+    debug_log('RUNTIME_REMOVE_BEGIN', user_id=user_id, room_ids=room_ids_snapshot, reason_message=reason_message)
     found_any = False
-    for room_id, room in list(rooms.items()):
+    with runtime_state_lock:
+        room_entries = list(rooms.items())
+    for room_id, room in room_entries:
         participant_sids = [sid for sid, info in list(room.get("participants", {}).items()) if info.get("user_id") == user_id]
         if not participant_sids:
             continue
         found_any = True
         debug_log('RUNTIME_REMOVE_ROOM_MATCH', user_id=user_id, room_id=room_id, participant_sids=participant_sids, participant_count_before=len(room.get('participants', {})))
         for sid in participant_sids:
-            participant_info = room.get("participants", {}).pop(sid, None)
+            with runtime_state_lock:
+                participant_info = room.get("participants", {}).pop(sid, None)
             debug_log('RUNTIME_REMOVE_POP', user_id=user_id, room_id=room_id, sid=sid, participant_info=participant_info)
-            if sid_to_user.get(sid):
-                sid_to_user.pop(sid, None)
-                debug_log('RUNTIME_REMOVE_SID_UNMAP', user_id=user_id, room_id=room_id, sid=sid)
+            with runtime_state_lock:
+                if sid_to_user.get(sid):
+                    sid_to_user.pop(sid, None)
+                    debug_log('RUNTIME_REMOVE_SID_UNMAP', user_id=user_id, room_id=room_id, sid=sid)
             unbind_user_socket(user_id, sid)
             try:
                 socketio.server.leave_room(sid, room_id, namespace='/')
@@ -1682,20 +1691,26 @@ def remove_user_from_runtime_rooms(user_id, reason_message=None):
             if participant:
                 debug_log('RUNTIME_REMOVE_PARTICIPANT_MARK_LEFT', user_id=user_id, room_id=room_id, sid=sid, participant_db_id=participant.id)
             if participant_info:
-                emit_participant_left(room_id, sid, participant_info, len(room.get("participants", {})))
+                with runtime_state_lock:
+                    participant_count_after = len(room.get("participants", {}))
+                emit_participant_left(room_id, sid, participant_info, participant_count_after)
                 broadcast_room_participant_snapshot(room_id)
-                debug_log('RUNTIME_REMOVE_BROADCAST', user_id=user_id, room_id=room_id, sid=sid, participant_count_after=len(room.get('participants', {})))
-        if user_id == room.get("host_user_id") and room.get("host_present"):
-            room["host_present"] = False
+                debug_log('RUNTIME_REMOVE_BROADCAST', user_id=user_id, room_id=room_id, sid=sid, participant_count_after=participant_count_after)
+        with runtime_state_lock:
+            host_present = bool(user_id == room.get("host_user_id") and room.get("host_present"))
+            if host_present:
+                room["host_present"] = False
+            room_empty = not room.get("participants")
+        if host_present:
             emit_host_presence_changed(room_id, False, reason_message or t("host_left_room"))
             debug_log('RUNTIME_REMOVE_HOST_LEFT', user_id=user_id, room_id=room_id)
-        if not room.get("participants"):
+        if room_empty:
             schedule_room_cleanup(room_id)
             debug_log('RUNTIME_REMOVE_SCHEDULE_CLEANUP', user_id=user_id, room_id=room_id)
     if not found_any:
-        debug_log('RUNTIME_REMOVE_NOT_FOUND', user_id=user_id, room_ids=list(rooms.keys()))
+        debug_log('RUNTIME_REMOVE_NOT_FOUND', user_id=user_id, room_ids=room_ids_snapshot)
     db.session.commit()
-    debug_log('RUNTIME_REMOVE_DONE', user_id=user_id, active_socket_count=len(sid_to_user), online_user_count=online_user_count())
+    debug_log('RUNTIME_REMOVE_DONE', user_id=user_id, active_socket_count=runtime_state_snapshot()["active_socket_count"], online_user_count=online_user_count())
 
 
 
@@ -1777,7 +1792,7 @@ def index():
     if not current_user.is_authenticated:
         return redirect(url_for("login"))
     db.session.refresh(current_user)
-    return render_template("index.html", preferred_display_name=preferred_display_name(current_user))
+    return render_template("pages/index.html", preferred_display_name=preferred_display_name(current_user))
 
 
 @app.route("/account", methods=["GET", "POST"])
@@ -1840,7 +1855,7 @@ def account_page():
     current_region = fresh_user.region or "Asia/Tokyo"
     current_lang = session.get("lang", "zh")
     return render_template(
-        "account.html",
+        "pages/account.html",
         user=fresh_user,
         message=message,
         error=error,
@@ -1900,7 +1915,7 @@ def forgot_password_page():
                     if user and user.email and user.email_verified:
                         turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
                         if not turnstile_ok:
-                            return render_template("forgot_password.html", message=message, error=turnstile_error), 403
+                            return render_template("pages/forgot_password.html", message=message, error=turnstile_error), 403
                         elif not re.fullmatch(r"\d{6}", email_code):
                             error = t("verification_code_required")
                         elif not new_password:
@@ -1927,7 +1942,7 @@ def forgot_password_page():
                         error = t("password_reset_email_unavailable")
             else:
                 error = t("password_reset_email_unavailable")
-    return render_template("forgot_password.html", message=message, error=error)
+    return render_template("pages/forgot_password.html", message=message, error=error)
 
 
 @app.route("/forgot-password-support", methods=["GET", "POST"])
@@ -1947,7 +1962,7 @@ def forgot_password_support_page():
             return response, status_code, headers
         turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
         if not turnstile_ok:
-            return render_template("forgot_password_support.html", message=message, error=turnstile_error), 403
+            return render_template("pages/forgot_password_support.html", message=message, error=turnstile_error), 403
         identifier = (request.form.get("identifier") or "").strip()[:255]
         contact = (request.form.get("contact") or "").strip()[:128]
         note = (request.form.get("note") or "").strip()[:500]
@@ -1956,22 +1971,22 @@ def forgot_password_support_page():
         else:
             create_password_reset_request(identifier, contact, note)
             message = t("password_reset_request_submitted")
-    return render_template("forgot_password_support.html", message=message, error=error)
+    return render_template("pages/forgot_password_support.html", message=message, error=error)
 
 
 @app.route("/help")
 def help_page():
-    return render_template("help.html")
+    return render_template("pages/help.html")
 
 
 @app.route("/quickstart")
 def quickstart_page():
-    return render_template("quickstart.html")
+    return render_template("pages/quickstart.html")
 
 
 @app.route("/support")
 def support_page():
-    return render_template("support.html")
+    return render_template("pages/support.html")
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -2074,7 +2089,7 @@ def register():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
-        return render_template("login.html")
+        return render_template("pages/login.html")
 
     identifier = (request.form.get("identifier") or "").strip()
     retry_after_ip = _consume_request_budget(
@@ -2098,17 +2113,17 @@ def login():
     password = (request.form.get("password") or "").strip()
     turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
     if not turnstile_ok:
-        return render_template("login.html", error=turnstile_error), 403
+        return render_template("pages/login.html", error=turnstile_error), 403
 
     user = find_user_by_identifier(identifier)
     if not user:
         validation_error = validate_login_target_user(user, identifier=identifier)
-        return render_template("login.html", error=validation_error)
+        return render_template("pages/login.html", error=validation_error)
     if not user.check_password(password):
-        return render_template("login.html", error=t("invalid_login"))
+        return render_template("pages/login.html", error=t("invalid_login"))
     validation_error = validate_login_target_user(user, identifier=identifier)
     if validation_error:
-        return render_template("login.html", error=validation_error)
+        return render_template("pages/login.html", error=validation_error)
 
     finalize_authenticated_session(user)
     return redirect(url_for("index"))
@@ -2120,7 +2135,7 @@ def admin_login():
     if current_user.is_authenticated and current_user.is_admin:
         return redirect(url_for("admin_dashboard"))
     if request.method == "GET":
-        return render_template("admin_login.html", admin_login_path=ADMIN_LOGIN_PATH)
+        return render_template("pages/admin_login.html", admin_login_path=ADMIN_LOGIN_PATH)
 
     identifier = (request.form.get("identifier") or "").strip()
     retry_after_ip = _consume_request_budget("admin_login_ip", _client_address(), LOGIN_RATE_LIMIT_PER_IP, LOGIN_RATE_LIMIT_WINDOW_SECONDS)
@@ -2134,14 +2149,14 @@ def admin_login():
     password = (request.form.get("password") or "").strip()
     turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
     if not turnstile_ok:
-        return render_template("admin_login.html", error=turnstile_error, admin_login_path=ADMIN_LOGIN_PATH), 403
+        return render_template("pages/admin_login.html", error=turnstile_error, admin_login_path=ADMIN_LOGIN_PATH), 403
 
     user = find_admin_by_identifier(identifier)
     if not user or not user.check_password(password):
-        return render_template("admin_login.html", error=t("invalid_admin_login"), admin_login_path=ADMIN_LOGIN_PATH)
+        return render_template("pages/admin_login.html", error=t("invalid_admin_login"), admin_login_path=ADMIN_LOGIN_PATH)
     validation_error = validate_login_target_user(user, require_admin=True)
     if validation_error:
-        return render_template("admin_login.html", error=validation_error, admin_login_path=ADMIN_LOGIN_PATH)
+        return render_template("pages/admin_login.html", error=validation_error, admin_login_path=ADMIN_LOGIN_PATH)
 
     finalize_authenticated_session(user)
     return redirect(url_for("admin_dashboard"))
@@ -2285,7 +2300,7 @@ def api_join_room():
 def room_page(room_id):
     if not livekit_enabled():
         return render_template(
-            "404.html",
+            "pages/404.html",
             error_title="503",
             error_message="LiveKit is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.",
         ), 503
@@ -2300,7 +2315,7 @@ def room_page(room_id):
     rtc_mode = get_rtc_mode()
     db.session.refresh(current_user)
     return render_template(
-        "room.html",
+        "pages/room.html",
         room_id=room_id,
         room_password=room_password,
         invite_url=invite_url,
@@ -2390,7 +2405,7 @@ def api_livekit_token():
 @login_required
 def history():
     meetings = build_history_meetings_for_user(current_user.id)
-    return render_template("history.html", meetings=meetings)
+    return render_template("pages/history.html", meetings=meetings)
 
 
 @app.post("/api/remux-recording")
@@ -2485,7 +2500,7 @@ def admin_dashboard():
             for rid, info in rooms.items()
         ]
     return render_template(
-        "admin.html",
+        "pages/admin.html",
         users=users,
         meetings=meetings,
         active_meetings=active_meetings,
@@ -2501,7 +2516,8 @@ def admin_dashboard():
 @admin_required
 def admin_kick_user(user_id):
     user = User.query.get_or_404(user_id)
-    debug_log('ADMIN_KICK_ENTER', requested_user_id=user_id, found_user_id=user.id if user else None, username=user.username if user else None, is_admin=user.is_admin if user else None, user_active_sids=list(user_active_sids.get(user_id, set())), rooms={rid: {'participant_user_ids': [info.get('user_id') for info in info_map.get('participants', {}).values()], 'participant_sids': list(info_map.get('participants', {}).keys())} for rid, info_map in rooms.items()})
+    snapshot = runtime_state_snapshot()
+    debug_log('ADMIN_KICK_ENTER', requested_user_id=user_id, found_user_id=user.id if user else None, username=user.username if user else None, is_admin=user.is_admin if user else None, user_active_sids=snapshot["user_sid_counts"].get(user_id, 0), rooms=snapshot["room_participant_counts"])
     if user.is_admin:
         debug_log('ADMIN_KICK_ABORT', requested_user_id=user_id, reason='target_is_admin')
         return redirect(url_for("admin_dashboard"))
@@ -2511,7 +2527,8 @@ def admin_kick_user(user_id):
     debug_log('ADMIN_KICK_SESSION_VERSION_BUMP', user_id=user.id, session_version=user.session_version)
     remove_user_from_runtime_rooms(user.id, reason_message=kick_message)
     disconnect_user_sockets(user.id, message=kick_message)
-    debug_log('ADMIN_KICK_DONE', user_id=user.id, remaining_sids=list(user_active_sids.get(user.id, set())), rooms={rid: {'participant_user_ids': [info.get('user_id') for info in info_map.get('participants', {}).values()], 'participant_sids': list(info_map.get('participants', {}).keys())} for rid, info_map in rooms.items()})
+    snapshot = runtime_state_snapshot()
+    debug_log('ADMIN_KICK_DONE', user_id=user.id, remaining_sids=snapshot["user_sid_counts"].get(user.id, 0), rooms=snapshot["room_participant_counts"])
     notify_admin_dangerous_action("kick user", {"Target username": user.username, "Target user ID": user.id})
     return redirect(url_for("admin_dashboard"))
 
@@ -2689,12 +2706,12 @@ def admin_update_reset_request(request_id, status):
 
 @app.errorhandler(404)
 def not_found(_):
-    return render_template("404.html"), 404
+    return render_template("pages/404.html"), 404
 
 
 @app.errorhandler(403)
 def forbidden(_):
-    return render_template("404.html", error_title="403", error_message="Forbidden"), 403
+    return render_template("pages/404.html", error_title="403", error_message="Forbidden"), 403
 
 
 @socketio.on("connect")
@@ -2767,7 +2784,8 @@ def on_join_room(data):
         # socket is no longer active. Active sibling sessions keep ownership.
         reconcile_rejoining_active_sharer(room_id, room, current_user.id)
 
-        debug_log('SOCKET_JOIN_ROOM_REGISTERED', sid=sid, room_id=room_id, user_id=current_user.id, room_participants=list(room['participants'].keys()), user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids}, sid_to_user_entry=sid_to_user.get(sid))
+        snapshot = runtime_state_snapshot()
+        debug_log('SOCKET_JOIN_ROOM_REGISTERED', sid=sid, room_id=room_id, user_id=current_user.id, room_participants=list(room['participants'].keys()), user_active_sids=snapshot["user_sid_counts"], sid_to_user_entry=sid_to_user.get(sid))
         is_room_host = bool(current_user.id == room.get("host_user_id"))
         visible_chat_history = visible_chat_history_for_user(room, current_user.id, sid, is_room_host=is_room_host)
         join_payload = {
@@ -3017,13 +3035,14 @@ def _inline_content_disposition(filename: str) -> str:
 
 
 def _find_attachment_by_token(room_id: str, token: str):
-    room = rooms.get(room_id)
-    if not room:
-        return None, None
-    for item in room.get("chat_history", []):
-        attachment = item.get("attachment") if isinstance(item, dict) else None
-        if isinstance(attachment, dict) and attachment.get("token") == token:
-            return room, attachment
+    with runtime_state_lock:
+        room = rooms.get(room_id)
+        if not room:
+            return None, None
+        for item in room.get("chat_history", []):
+            attachment = item.get("attachment") if isinstance(item, dict) else None
+            if isinstance(attachment, dict) and attachment.get("token") == token:
+                return room, attachment
     return room, None
 
 
@@ -3107,7 +3126,8 @@ def _api_chat_upload_impl(upload_mode: str = "any"):
         permission = _normalize_upload_permission(request.form.get("permission"))
         if not is_valid_room_id(room_id):
             return jsonify({"ok": False, "error": "room_not_found"}), 404
-        room = rooms.get(room_id)
+        with runtime_state_lock:
+            room = rooms.get(room_id)
         if not room:
             return jsonify({"ok": False, "error": "room_not_found"}), 404
         if not can_user_access_room(room, current_user.id):
@@ -3199,7 +3219,7 @@ def chat_attachment_view(room_id, token):
     filename = attachment.get("name") or f"file-{token}"
     inline_previewable = _attachment_is_inline_previewable(attachment)
     return render_template(
-        "attachment_view.html",
+        "pages/attachment_view.html",
         attachment=attachment,
         room_id=room_id,
         filename=filename,
@@ -3284,13 +3304,6 @@ def api_translate_to_english():
 @socketio.on("meeting_chat_send")
 def on_meeting_chat_send(data):
     sid = request.sid
-    info = sid_to_user.get(sid)
-    if not info:
-        return
-    room_id = info["room_id"]
-    room = rooms.get(room_id)
-    if not room:
-        return
     payload = data or {}
     message = (payload.get("message") or "").strip()[:1000]
     attachment = payload.get("attachment") or None
@@ -3319,27 +3332,38 @@ def on_meeting_chat_send(data):
     mentions = [str(x)[:64] for x in mentions[:12]]
     if not message and not attachment:
         return
-    event = {
-        "id": secrets.token_hex(8),
-        "seq": len(room.get("chat_history", [])),
-        "from": sid,
-        "senderUserId": info.get("user_id"),
-        "senderName": room["participants"].get(sid, {}).get("name") or info.get("name") or "Guest",
-        "message": message,
-        "mode": "host" if mode == "host" else "all",
-        "mentions": mentions,
-        "attachment": attachment,
-        "createdAt": datetime.utcnow().strftime("%H:%M:%S"),
-        "withdrawn": False,
-    }
-    room.setdefault("chat_history", []).append(event)
-    if len(room["chat_history"]) > 200:
-        room["chat_history"] = room["chat_history"][-200:]
+    with runtime_state_lock:
+        info = sid_to_user.get(sid)
+        if not info:
+            return
+        room_id = info["room_id"]
+        room = rooms.get(room_id)
+        if not room:
+            return
+        event = {
+            "id": secrets.token_hex(8),
+            "seq": len(room.get("chat_history", [])),
+            "from": sid,
+            "senderUserId": info.get("user_id"),
+            "senderName": room["participants"].get(sid, {}).get("name") or info.get("name") or "Guest",
+            "message": message,
+            "mode": "host" if mode == "host" else "all",
+            "mentions": mentions,
+            "attachment": attachment,
+            "createdAt": datetime.utcnow().strftime("%H:%M:%S"),
+            "withdrawn": False,
+        }
+        room.setdefault("chat_history", []).append(event)
+        if len(room["chat_history"]) > 200:
+            room["chat_history"] = room["chat_history"][-200:]
+        if event["mode"] == "host":
+            target_sids = {sid}
+            for participant_sid, participant_info in room.get("participants", {}).items():
+                if participant_info.get("user_id") == room.get("host_user_id"):
+                    target_sids.add(participant_sid)
+        else:
+            target_sids = None
     if event["mode"] == "host":
-        target_sids = {sid}
-        for participant_sid, participant_info in room.get("participants", {}).items():
-            if participant_info.get("user_id") == room.get("host_user_id"):
-                target_sids.add(participant_sid)
         for target_sid in target_sids:
             socketio.emit("meeting_chat_message", event, to=target_sid)
     else:
@@ -3351,65 +3375,79 @@ def on_meeting_chat_send(data):
 @socketio.on("meeting_chat_clear")
 def on_meeting_chat_clear():
     sid = request.sid
-    info = sid_to_user.get(sid)
-    if not info:
-        return
-    room = rooms.get(info["room_id"])
-    if not room:
-        return
-    is_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
+    with runtime_state_lock:
+        info = sid_to_user.get(sid)
+        if not info:
+            return
+        room_id = info["room_id"]
+        room = rooms.get(room_id)
+        if not room:
+            return
+        is_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
+        clear_marker = len(room.get("chat_history", []))
+        if is_host:
+            room["chat_history"] = []
+            room["chat_clear_markers"] = {}
+        else:
+            room.setdefault("chat_clear_markers", {})[room_user_marker_key(info.get("user_id"), sid)] = clear_marker
     if is_host:
-        room["chat_history"] = []
-        room["chat_clear_markers"] = {}
-        shutil.rmtree(os.path.join(CHAT_UPLOAD_DIR, info["room_id"]), ignore_errors=True)
-        socketio.emit("meeting_chat_cleared", {"by": sid, "scope": "all"}, room=info["room_id"])
+        shutil.rmtree(os.path.join(CHAT_UPLOAD_DIR, room_id), ignore_errors=True)
+        socketio.emit("meeting_chat_cleared", {"by": sid, "scope": "all"}, room=room_id)
     else:
-        room.setdefault("chat_clear_markers", {})[room_user_marker_key(info.get("user_id"), sid)] = len(room.get("chat_history", []))
         socketio.emit("meeting_chat_cleared", {"by": sid, "scope": "self"}, to=sid)
 
 
 @socketio.on("meeting_chat_retract")
 def on_meeting_chat_retract(data):
     sid = request.sid
-    info = sid_to_user.get(sid)
-    if not info:
-        return
-    room = rooms.get(info["room_id"])
-    if not room:
-        return
     message_id = str((data or {}).get("id") or "")[:32]
     if not message_id:
         return
-    is_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
-    for item in room.get("chat_history", []):
-        if item.get("id") != message_id:
-            continue
-        if item.get("senderUserId") != info.get("user_id") and item.get("from") != sid and not is_host:
+    with runtime_state_lock:
+        info = sid_to_user.get(sid)
+        if not info:
             return
-        item["withdrawn"] = True
-        item["message"] = ""
-        item["mentions"] = []
-        item["attachment"] = None
-        socketio.emit(
-            "meeting_chat_retracted",
-            {"id": message_id, "senderName": item.get("senderName") or "Guest"},
-            room=info["room_id"],
-        )
-        return
+        room = rooms.get(info["room_id"])
+        if not room:
+            return
+        is_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
+        sender_name = None
+        for item in room.get("chat_history", []):
+            if item.get("id") != message_id:
+                continue
+            if item.get("senderUserId") != info.get("user_id") and item.get("from") != sid and not is_host:
+                return
+            item["withdrawn"] = True
+            item["message"] = ""
+            item["mentions"] = []
+            item["attachment"] = None
+            sender_name = item.get("senderName") or "Guest"
+            break
+        if sender_name is None:
+            return
+    socketio.emit(
+        "meeting_chat_retracted",
+        {"id": message_id, "senderName": sender_name},
+        room=info["room_id"],
+    )
+    return
+
 @socketio.on("toggle_danmaku")
 def on_toggle_danmaku(data):
     sid = request.sid
-    info = sid_to_user.get(sid)
-    if not info:
-        return
-    room_id = info["room_id"]
-    room = rooms.get(room_id)
+    with runtime_state_lock:
+        info = sid_to_user.get(sid)
+        if not info:
+            return
+        room_id = info["room_id"]
+        room = rooms.get(room_id)
     meeting = Meeting.query.filter_by(room_id=room_id).first()
     if not room or not meeting or not current_user.is_authenticated or current_user.id != meeting.host_user_id:
         emit("host_action_error", {"message": t("host_only_action")})
         return
     enabled = bool((data or {}).get("enabled"))
-    room["danmaku_enabled"] = enabled
+    with runtime_state_lock:
+        room["danmaku_enabled"] = enabled
     socketio.emit("room_ui_event", {"type": "danmaku_toggled", "enabled": enabled, "from": sid}, room=room_id)
 
 
@@ -3457,7 +3495,8 @@ def on_room_ui_event(data):
 @socketio.on("host_end_meeting")
 def on_host_end_meeting(data=None):
     sid = request.sid
-    info = sid_to_user.get(sid)
+    with runtime_state_lock:
+        info = sid_to_user.get(sid)
     if not info:
         emit("host_action_error", {"message": t("failed")})
         return
@@ -3483,7 +3522,9 @@ def on_leave_room(*_args):
         if isinstance(maybe_payload, dict):
             explicit_leave = bool(maybe_payload.get("explicit"))
     sid = request.sid
-    debug_log('SOCKET_LEAVE_BEGIN', sid=sid, sid_info=sid_to_user.get(sid), current_user_id=getattr(current_user, "id", None))
+    with runtime_state_lock:
+        sid_info_snapshot = sid_to_user.get(sid)
+    debug_log('SOCKET_LEAVE_BEGIN', sid=sid, sid_info=sid_info_snapshot, current_user_id=getattr(current_user, "id", None))
     with runtime_state_lock:
         info = sid_to_user.pop(sid, None)
         if not info:
@@ -3517,14 +3558,17 @@ def on_leave_room(*_args):
         broadcast_room_participant_snapshot(room_id)
         if host_left:
             emit_host_presence_changed(room_id, False, t("host_left_room"))
-        debug_log('SOCKET_LEAVE_DONE', sid=sid, room_id=room_id, remaining_participants=list(room.get("participants", {}).keys()), user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids})
+        snapshot = runtime_state_snapshot()
+        debug_log('SOCKET_LEAVE_DONE', sid=sid, room_id=room_id, remaining_participants=list(room.get("participants", {}).keys()), user_active_sids=snapshot["user_sid_counts"])
         if should_schedule_cleanup:
             schedule_room_cleanup(room_id)
 
 
 @socketio.on("disconnect")
 def on_disconnect():
-    debug_log('SOCKET_DISCONNECT', sid=request.sid, sid_info=sid_to_user.get(request.sid), current_user_id=getattr(current_user, "id", None))
+    with runtime_state_lock:
+        sid_info_snapshot = sid_to_user.get(request.sid)
+    debug_log('SOCKET_DISCONNECT', sid=request.sid, sid_info=sid_info_snapshot, current_user_id=getattr(current_user, "id", None))
     on_leave_room()
 
 

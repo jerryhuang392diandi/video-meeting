@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'pages/base.html' %}
 {% block title %}{{ t('account_preferences') }}{% endblock %}
 {% block content %}
 <header class="topbar compact">
@@ -7,7 +7,7 @@
     <div class="muted">{{ t('manage_account_desc') }}</div>
   </div>
   <div class="top-actions">
-    {% include '_language_switch.html' %}
+    {% include 'partials/_language_switch.html' %}
     <a class="chip" href="{{ url_for('index') }}">{{ t('back_home') }}</a>
   </div>
 </header>

@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'pages/base.html' %}
 {% block title %}{{ t('admin_dashboard') }}{% endblock %}
 {% block content %}
 <header class="topbar compact">
@@ -7,7 +7,7 @@
     <div class="muted">{{ t('root_admin_console') }} · {{ t('time_display_timezone') }}: {{ display_timezone_label }} ({{ display_timezone }})</div>
   </div>
   <div class="top-actions">
-    {% include '_language_switch.html' %}
+    {% include 'partials/_language_switch.html' %}
     <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
     <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
   </div>
@@ -89,7 +89,7 @@
         <label class="chip" style="cursor:pointer;">
           <input type="checkbox" id="selectAllActiveMeetings" style="margin-right: 6px;">{{ t('select_all') }}
         </label>
-        <button class="ghost-btn danger" type="submit">{{ t('batch_end_meetings') }}</button>
+        <button class="ghost-btn danger" type="submit" data-bulk-submit="1">{{ t('batch_end_meetings') }}</button>
       </div>
       {% for m in active_meetings %}
       <div class="list-item stacked">
@@ -99,7 +99,7 @@
             <span class="item-title">{{ m.room_id }} · {{ m.host_name }}</span>
           </label>
           <div class="row-compact wrap-actions">
-            <form method="post" action="{{ url_for('admin_end_meeting', meeting_id=m.id) }}"><button class="ghost-btn danger" type="submit">{{ t('end_meeting') }}</button></form>
+            <button class="ghost-btn danger" type="submit" formaction="{{ url_for('admin_end_meeting', meeting_id=m.id) }}" formmethod="post">{{ t('end_meeting') }}</button>
             <button class="ghost-btn danger" type="submit" formaction="{{ url_for('admin_delete_meeting', meeting_id=m.id) }}" formmethod="post">{{ t('delete_record') }}</button>
           </div>
         </div>
@@ -139,7 +139,7 @@
       <label class="chip" style="cursor:pointer;">
         <input type="checkbox" id="selectAllMeetings" style="margin-right: 6px;">{{ t('select_all') }}
       </label>
-      <button class="ghost-btn danger" type="submit">{{ t('batch_delete') }}</button>
+      <button class="ghost-btn danger" type="submit" data-bulk-submit="1">{{ t('batch_delete') }}</button>
     </div>
 
     {% for m in history_meetings %}
@@ -226,6 +226,10 @@
 
       if (form) {
         form.addEventListener('submit', function (event) {
+          const submitter = event.submitter;
+          if (submitter?.dataset?.bulkSubmit !== '1') {
+            return;
+          }
           const checkedCount = checkboxes.filter(item => item.checked).length;
           if (!checkedCount) {
             event.preventDefault();

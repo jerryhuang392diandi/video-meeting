@@ -1,10 +1,10 @@
-{% extends 'base.html' %}
+{% extends 'pages/base.html' %}
 {% block title %}{{ error_title or '404' }}{% endblock %}
 {% block content %}
 <header class="topbar compact">
   <div></div>
   <div class="top-actions">
-    {% include '_language_switch.html' %}
+    {% include 'partials/_language_switch.html' %}
   </div>
 </header>
 <section class="panel centered narrow-panel panel-glow">

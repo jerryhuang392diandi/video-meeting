@@ -12,8 +12,8 @@
 | --- | --- | --- |
 | 业务层 | `app.py` / Flask / SQLAlchemy | 用户、会议、参会记录、密码重置、附件记录 |
 | 房间状态层 | Socket.IO + 后端内存结构 | 在线成员、主持人操作、聊天广播、共享焦点 |
-| 媒体层 | LiveKit + `static/room_livekit.js` | 摄像头、麦克风、屏幕共享、远端轨道 |
-| 展示层 | templates + `static/room_ui.js` | 卡片布局、焦点视图、按钮状态、诊断面板 |
+| 媒体层 | LiveKit + `static/js/room/room_livekit.js` | 摄像头、麦克风、屏幕共享、远端轨道 |
+| 展示层 | `templates/pages/` + `static/js/room/room_ui.js` | 卡片布局、焦点视图、按钮状态、诊断面板 |
 
 关键事实：
 
@@ -45,7 +45,7 @@
 
 ## 房间逻辑改动检查清单
 
-改动 `app.py`、`templates/_room_scripts.html`、`static/room_livekit.js`、`static/room_ui.js` 时，至少检查这些入口是否会改同一份状态：
+改动 `app.py`、`templates/partials/_room_scripts.html`、`static/js/room/room_livekit.js`、`static/js/room/room_ui.js` 时，至少检查这些入口是否会改同一份状态：
 
 - 首次进入房间
 - Socket.IO `join_ok`
@@ -120,7 +120,7 @@
 
 ## 重构关联
 
-当前代码巡检的具体拆分建议单独记录在 [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md)。稳定性优先级高于文件拆分本身：先保证房间状态、屏幕共享和 LiveKit 媒体生命周期一致，再逐步拆分 `templates/_room_scripts.html` 和 `app.py`。
+当前代码巡检的具体拆分建议单独记录在 [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md)。稳定性优先级高于文件拆分本身：先保证房间状态、屏幕共享和 LiveKit 媒体生命周期一致，再逐步拆分 `templates/partials/_room_scripts.html` 和 `app.py`。
 
 ## 不要误判
 
@@ -146,8 +146,8 @@ The project has moved to a layered `Flask + Socket.IO + LiveKit SFU` architectur
 | --- | --- | --- |
 | Business layer | `app.py` / Flask / SQLAlchemy | Users, meetings, participation records, password resets, attachment records |
 | Room state layer | Socket.IO + backend memory structures | Online members, host actions, chat broadcast, shared focus |
-| Media layer | LiveKit + `static/room_livekit.js` | Camera, microphone, screen share, remote tracks |
-| Presentation layer | templates + `static/room_ui.js` | Card layout, focus view, button state, diagnostic panel |
+| Media layer | LiveKit + `static/js/room/room_livekit.js` | Camera, microphone, screen share, remote tracks |
+| Presentation layer | `templates/pages/` + `static/js/room/room_ui.js` | Card layout, focus view, button state, diagnostic panel |
 
 Key facts:
 
@@ -178,7 +178,7 @@ Key facts:
 
 ## Room Logic Change Checklist
 
-When changing `app.py`, `templates/_room_scripts.html`, `static/room_livekit.js`, or `static/room_ui.js`, check whether these entry points mutate the same state:
+When changing `app.py`, `templates/partials/_room_scripts.html`, `static/js/room/room_livekit.js`, or `static/js/room/room_ui.js`, check whether these entry points mutate the same state:
 
 - First room entry
 - Socket.IO `join_ok`
@@ -252,7 +252,7 @@ Long term:
 
 ## Refactor Link
 
-Concrete split recommendations from the current code audit are tracked in [REFACTOR_AUDIT.md#refactor-audit](REFACTOR_AUDIT.md#refactor-audit). Stability has higher priority than file splitting itself: keep room state, screen sharing, and LiveKit media lifecycle consistent first, then gradually split `templates/_room_scripts.html` and `app.py`.
+Concrete split recommendations from the current code audit are tracked in [REFACTOR_AUDIT.md#refactor-audit](REFACTOR_AUDIT.md#refactor-audit). Stability has higher priority than file splitting itself: keep room state, screen sharing, and LiveKit media lifecycle consistent first, then gradually split `templates/partials/_room_scripts.html` and `app.py`.
 
 ## Avoid Wrong Conclusions
 

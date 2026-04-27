@@ -56,18 +56,18 @@
 
 当前界面按中英文双语维护：
 
-- `translations.py` 同时包含 `zh` 和 `en` 两套翻译表，当前两边 key 数一致。
+- `i18n/translations.py` 同时包含 `zh` 和 `en` 两套翻译表，根目录 `translations.py` 仅保留兼容导出。
 - 模板优先使用 `t('key')`，少量运行时提示使用 `lang == 'zh'` 的中英文分支。
-- `python check_i18n.py` 当前可通过，用来检查模板里遗漏的硬编码中文。
+- `python check_i18n.py` 当前可通过，根目录包装器会转到 `scripts/check_i18n.py`。
 - `/set-language/<lang>`、页面右上角语言切换、`/account` 默认语言偏好和会话语言会共同决定页面语言。
 
 移动端和桌面端都已有独立适配，不是单纯缩放桌面页面：
 
 - 首页在移动端显示“扫码入会”，通过浏览器 `BarcodeDetector` 和后置摄像头扫描会议二维码；桌面端保留会议号、密码、复制邀请链接等主流程。
 - 房间页使用 `viewport-fit=cover`，桌面端是会议网格 + 右侧聊天栏；移动端聊天会重排为可拖动/可滚动的底部区域，避免遮挡视频和发送按钮。
-- `static/room_livekit.js` 根据 `matchMedia('(max-width: 768px)')` 和移动设备 UA 选择更保守的摄像头、麦克风和屏幕共享发布参数，降低手机发热、耗电和弱网压力。
-- `templates/_room_scripts.html` 对移动端全屏、iOS Safari 原生视频全屏、横屏锁定、触摸播放恢复和共享屏幕观看做了单独处理。
-- `static/style.css` 和 `static/room.css` 保留桌面分页网格、桌面聊天栏、移动端聊天底部面板、移动端屏幕共享全屏等规则。
+- `static/js/room/room_livekit.js` 根据 `matchMedia('(max-width: 768px)')` 和移动设备 UA 选择更保守的摄像头、麦克风和屏幕共享发布参数，降低手机发热、耗电和弱网压力。
+- `templates/partials/_room_scripts.html` 对移动端全屏、iOS Safari 原生视频全屏、横屏锁定、触摸播放恢复和共享屏幕观看做了单独处理。
+- `static/css/style.css` 和 `static/css/room.css` 保留桌面分页网格、桌面聊天栏、移动端聊天底部面板、移动端屏幕共享全屏等规则。
 
 提交前建议同时验证：中文和英文页面、桌面浏览器和手机浏览器、同一账号双设备、手机扫码入会、移动端观看远端屏幕共享。
 
@@ -76,10 +76,15 @@
 ```text
 .
 ├── app.py                    # Flask 路由、Socket.IO 事件、模型、运行配置
-├── templates/                # Jinja2 页面模板
-├── static/                   # 房间 JS、样式和前端资源
-├── translations.py           # 中英文翻译表
-├── check_i18n.py             # 模板硬编码中文检查
+├── templates/pages/          # 页面模板
+├── templates/partials/       # 可复用的页面片段
+├── static/css/               # 通用和房间样式
+├── static/js/auth/           # 登录、注册、找回密码脚本
+├── static/js/room/           # 会议页脚本
+├── i18n/translations.py      # 中英文翻译表
+├── scripts/check_i18n.py    # 模板硬编码中文检查
+├── translations.py          # 兼容导出入口
+├── check_i18n.py            # 兼容执行入口
 ├── requirements.txt          # Python 依赖
 ├── docs/                     # 部署、稳定性、答辩等文档
 └── instance/                 # 运行时目录，生成后不纳入版本管理
@@ -87,11 +92,11 @@
 
 房间相关前端文件分工：
 
-- `static/room_livekit.js`: LiveKit 连接、本地媒体发布、远端轨道处理
-- `static/room_ui.js`: 参会者卡片、布局、焦点和屏幕共享视图
-- `static/room_chat.js`: 聊天消息和附件渲染
-- `static/room_diagnostics.js`: RTC/LiveKit 诊断摘要
-- `static/room_utils.js`: 共享工具函数
+- `static/js/room/room_livekit.js`: LiveKit 连接、本地媒体发布、远端轨道处理
+- `static/js/room/room_ui.js`: 参会者卡片、布局、焦点和屏幕共享视图
+- `static/js/room/room_chat.js`: 聊天消息和附件渲染
+- `static/js/room/room_diagnostics.js`: RTC/LiveKit 诊断摘要
+- `static/js/room/room_utils.js`: 共享工具函数
 
 ## 快速开始
 
@@ -532,18 +537,18 @@ Time display rules:
 
 The UI is maintained in both Chinese and English:
 
-- `translations.py` contains both `zh` and `en` translation tables, and the two key sets currently match.
+- `i18n/translations.py` contains both `zh` and `en` translation tables, and the root `translations.py` file is only a compatibility export.
 - Templates prefer `t('key')`; a small number of runtime prompts use explicit `lang == 'zh'` Chinese/English branches.
-- `python check_i18n.py` currently passes and checks templates for missed hardcoded Chinese text.
+- `python check_i18n.py` currently passes; the root wrapper forwards to `scripts/check_i18n.py`.
 - `/set-language/<lang>`, the page language switch, `/account` language preference, and session language together control the rendered language.
 
 Mobile and desktop have separate adaptations instead of only scaling the desktop page:
 
 - The home page shows mobile QR join on phones through browser `BarcodeDetector` and the rear camera; desktop keeps room ID, password, and invite-link workflows.
 - The room page uses `viewport-fit=cover`. Desktop uses the meeting grid plus a right chat column; mobile reflows chat into a draggable/scrollable bottom area so it does not cover video or the send button.
-- `static/room_livekit.js` uses `matchMedia('(max-width: 768px)')` and mobile user-agent detection to choose more conservative camera, microphone, and screen-share publish settings for heat, battery, and weak networks.
-- `templates/_room_scripts.html` has separate handling for mobile fullscreen, iOS Safari native video fullscreen, landscape orientation lock, touch playback recovery, and screen-share viewing.
-- `static/style.css` and `static/room.css` keep rules for desktop paged grids, desktop chat column, mobile chat bottom panel, and mobile screen-share fullscreen.
+- `static/js/room/room_livekit.js` uses `matchMedia('(max-width: 768px)')` and mobile user-agent detection to choose more conservative camera, microphone, and screen-share publish settings for heat, battery, and weak networks.
+- `templates/partials/_room_scripts.html` has separate handling for mobile fullscreen, iOS Safari native video fullscreen, landscape orientation lock, touch playback recovery, and screen-share viewing.
+- `static/css/style.css` and `static/css/room.css` keep rules for desktop paged grids, desktop chat column, mobile chat bottom panel, and mobile screen-share fullscreen.
 
 Before submitting, verify Chinese and English pages, desktop and phone browsers, same-account two-device join, mobile QR join, and mobile viewing of remote screen share.
 
@@ -553,9 +558,15 @@ Before submitting, verify Chinese and English pages, desktop and phone browsers,
 .
 ├── app.py                    # Flask routes, Socket.IO events, models, runtime config
 ├── templates/                # Jinja2 page templates
-├── static/                   # Room JS, styles, frontend assets
-├── translations.py           # Chinese/English translation table
-├── check_i18n.py             # Hardcoded Chinese checker for templates
+│   ├── pages/                # Jinja2 page templates
+│   └── partials/             # Shared page fragments
+├── static/css/               # Shared page and room styles
+├── static/js/auth/           # Auth flow scripts
+├── static/js/room/           # Meeting page scripts
+├── i18n/translations.py      # Chinese/English translation table
+├── scripts/check_i18n.py     # Hardcoded Chinese checker for templates
+├── translations.py           # Compatibility export
+├── check_i18n.py             # Compatibility entry point
 ├── requirements.txt          # Python dependencies
 ├── docs/                     # Deployment, stability, and presentation docs
 └── instance/                 # Runtime directory, generated and ignored
@@ -563,11 +574,11 @@ Before submitting, verify Chinese and English pages, desktop and phone browsers,
 
 Room frontend files:
 
-- `static/room_livekit.js`: LiveKit connection, local publishing, remote track handling
-- `static/room_ui.js`: participant cards, layout, focus state, screen share view
-- `static/room_chat.js`: chat messages and attachment rendering
-- `static/room_diagnostics.js`: RTC/LiveKit diagnostic summary
-- `static/room_utils.js`: shared helpers
+- `static/js/room/room_livekit.js`: LiveKit connection, local publishing, remote track handling
+- `static/js/room/room_ui.js`: participant cards, layout, focus state, screen share view
+- `static/js/room/room_chat.js`: chat messages and attachment rendering
+- `static/js/room/room_diagnostics.js`: RTC/LiveKit diagnostic summary
+- `static/js/room/room_utils.js`: shared helpers
 
 ## Quick Start
 

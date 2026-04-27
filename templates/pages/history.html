@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'pages/base.html' %}
 {% block title %}{{ t('meeting_history') }}{% endblock %}
 {% block content %}
 <header class="topbar compact">
@@ -7,7 +7,7 @@
     <div class="muted">{{ t('meeting_duration_limit') }} · {{ t('time_display_timezone') }}: {{ display_timezone_label }} ({{ display_timezone }})</div>
   </div>
   <div class="top-actions">
-    {% include '_language_switch.html' %}
+    {% include 'partials/_language_switch.html' %}
     <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
     <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
   </div>

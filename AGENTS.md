@@ -4,10 +4,13 @@
 This project is now a `Flask + Flask-SocketIO + LiveKit` online meeting app with a mostly monolithic backend in `app.py`. Keep feature changes grouped by concern inside that file, such as auth, room lifecycle, chat upload, recording, and admin management.
 
 - `app.py`: routes, REST APIs, Socket.IO events, SQLAlchemy models, runtime config, LiveKit token handling.
-- `templates/`: Jinja2 pages and room partials, especially `_room_layout.html` and `_room_scripts.html`.
-- `static/`: room frontend logic (`room_livekit.js`, `room_ui.js`, `room_chat.js`, `room_diagnostics.js`, `room_utils.js`) and shared styles.
-- `translations.py`: Chinese/English translation keys used by `t(...)` in templates and backend.
-- `check_i18n.py`: lightweight i18n consistency checker for hardcoded Chinese in templates.
+- `templates/pages/`: page templates for login, home, room, admin, history, and account screens.
+- `templates/partials/`: shared fragments, especially `_room_layout.html`, `_room_scripts.html`, `_auth_topbar.html`, and `_language_switch.html`.
+- `static/css/`: shared page and room styles.
+- `static/js/auth/`: auth flow scripts.
+- `static/js/room/`: room frontend logic (`room_livekit.js`, `room_ui.js`, `room_chat.js`, `room_diagnostics.js`, `room_utils.js`, `room_bootstrap.js`, `room_recording.js`, `room_virtual_background.js`).
+- `i18n/translations.py`: Chinese/English translation keys used by `t(...)` in templates and backend.
+- `scripts/check_i18n.py`: lightweight i18n consistency checker for hardcoded Chinese in templates.
 - `docs/`: project docs, deployment notes, stability audit, and defense notes.
 - `instance/` (generated, ignored): SQLite DB, runtime uploads, generated admin password file.
 
@@ -15,7 +18,7 @@ This project is now a `Flask + Flask-SocketIO + LiveKit` online meeting app with
 - `python -m venv venv` then `venv\Scripts\activate` on Windows: create and activate local environment.
 - `pip install -r requirements.txt`: install Flask, Socket.IO, and LiveKit-related dependencies.
 - `python app.py`: run the local server.
-- `python check_i18n.py`: scan templates for untranslated hardcoded Chinese text.
+- `python check_i18n.py`: scan templates for untranslated hardcoded Chinese text. The root wrapper forwards to `scripts/check_i18n.py`.
 
 There is currently no formal CI test runner in this repo. Before shipping, rely on the manual checks listed below.
 
@@ -62,7 +65,7 @@ Before editing any non-trivial logic, inspect adjacent modules and shared state 
 Minimum review steps for every substantial code change:
 
 - Identify every entry point that can mutate the same state, such as initial load, refresh recovery, snapshot sync, user-triggered action, background retry, and disconnect cleanup.
-- Trace which files own that state and which files consume it, especially `app.py`, `templates/_room_scripts.html`, `static/room_livekit.js`, and UI helpers.
+- Trace which files own that state and which files consume it, especially `app.py`, `templates/partials/_room_scripts.html`, `static/js/room/room_livekit.js`, and UI helpers.
 - Prefer one canonical update path per state domain. If the same state is updated in multiple handlers, refactor to a shared helper before adding more conditions.
 - After refactoring, re-read all related handlers end-to-end and verify they still agree on ordering, ownership, and cleanup.
 

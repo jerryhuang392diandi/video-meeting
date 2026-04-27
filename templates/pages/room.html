@@ -1,0 +1,13 @@
+{% extends 'pages/base.html' %}
+{% block title %}{{ t('meeting_room') }}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/room.css') }}" />
+{% endblock %}
+
+{% block content %}
+{% include 'partials/_room_layout.html' %}
+{% endblock %}
+
+{% block scripts %}
+{% include 'partials/_room_scripts.html' %}
+{% endblock %}
