@@ -56,7 +56,7 @@
 | 页面模板层 | `templates/*.html` | 登录页、首页、会议页、历史页、账号页、管理员后台等页面骨架 |
 | 前端交互层 | `static/*.js` | 处理按钮事件、调用接口、连接 Socket.IO 和 LiveKit、渲染聊天与视频界面 |
 | Flask 后端层 | `app.py` | 账号、会议、权限、上传、后台管理、翻译、Socket.IO 事件、LiveKit token |
-| 实时状态层 | Flask-SocketIO + 内存状态 | 同步成员进出、聊天、共享屏幕、主持人结束会议等状态 |
+| 实时状态层 | Flask-SocketIO + 内存状态 | 同步成员进出、聊天、共享屏幕、主持人结束会议等状态；关键运行态现在通过 `runtime_state_lock` 收紧并发读写 |
 | 音视频媒体层 | LiveKit SFU | 传输摄像头、麦克风、屏幕共享和远端媒体轨道 |
 | 持久化层 | SQLite / SQLAlchemy | 用户、会议、参会记录、找回密码申请等数据 |
 
@@ -119,6 +119,7 @@
 | 创建会议 | `/api/create_room` |
 | 入会校验 | `/api/join_room` |
 | 获取 LiveKit token | `/api/livekit/token` |
+| 服务健康检查 | `/api/healthz` |
 | 上传媒体附件 | `/api/chat_upload_media` |
 | 上传文档附件 | `/api/chat_upload_doc` |
 | 录屏转 MP4 | `/api/remux-recording` |
@@ -917,7 +918,7 @@ These entries match the "User-Facing Pages" table in the root README.
 | Template layer | `templates/*.html` | Page skeletons for login, home, room, history, account, admin, and other pages |
 | Frontend interaction layer | `static/*.js` | Button events, API calls, Socket.IO and LiveKit connection, chat/video rendering |
 | Flask backend layer | `app.py` | Accounts, meetings, permissions, uploads, admin, translation, Socket.IO events, LiveKit token generation |
-| Real-time state layer | Flask-SocketIO + in-memory state | Member join/leave, chat, screen share state, host ending meetings |
+| Real-time state layer | Flask-SocketIO + in-memory state | Member join/leave, chat, screen share state, and host actions; critical runtime state is now guarded by `runtime_state_lock` |
 | Media layer | LiveKit SFU | Camera, microphone, screen sharing, and remote media tracks |
 | Persistence layer | SQLite / SQLAlchemy | Users, meetings, participation records, password reset requests |
 
@@ -976,6 +977,7 @@ Suitable for room creation, join validation, LiveKit token retrieval, uploads, t
 | Create room | `/api/create_room` |
 | Validate room join | `/api/join_room` |
 | Get LiveKit token | `/api/livekit/token` |
+| Service health | `/api/healthz` |
 | Upload media attachment | `/api/chat_upload_media` |
 | Upload document attachment | `/api/chat_upload_doc` |
 | Remux recording to MP4 | `/api/remux-recording` |

@@ -1,11 +1,11 @@
 {% extends 'base.html' %}
 {% block content %}
-<header class="topbar">
+<header class="topbar dashboard-topbar">
   <div>
     <div class="brand">{{ t('app_name') }}</div>
     <div class="muted">{{ t('subtitle') }}</div>
   </div>
-  <div class="top-actions">
+  <div class="top-actions dashboard-top-actions">
     {% include '_language_switch.html' %}
     <span class="user-pill">{{ t('current_user') }}: {{ current_user.username }}</span>
     <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>

@@ -19,7 +19,7 @@
 | 文档 | 用途 | 适合读者 |
 | --- | --- | --- |
 | [../README.md](../README.md) / [English](../README.md#video-meeting-system) | 项目总览、完整页面入口、中英文和移动/桌面适配状态、快速开始、本地依赖安装、本地启动、配置和基本检查 | 第一次打开项目的人 |
-| [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) / [English](DEPLOYMENT_GUIDE.md#deployment-and-update-guide) | 云服务器购买入口、备案、SSH/FinalShell 登录、DNS/Cloudflare、Nginx、WebSocket、HTTPS、LiveKit Cloud、自建 LiveKit、systemd、Git 三端协作、服务更新、日志排查和官方参考资料 | 部署和维护项目的人，尤其是第一次部署的人 |
+| [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) / [English](DEPLOYMENT_GUIDE.md#deployment-and-update-guide) | 云服务器购买入口、备案、SSH/FinalShell 登录、DNS/Cloudflare、Nginx、WebSocket、HTTPS、LiveKit Cloud、自建 LiveKit、systemd、Git 三端协作、服务更新、`/api/healthz` 健康检查、日志排查和官方参考资料 | 部署和维护项目的人，尤其是第一次部署的人 |
 | [STABILITY_AUDIT.md](STABILITY_AUDIT.md) / [English](STABILITY_AUDIT.md#stability-audit) | 当前架构边界、风险、回归重点和演进方向 | 修改核心逻辑的人 |
 | [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md) / [English](REFACTOR_AUDIT.md#refactor-audit) | 当前重构巡检结论、优先级、推荐拆分顺序和改动前检查 | 准备重构或长期维护的人 |
 | [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md#project-guide-and-code-index) | 项目逻辑、核心流程、代码索引和常见问题回答 | 准备展示或维护代码的人 |
@@ -29,6 +29,7 @@
 - 行为变化优先更新根 README。
 - 所有成对存在的中英文文档必须同步更新，章节结构、关键结论、命令步骤和风险提示不要长期漂移。
 - 部署命令、环境变量或服务管理方式变化时更新 `DEPLOYMENT_GUIDE.md`。
+- 新增或修改健康检查、运行态观测、systemd/Nginx 排障步骤时同步更新 `README.md` 和 `DEPLOYMENT_GUIDE.md`。
 - 房间状态、LiveKit、屏幕共享、录屏、背景虚化相关变化时更新 `STABILITY_AUDIT.md`。
 - 中英文文案、移动端扫码、移动端聊天布局、桌面端会议网格或设备默认策略变化时，同步更新根 README 和项目说明文档。
 - 重构优先级、拆分顺序或模块边界变化时更新 `REFACTOR_AUDIT.md`。
@@ -59,7 +60,7 @@ This folder contains the project overview, deployment guide, stability audit, an
 | Document | Purpose | Audience |
 | --- | --- | --- |
 | [../README.md](../README.md) / [English](../README.md#video-meeting-system) | Project overview, complete page entry points, i18n and mobile/desktop adaptation status, Quick Start, local tool installation, local startup, configuration, and basic checks | First-time readers |
-| [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) / [English](DEPLOYMENT_GUIDE.md#deployment-and-update-guide) | Cloud provider entry points, ICP filing notes, SSH/FinalShell login, DNS/Cloudflare, Nginx, WebSocket, HTTPS, LiveKit Cloud, self-hosted LiveKit, systemd, Git three-side workflow, service updates, log troubleshooting, and official references | Deployers and maintainers, especially first-time deployers |
+| [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) / [English](DEPLOYMENT_GUIDE.md#deployment-and-update-guide) | Cloud provider entry points, ICP filing notes, SSH/FinalShell login, DNS/Cloudflare, Nginx, WebSocket, HTTPS, LiveKit Cloud, self-hosted LiveKit, systemd, Git three-side workflow, service updates, `/api/healthz` checks, log troubleshooting, and official references | Deployers and maintainers, especially first-time deployers |
 | [STABILITY_AUDIT.md](STABILITY_AUDIT.md) / [English](STABILITY_AUDIT.md#stability-audit) | Architecture boundaries, risks, regression focus, and future direction | People changing core logic |
 | [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md) / [English](REFACTOR_AUDIT.md#refactor-audit) | Current refactor audit, priorities, recommended split order, and pre-change checks | People planning refactors or long-term maintenance |
 | [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md#project-guide-and-code-index) | Project logic, core flows, code index, and common Q&A | Presenters and maintainers |
@@ -68,6 +69,7 @@ This folder contains the project overview, deployment guide, stability audit, an
 - Update the root README first when project behavior changes.
 - Keep every paired Chinese/English document in sync. Do not let section structure, key conclusions, commands, or risk notes drift for long.
 - Update `DEPLOYMENT_GUIDE.md` when deployment commands, environment variables, or service management changes.
+- Update `README.md` and `DEPLOYMENT_GUIDE.md` together when health checks, runtime observability, or systemd/Nginx troubleshooting steps change.
 - Update `STABILITY_AUDIT.md` when room state, LiveKit, screen sharing, recording, or background-blur behavior changes.
 - Update the root README and project guide when UI text, mobile QR join, mobile chat layout, desktop meeting grid, or default device behavior changes.
 - Update `REFACTOR_AUDIT.md` when refactor priorities, split order, or module boundaries change.

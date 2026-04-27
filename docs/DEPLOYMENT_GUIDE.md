@@ -79,6 +79,14 @@ Nginx 代理的是本项目网站；LiveKit 承担摄像头、麦克风、屏幕
 
 当前应用的在线房间状态主要保存在单进程内存中，所以默认按单实例部署。不要简单启动多个 Gunicorn worker 或多台应用服务器，否则 `rooms`、`sid_to_user`、聊天历史和屏幕共享状态会不一致。
 
+当前代码已经增加运行态锁和 `/api/healthz` 健康检查来降低单进程 `threading` 模式下的状态竞争，并为排障提供更直接入口；但这不改变单实例前提，只是让单实例更稳、更容易查问题。
+
+建议把 `/api/healthz` 加入你的上线检查：
+
+- 返回 `200` 且 `status` 为 `ok`：说明 Flask 主进程还活着。
+- `livekit_enabled` 为 `false`：说明房间页 `503` 大概率不是前端问题，而是 LiveKit 环境变量未配置完整。
+- `active_room_count`、`active_socket_count` 长时间异常不回落：优先检查是否有重连风暴、反向代理超时或客户端断开后未完成清理。
+
 ## 2. 购买服务器、备案与登录准备
 
 ### 2.1 购买服务器
@@ -1888,6 +1896,14 @@ User browser
 ```
 
 The current app keeps online room state mainly in single-process memory, so deploy it as one application instance by default. Do not simply start multiple Gunicorn workers or multiple app servers, or `rooms`, `sid_to_user`, chat history, and screen-share state can diverge.
+
+The code now adds a runtime lock and `/api/healthz` to reduce state races in single-process `threading` mode and to provide a more direct troubleshooting entry point. This improves single-instance robustness, but it does not change the single-instance requirement.
+
+Add `/api/healthz` to your rollout checklist:
+
+- `200` with `status: ok` means the Flask process is still alive.
+- `livekit_enabled: false` usually means room-page `503` errors are caused by incomplete LiveKit environment variables rather than the frontend.
+- If `active_room_count` or `active_socket_count` stays abnormally high, check for reconnect storms, reverse-proxy timeouts, or cleanup paths that did not complete after disconnect.
 
 ## 2. Buying a Server, ICP Filing, and SSH Login
 

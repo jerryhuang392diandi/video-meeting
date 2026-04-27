@@ -438,6 +438,7 @@ def debug_log(tag, **kwargs):
 MAX_PARTICIPANTS = 120
 ROOM_EMPTY_GRACE_SECONDS = 20
 MEETING_DURATION_SECONDS = 90 * 60
+runtime_state_lock = threading.RLock()
 rooms = {}
 sid_to_user = {}
 user_active_sids = {}
@@ -1160,6 +1161,40 @@ def emit_participant_left(room_id, sid, participant_info, participant_count):
     )
 
 
+def runtime_state_snapshot():
+    with runtime_state_lock:
+        room_items = list(rooms.items())
+        active_socket_count = len(sid_to_user)
+        active_room_count = len(room_items)
+        online_user_total = sum(1 for _, sids in user_active_sids.items() if sids)
+        rooms_with_cleanup_timer = sum(1 for _, room in room_items if room.get("cleanup_timer"))
+        rooms_with_expiry_timer = sum(1 for _, room in room_items if room.get("expiry_timer"))
+        active_sharer_room_count = sum(
+            1
+            for _, room in room_items
+            if room.get("active_sharer_sid") or room.get("active_sharer_user_id")
+        )
+        room_participant_counts = {
+            room_id: len(room.get("participants", {}))
+            for room_id, room in room_items
+        }
+        user_sid_counts = {
+            user_id: len(sids)
+            for user_id, sids in user_active_sids.items()
+            if sids
+        }
+    return {
+        "active_room_count": active_room_count,
+        "active_socket_count": active_socket_count,
+        "online_user_count": online_user_total,
+        "rooms_with_cleanup_timer": rooms_with_cleanup_timer,
+        "rooms_with_expiry_timer": rooms_with_expiry_timer,
+        "active_sharer_room_count": active_sharer_room_count,
+        "room_participant_counts": room_participant_counts,
+        "user_sid_counts": user_sid_counts,
+    }
+
+
 def prune_stale_room_participants(room_id, room, user_id, current_sid):
     if not user_id:
         return []
@@ -1304,14 +1339,15 @@ def get_system_metrics():
         disk_percent = (disk.used / disk.total * 100.0) if disk.total else 0.0
     except Exception:
         disk_total = disk_used = disk_percent = 0.0
+    snapshot = runtime_state_snapshot()
     return {
         "cpu_percent": round(cpu_percent, 1),
         "memory_percent": round(memory_percent, 1),
         "disk_percent": round(disk_percent, 1),
         "disk_used_text": format_mb(disk_used),
         "disk_total_text": format_mb(disk_total),
-        "active_room_count": len(rooms),
-        "active_socket_count": len(sid_to_user),
+        "active_room_count": snapshot["active_room_count"],
+        "active_socket_count": snapshot["active_socket_count"],
     }
 
 
@@ -1382,23 +1418,24 @@ def is_meeting_expired(meeting):
 
 
 def cancel_room_expiry(room_id):
-    room = rooms.get(room_id)
-    if not room:
-        return
-    timer = room.get("expiry_timer")
+    with runtime_state_lock:
+        room = rooms.get(room_id)
+        if not room:
+            return
+        timer = room.get("expiry_timer")
+        room["expiry_timer"] = None
     if timer:
         timer.cancel()
-    room["expiry_timer"] = None
 
 
 def end_meeting_by_room_id(room_id, message_key=None):
     with app.app_context():
-        room = rooms.get(room_id)
         meeting = Meeting.query.filter_by(room_id=room_id).first()
         if not meeting:
             cancel_room_expiry(room_id)
             shutil.rmtree(os.path.join(CHAT_UPLOAD_DIR, room_id), ignore_errors=True)
-            rooms.pop(room_id, None)
+            with runtime_state_lock:
+                rooms.pop(room_id, None)
             return
         if meeting.status != "ended":
             meeting.status = "ended"
@@ -1407,7 +1444,8 @@ def end_meeting_by_room_id(room_id, message_key=None):
 
         cancel_room_cleanup(room_id)
         cancel_room_expiry(room_id)
-        room = rooms.pop(room_id, room)
+        with runtime_state_lock:
+            room = rooms.pop(room_id, None)
         if room:
             for participant_sid in list(room.get("participants", {}).keys()):
                 participant = MeetingParticipant.query.filter_by(sid=participant_sid).order_by(MeetingParticipant.id.desc()).first()
@@ -1420,14 +1458,15 @@ def end_meeting_by_room_id(room_id, message_key=None):
 
 
 def schedule_room_expiry(room_id, created_at_ts):
-    room = rooms.get(room_id)
-    if not room:
-        return
     cancel_room_expiry(room_id)
     remaining = max(0, int(created_at_ts + MEETING_DURATION_SECONDS - time.time()))
     timer = threading.Timer(remaining, end_meeting_by_room_id, args=(room_id, "expired_meeting"))
     timer.daemon = True
-    room["expiry_timer"] = timer
+    with runtime_state_lock:
+        room = rooms.get(room_id)
+        if not room:
+            return
+        room["expiry_timer"] = timer
     timer.start()
 
 
@@ -1464,15 +1503,17 @@ def build_runtime_room_state(*, password, host_name, created_at_ts, meeting_id, 
 
 
 def init_runtime_room(room_id, room_state, created_at_ts):
-    rooms[room_id] = room_state
+    with runtime_state_lock:
+        rooms[room_id] = room_state
     schedule_room_expiry(room_id, created_at_ts)
     return room_state
 
 
 def ensure_runtime_room(meeting):
-    room = rooms.get(meeting.room_id)
-    if room:
-        return room
+    with runtime_state_lock:
+        room = rooms.get(meeting.room_id)
+        if room:
+            return room
     created_at_ts = meeting.created_at.timestamp()
     room_state = build_runtime_room_state(
         password=meeting.room_password,
@@ -1531,45 +1572,50 @@ def build_history_meetings_for_user(user_id):
 
 
 def cancel_room_cleanup(room_id):
-    room = rooms.get(room_id)
-    if not room:
-        return
-    timer = room.get("cleanup_timer")
+    with runtime_state_lock:
+        room = rooms.get(room_id)
+        if not room:
+            return
+        timer = room.get("cleanup_timer")
+        room["cleanup_timer"] = None
+        room["empty_since"] = None
     if timer:
         timer.cancel()
-    room["cleanup_timer"] = None
-    room["empty_since"] = None
 
 
 def finalize_room_if_still_empty(room_id):
     with app.app_context():
-        room = rooms.get(room_id)
-        if not room:
-            return
-        if room.get("participants"):
-            room["cleanup_timer"] = None
-            room["empty_since"] = None
-            return
+        with runtime_state_lock:
+            room = rooms.get(room_id)
+            if not room:
+                return
+            if room.get("participants"):
+                room["cleanup_timer"] = None
+                room["empty_since"] = None
+                return
+            meeting_db_id = room.get("meeting_db_id")
 
-        meeting = Meeting.query.get(room.get("meeting_db_id"))
+        meeting = Meeting.query.get(meeting_db_id)
         if meeting and meeting.status != "ended":
             meeting.status = "ended"
             meeting.ended_at = datetime.utcnow()
             db.session.commit()
 
         shutil.rmtree(os.path.join(CHAT_UPLOAD_DIR, room_id), ignore_errors=True)
-        rooms.pop(room_id, None)
+        with runtime_state_lock:
+            rooms.pop(room_id, None)
 
 
 def schedule_room_cleanup(room_id, delay=ROOM_EMPTY_GRACE_SECONDS):
-    room = rooms.get(room_id)
-    if not room:
-        return
     cancel_room_cleanup(room_id)
-    room["empty_since"] = time.time()
     timer = threading.Timer(delay, finalize_room_if_still_empty, args=(room_id,))
     timer.daemon = True
-    room["cleanup_timer"] = timer
+    with runtime_state_lock:
+        room = rooms.get(room_id)
+        if not room:
+            return
+        room["empty_since"] = time.time()
+        room["cleanup_timer"] = timer
     timer.start()
 
 def admin_required(func):
@@ -1655,40 +1701,44 @@ def remove_user_from_runtime_rooms(user_id, reason_message=None):
 
 
 def broadcast_room_participant_snapshot(room_id):
-    room = rooms.get(room_id)
-    if not room:
-        return
-    host_user_id = room.get("host_user_id")
-    payload = {
-        "participants": [
-            build_room_participant_payload(sid, info, host_user_id)
-            for sid, info in room.get("participants", {}).items()
-        ],
-        "participant_count": len(room.get("participants", {})),
-        **build_active_sharer_payload(room),
-    }
+    with runtime_state_lock:
+        room = rooms.get(room_id)
+        if not room:
+            return
+        host_user_id = room.get("host_user_id")
+        payload = {
+            "participants": [
+                build_room_participant_payload(sid, info, host_user_id)
+                for sid, info in room.get("participants", {}).items()
+            ],
+            "participant_count": len(room.get("participants", {})),
+            **build_active_sharer_payload(room),
+        }
     socketio.emit("participant_snapshot", payload, room=room_id)
 
 
 def online_user_count():
-    return sum(1 for _, sids in user_active_sids.items() if sids)
+    with runtime_state_lock:
+        return sum(1 for _, sids in user_active_sids.items() if sids)
 
 
 def bind_user_socket(user_id, sid):
     if not user_id or not sid:
         return
-    user_active_sids.setdefault(user_id, set()).add(sid)
+    with runtime_state_lock:
+        user_active_sids.setdefault(user_id, set()).add(sid)
 
 
 def unbind_user_socket(user_id, sid):
     if not user_id or not sid:
         return
-    active_sids = user_active_sids.get(user_id)
-    if not active_sids:
-        return
-    active_sids.discard(sid)
-    if not active_sids:
-        user_active_sids.pop(user_id, None)
+    with runtime_state_lock:
+        active_sids = user_active_sids.get(user_id)
+        if not active_sids:
+            return
+        active_sids.discard(sid)
+        if not active_sids:
+            user_active_sids.pop(user_id, None)
 
 
 @app.before_request
@@ -2291,7 +2341,8 @@ def api_livekit_token():
     if normalize_password(meeting.room_password) != password:
         return jsonify({"success": False, "message": t("wrong_password")}), 403
 
-    socket_info = sid_to_user.get(participant_sid)
+    with runtime_state_lock:
+        socket_info = sid_to_user.get(participant_sid)
     if not socket_info or socket_info.get("room_id") != room_id or socket_info.get("user_id") != current_user.id:
         return jsonify({"success": False, "message": "Invalid participant session"}), 403
 
@@ -2385,8 +2436,21 @@ def api_remux_recording():
 @admin_required
 def api_admin_system_stats():
     payload = {"success": True, **get_system_metrics()}
-    debug_log('ADMIN_STATS_API', payload=payload, rooms={rid: len(info.get('participants', {})) for rid, info in rooms.items()}, user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids})
+    snapshot = runtime_state_snapshot()
+    debug_log('ADMIN_STATS_API', payload=payload, room_participant_counts=snapshot["room_participant_counts"], user_sid_counts=snapshot["user_sid_counts"])
     return jsonify(payload)
+
+
+@app.get("/api/healthz")
+def api_healthz():
+    snapshot = runtime_state_snapshot()
+    return jsonify({
+        "success": True,
+        "status": "ok",
+        "rtc_mode": get_rtc_mode(),
+        "livekit_enabled": livekit_enabled(),
+        **snapshot,
+    })
 
 
 
@@ -2406,7 +2470,8 @@ def api_admin_alerts():
 @login_required
 @admin_required
 def admin_dashboard():
-    debug_log('ADMIN_DASHBOARD_ENTER', rooms={rid: {'participants': list(info.get('participants', {}).keys()), 'host_user_id': info.get('host_user_id'), 'host_present': info.get('host_present')} for rid, info in rooms.items()}, user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids}, sid_to_user=dict(sid_to_user))
+    snapshot = runtime_state_snapshot()
+    debug_log('ADMIN_DASHBOARD_ENTER', room_participant_counts=snapshot["room_participant_counts"], user_sid_counts=snapshot["user_sid_counts"], active_socket_count=snapshot["active_socket_count"])
     for meeting in Meeting.query.filter_by(status="active").all():
         ensure_meeting_not_expired(meeting)
     users = User.query.order_by(User.created_at.desc()).all()
@@ -2414,10 +2479,11 @@ def admin_dashboard():
     active_meetings = [m for m in meetings if m.status == "active"]
     history_meetings = [m for m in meetings if m.status != "active"]
     reset_requests = PasswordResetRequest.query.order_by(PasswordResetRequest.created_at.desc()).limit(30).all()
-    online_rooms = [
-        {"room_id": rid, "participant_count": len(info["participants"]), "host_name": info["host_name"]}
-        for rid, info in rooms.items()
-    ]
+    with runtime_state_lock:
+        online_rooms = [
+            {"room_id": rid, "participant_count": len(info["participants"]), "host_name": info["host_name"]}
+            for rid, info in rooms.items()
+        ]
     return render_template(
         "admin.html",
         users=users,
@@ -2652,20 +2718,7 @@ def on_join_room(data):
         emit("join_error", {"message": t("meeting_not_found")})
         return
 
-    room = ensure_runtime_room(meeting)
-    room["lang"] = session.get("lang", "zh")
-
-    if normalize_password(room["password"]) != password:
-        debug_log('SOCKET_JOIN_ROOM_BAD_PASSWORD', sid=request.sid, room_id=room_id)
-        emit("join_error", {"message": t("wrong_password")})
-        return
-
     sid = request.sid
-    if len(room["participants"]) >= MAX_PARTICIPANTS and sid not in room["participants"]:
-        debug_log('SOCKET_JOIN_ROOM_FULL', sid=sid, room_id=room_id, participants=list(room['participants'].keys()))
-        emit("join_error", {"message": f"{t('room_full')} ({MAX_PARTICIPANTS})"})
-        return
-
     if not current_user.is_authenticated:
         debug_log('SOCKET_JOIN_ROOM_NOT_AUTH', sid=sid, room_id=room_id)
         emit("join_error", {"message": t("invalid_login")})
@@ -2678,30 +2731,55 @@ def on_join_room(data):
     db.session.refresh(fresh_user)
     cancel_room_cleanup(room_id)
 
-    # Clean up only truly stale sockets for the same authenticated user.
-    # Keep other active sessions/tabs alive; only prune entries that are no
-    # longer tracked as active sockets.
-    prune_stale_room_participants(room_id, room, current_user.id, sid)
+    with runtime_state_lock:
+        room = ensure_runtime_room(meeting)
+        room["lang"] = session.get("lang", "zh")
 
-    existing = [
-        build_room_participant_payload(osid, info, room.get("host_user_id"))
-        for osid, info in room["participants"].items()
-    ]
-    room["participants"][sid] = {"name": user_name, "joined_at": time.time(), "user_id": current_user.id}
-    sid_to_user[sid] = {"room_id": room_id, "name": user_name, "user_id": current_user.id}
-    bind_user_socket(current_user.id, sid)
-    join_room(room_id)
-    debug_log('SOCKET_JOIN_ROOM_REGISTERED', sid=sid, room_id=room_id, user_id=current_user.id, room_participants=list(room['participants'].keys()), user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids}, sid_to_user_entry=sid_to_user.get(sid))
+        if normalize_password(room["password"]) != password:
+            debug_log('SOCKET_JOIN_ROOM_BAD_PASSWORD', sid=request.sid, room_id=room_id)
+            emit("join_error", {"message": t("wrong_password")})
+            return
 
-    host_returned = False
-    if current_user.is_authenticated and current_user.id == room.get("host_user_id"):
-        host_returned = not room.get("host_present")
-        room["host_present"] = True
+        if len(room["participants"]) >= MAX_PARTICIPANTS and sid not in room["participants"]:
+            debug_log('SOCKET_JOIN_ROOM_FULL', sid=sid, room_id=room_id, participants=list(room['participants'].keys()))
+            emit("join_error", {"message": f"{t('room_full')} ({MAX_PARTICIPANTS})"})
+            return
 
-    if current_user.is_authenticated:
+        # Clean up only truly stale sockets for the same authenticated user.
+        # Keep other active sessions/tabs alive; only prune entries that are no
+        # longer tracked as active sockets.
+        prune_stale_room_participants(room_id, room, current_user.id, sid)
+
+        existing = [
+            build_room_participant_payload(osid, info, room.get("host_user_id"))
+            for osid, info in room["participants"].items()
+        ]
+        room["participants"][sid] = {"name": user_name, "joined_at": time.time(), "user_id": current_user.id}
+        sid_to_user[sid] = {"room_id": room_id, "name": user_name, "user_id": current_user.id}
+        bind_user_socket(current_user.id, sid)
+
+        host_returned = False
+        if current_user.id == room.get("host_user_id"):
+            host_returned = not room.get("host_present")
+            room["host_present"] = True
+
         # Only clear stale screen-share ownership when the previous sharer
         # socket is no longer active. Active sibling sessions keep ownership.
         reconcile_rejoining_active_sharer(room_id, room, current_user.id)
+
+        debug_log('SOCKET_JOIN_ROOM_REGISTERED', sid=sid, room_id=room_id, user_id=current_user.id, room_participants=list(room['participants'].keys()), user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids}, sid_to_user_entry=sid_to_user.get(sid))
+        is_room_host = bool(current_user.id == room.get("host_user_id"))
+        visible_chat_history = visible_chat_history_for_user(room, current_user.id, sid, is_room_host=is_room_host)
+        join_payload = {
+            "room_id": room_id,
+            "participants": existing,
+            "self_sid": sid,
+            "participant_count": len(room["participants"]),
+            "host_present": bool(room.get("host_present")),
+            "danmaku_enabled": bool(room.get("danmaku_enabled")),
+            "chat_history": visible_chat_history,
+            **build_active_sharer_payload(room),
+        }
 
     participant = MeetingParticipant(
         meeting_id=room["meeting_db_id"],
@@ -2712,27 +2790,13 @@ def on_join_room(data):
     db.session.add(participant)
     db.session.commit()
     notify_admin_room_joined(user=fresh_user, meeting=meeting, display_name=user_name)
-
-    is_room_host = bool(current_user.is_authenticated and current_user.id == room.get("host_user_id"))
-    visible_chat_history = visible_chat_history_for_user(room, current_user.id, sid, is_room_host=is_room_host)
+    join_room(room_id)
 
     debug_log('SOCKET_JOIN_ROOM_OK', sid=sid, room_id=room_id, participant_count=len(room["participants"]), host_present=bool(room.get("host_present")))
-    emit(
-        "join_ok",
-        {
-            "room_id": room_id,
-            "participants": existing,
-            "self_sid": sid,
-            "participant_count": len(room["participants"]),
-            "host_present": bool(room.get("host_present")),
-            "danmaku_enabled": bool(room.get("danmaku_enabled")),
-            "chat_history": visible_chat_history,
-            **build_active_sharer_payload(room),
-        },
-    )
+    emit("join_ok", join_payload)
     emit(
         "participant_joined",
-        {"sid": sid, "name": user_name, "is_host": bool(current_user.id == room.get("host_user_id")), "participant_count": len(room["participants"])},
+        {"sid": sid, "name": user_name, "is_host": is_room_host, "participant_count": join_payload["participant_count"]},
         room=room_id,
         include_self=False,
     )
@@ -2745,18 +2809,19 @@ def on_join_room(data):
 @socketio.on("update_profile")
 def on_update_profile(data):
     sid = request.sid
-    info = sid_to_user.get(sid)
-    if not info:
-        return
-    room_id = info["room_id"]
-    room = rooms.get(room_id)
-    if not room or sid not in room.get("participants", {}):
-        return
     new_name = ((data or {}).get("name") or "").strip()[:32]
     if not new_name:
         return
-    room["participants"][sid]["name"] = new_name
-    info["name"] = new_name
+    with runtime_state_lock:
+        info = sid_to_user.get(sid)
+        if not info:
+            return
+        room_id = info["room_id"]
+        room = rooms.get(room_id)
+        if not room or sid not in room.get("participants", {}):
+            return
+        room["participants"][sid]["name"] = new_name
+        info["name"] = new_name
     participant = MeetingParticipant.query.filter_by(sid=sid).order_by(MeetingParticipant.id.desc()).first()
     if participant:
         participant.display_name = new_name
@@ -3356,34 +3421,35 @@ def on_signal(data):
 @socketio.on("room_ui_event")
 def on_room_ui_event(data):
     sid = request.sid
-    info = sid_to_user.get(sid)
-    if not info:
-        return
-    room_id = info["room_id"]
-    room = rooms.get(room_id)
-    if not room:
-        return
     payload = data or {}
     event_type = (payload.get("type") or "").strip()
-    if event_type == "screen_share_started":
-        active_sharer_sid = room.get("active_sharer_sid")
-        active_sharer_user_id = room.get("active_sharer_user_id")
-        requester_user_id = info.get("user_id")
-        same_authenticated_user = bool(
-            active_sharer_user_id and requester_user_id and active_sharer_user_id == requester_user_id
-        )
-        if active_sharer_sid and active_sharer_sid != sid and not same_authenticated_user:
-            emit("room_ui_event", {
-                "type": "screen_share_denied",
-                "from": active_sharer_sid,
-                "activeSharerSid": active_sharer_sid,
-                "message": TRANSLATIONS.get(room.get("lang"), TRANSLATIONS["zh"]).get("another_participant_sharing_screen", "已有其他用户正在共享屏幕"),
-            }, to=sid)
+    with runtime_state_lock:
+        info = sid_to_user.get(sid)
+        if not info:
             return
-        set_active_sharer(room, sid, requester_user_id)
-    elif event_type == "screen_share_stopped":
-        if room.get("active_sharer_sid") == sid or room.get("active_sharer_user_id") == info.get("user_id"):
-            clear_active_sharer(room)
+        room_id = info["room_id"]
+        room = rooms.get(room_id)
+        if not room:
+            return
+        if event_type == "screen_share_started":
+            active_sharer_sid = room.get("active_sharer_sid")
+            active_sharer_user_id = room.get("active_sharer_user_id")
+            requester_user_id = info.get("user_id")
+            same_authenticated_user = bool(
+                active_sharer_user_id and requester_user_id and active_sharer_user_id == requester_user_id
+            )
+            if active_sharer_sid and active_sharer_sid != sid and not same_authenticated_user:
+                emit("room_ui_event", {
+                    "type": "screen_share_denied",
+                    "from": active_sharer_sid,
+                    "activeSharerSid": active_sharer_sid,
+                    "message": TRANSLATIONS.get(room.get("lang"), TRANSLATIONS["zh"]).get("another_participant_sharing_screen", "已有其他用户正在共享屏幕"),
+                }, to=sid)
+                return
+            set_active_sharer(room, sid, requester_user_id)
+        elif event_type == "screen_share_stopped":
+            if room.get("active_sharer_sid") == sid or room.get("active_sharer_user_id") == info.get("user_id"):
+                clear_active_sharer(room)
     payload["from"] = sid
     emit("room_ui_event", payload, room=room_id, include_self=False)
 
@@ -3418,37 +3484,41 @@ def on_leave_room(*_args):
             explicit_leave = bool(maybe_payload.get("explicit"))
     sid = request.sid
     debug_log('SOCKET_LEAVE_BEGIN', sid=sid, sid_info=sid_to_user.get(sid), current_user_id=getattr(current_user, "id", None))
-    info = sid_to_user.pop(sid, None)
-    if not info:
-        debug_log('SOCKET_LEAVE_NOINFO', sid=sid)
-        return
-    room_id = info["room_id"]
-    unbind_user_socket(info.get("user_id"), sid)
-    room = rooms.get(room_id)
-    if room and explicit_leave and info.get("user_id") == room.get("host_user_id") and len(room.get("participants", {})) > 1:
-        sid_to_user[sid] = info
-        bind_user_socket(info.get("user_id"), sid)
-        emit("host_action_error", {"message": t("host_must_end_meeting_first")})
-        return
+    with runtime_state_lock:
+        info = sid_to_user.pop(sid, None)
+        if not info:
+            debug_log('SOCKET_LEAVE_NOINFO', sid=sid)
+            return
+        room_id = info["room_id"]
+        unbind_user_socket(info.get("user_id"), sid)
+        room = rooms.get(room_id)
+        if room and explicit_leave and info.get("user_id") == room.get("host_user_id") and len(room.get("participants", {})) > 1:
+            sid_to_user[sid] = info
+            bind_user_socket(info.get("user_id"), sid)
+            emit("host_action_error", {"message": t("host_must_end_meeting_first")})
+            return
     leave_room(room_id)
     if room and sid in room["participants"]:
-        name = room["participants"][sid]["name"]
-        del room["participants"][sid]
-        host_left = False
-        reconcile_departing_active_sharer(room_id, room, sid, info.get("user_id"))
-        if current_user.is_authenticated and current_user.id == room.get("host_user_id"):
-            if room.get("host_present"):
-                host_left = True
-            room["host_present"] = False
+        with runtime_state_lock:
+            name = room["participants"][sid]["name"]
+            del room["participants"][sid]
+            host_left = False
+            reconcile_departing_active_sharer(room_id, room, sid, info.get("user_id"))
+            if current_user.is_authenticated and current_user.id == room.get("host_user_id"):
+                if room.get("host_present"):
+                    host_left = True
+                room["host_present"] = False
+            participant_count_after = len(room["participants"])
+            should_schedule_cleanup = not room["participants"]
         participant = mark_meeting_participant_left(sid)
         if participant:
             db.session.commit()
-        emit_participant_left(room_id, sid, {"name": name}, len(room["participants"]))
+        emit_participant_left(room_id, sid, {"name": name}, participant_count_after)
         broadcast_room_participant_snapshot(room_id)
         if host_left:
             emit_host_presence_changed(room_id, False, t("host_left_room"))
         debug_log('SOCKET_LEAVE_DONE', sid=sid, room_id=room_id, remaining_participants=list(room.get("participants", {}).keys()), user_active_sids={uid: list(sids) for uid, sids in user_active_sids.items() if sids})
-        if not room["participants"]:
+        if should_schedule_cleanup:
             schedule_room_cleanup(room_id)
 
 

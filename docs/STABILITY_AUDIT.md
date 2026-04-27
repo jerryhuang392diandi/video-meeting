@@ -20,6 +20,7 @@
 - Socket.IO 不是媒体传输层。
 - LiveKit 不负责业务权限和会议历史。
 - 在线态目前主要在单进程内存中。
+- 后端现在用 `runtime_state_lock` 收紧房间内存状态的并发读写，并提供 `/api/healthz` 暴露基础运行态计数。
 - 屏幕共享和录屏横跨多个层级，改动时最容易引入状态错位。
 
 ## 已有优势
@@ -34,6 +35,7 @@
 | 优先级 | 风险 | 影响 | 建议 |
 | --- | --- | --- | --- |
 | P0 | 在线态仍在单进程内存中 | 重启丢失在线态，多实例部署不安全 | 短期明确单实例部署；中期迁移到 Redis |
+| P0 | `threading` 模式下共享内存状态存在并发压力 | 清理线程、Socket 事件和管理员动作可能同时修改房间态 | 保持运行态锁覆盖关键路径，并继续减少跨入口重复写状态 |
 | P0 | Socket.IO 与 LiveKit 状态不同步 | 用户已进房但媒体未就绪，或媒体已断但 UI 未恢复 | 保持清晰的加入、快照、重连、离开顺序 |
 | P0 | 屏幕共享只靠瞬时事件时容易漂移 | 刷新、断线重连或漏事件后，UI 可能保留旧共享焦点 | 让 `participant_snapshot` 一并携带 `active_sharer_*`，用快照修正瞬时事件 |
 | P0 | 屏幕共享状态清理不完整 | 刷新或异常退出后出现错误焦点、旧共享者、远端看不到共享 | 每次改动都验证开始、停止、刷新、重连和移动端 |
@@ -99,6 +101,7 @@
 短期：
 
 - 文档中保持单实例部署前提。
+- 把 `/api/healthz` 作为第一层排障入口，先看 Flask 进程是否还活着，再看 Socket.IO、LiveKit 和反向代理。
 - 部署文档必须继续明确区分 Nginx 代理的是 Flask 网站，LiveKit 承担的是媒体传输；不要把两者写成同一个服务。
 - 所有房间改动都做双端手动验证。
 - 屏幕共享改动必须覆盖刷新和重连。
@@ -151,6 +154,7 @@ Key facts:
 - Socket.IO is not the media transport layer.
 - LiveKit does not own business permissions or meeting history.
 - Online state is currently kept mainly in single-process memory.
+- The backend now uses `runtime_state_lock` to tighten concurrent access to in-memory room state and exposes basic counters through `/api/healthz`.
 - Screen sharing and recording cross several layers, so they are the easiest places to introduce state mismatch.
 
 ## Existing Strengths
@@ -165,6 +169,7 @@ Key facts:
 | Priority | Risk | Impact | Recommendation |
 | --- | --- | --- | --- |
 | P0 | Online state is still in single-process memory | Online state is lost on restart; multi-instance deployment is unsafe | Keep single-instance deployment short term; migrate to Redis later |
+| P0 | Shared in-memory state is under concurrency pressure in `threading` mode | Cleanup timers, Socket.IO events, and admin actions can mutate the same room state at once | Keep the runtime lock on critical paths and keep reducing duplicate write paths |
 | P0 | Socket.IO and LiveKit state can diverge | User is in room but media is not ready, or media disconnects while UI stays stale | Keep join, snapshot, reconnect, and leave ordering clear |
 | P0 | Screen share cleanup can be incomplete | Refresh or abnormal exit can leave wrong focus, stale sharer state, or invisible share | Verify start, stop, refresh, reconnect, and mobile every time |
 | P1 | Virtual background and recording are expensive | Weak devices may stutter, drop frames, overheat, or hurt baseline meeting quality | Treat them as enhancements and degrade when needed |
@@ -228,6 +233,7 @@ Confirm:
 Short term:
 
 - Keep single-instance deployment stated clearly in documentation.
+- Treat `/api/healthz` as the first troubleshooting checkpoint: verify the Flask process first, then inspect Socket.IO, LiveKit, and reverse-proxy layers.
 - Keep deployment docs explicit that Nginx proxies the Flask website while LiveKit carries media transport; do not describe them as one service.
 - Run two-client manual verification for every room change.
 - Cover refresh and reconnect for every screen share change.

@@ -71,7 +71,7 @@ Important project-specific reality:
 
 - Socket.IO owns room roster, chat, host permissions, and UI-level room state.
 - LiveKit owns camera, microphone, screen share media transport, and remote track delivery.
-- Runtime online state is still primarily stored in single-process memory on the Flask side.
+- Runtime online state is still primarily stored in single-process memory on the Flask side, now guarded by `runtime_state_lock` on the main mutation paths and exposed through `/api/healthz` for diagnostics.
 
 That means every room change should be checked for consistency across:
 

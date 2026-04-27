@@ -331,6 +331,7 @@ http://127.0.0.1:5000
 | `git` 命令不存在 | Git 是否安装；重新打开终端 |
 | `pip install` 很慢 | 可以换国内 PyPI 镜像，或先确认网络；服务器安装说明见 [部署指南准备项目目录](docs/DEPLOYMENT_GUIDE.md#4-准备项目目录) |
 | `/room/<会议号>` 返回 `503` | `.env` 里缺少 `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET`；排查步骤见 [部署指南常见问题](docs/DEPLOYMENT_GUIDE.md#16-常见问题) |
+| 服务看起来挂了或房间状态异常 | 先访问 `/api/healthz` 看 Flask 进程是否仍存活、`livekit_enabled` 是否为 `true`、在线房间/连接数是否异常，再回看 systemd 与 Nginx 日志 |
 | 录屏转 MP4 失败 | 是否安装 FFmpeg，并且 `ffmpeg -version` 能输出版本 |
 | 背景虚化启动失败 | 先确认摄像头已开启；如果刚关闭/重开过摄像头，等待本地画面恢复后再启用；该功能依赖浏览器加载 MediaPipe 模型 |
 
@@ -346,6 +347,8 @@ http://127.0.0.1:5000
   -> Flask 应用
   -> LiveKit Cloud 或自建 LiveKit 负责媒体传输
 ```
+
+当前版本仍然是单进程运行态设计：后端用内存字典保存在线房间、socket 映射和共享状态，并新增了运行态锁与 `/api/healthz` 健康检查来降低线程竞争和排障成本。它更稳，但仍不代表可以直接开启多 worker 或多实例部署。
 
 最小服务器建议：
 
@@ -800,6 +803,7 @@ Meeting history timestamps use the current user's region/timezone preference fro
 | `git` command is missing | Confirm Git is installed, then reopen the terminal |
 | `pip install` is slow | Try a PyPI mirror or check the network; server setup details are in [Prepare Project Directory](docs/DEPLOYMENT_GUIDE.md#4-prepare-the-project-directory) |
 | `/room/<room_id>` returns `503` | `.env` is missing `LIVEKIT_URL`, `LIVEKIT_API_KEY`, or `LIVEKIT_API_SECRET`; see [Common Issues](docs/DEPLOYMENT_GUIDE.md#16-common-issues) |
+| The service seems down or room state looks wrong | Check `/api/healthz` first to confirm the Flask process is alive, whether `livekit_enabled` is `true`, and whether room/socket counts look abnormal, then review systemd and Nginx logs |
 | MP4 recording remux fails | Confirm FFmpeg is installed and `ffmpeg -version` prints a version |
 | Virtual background fails to start | Turn the camera on first; after toggling the camera, wait for local video to recover before enabling it; this feature also depends on the browser loading the MediaPipe model |
 
@@ -815,6 +819,8 @@ Browser
   -> Flask application
   -> LiveKit Cloud or self-hosted LiveKit for media transport
 ```
+
+The current version still uses a single-process runtime design: backend memory stores online rooms, socket mappings, and active-share state, and the code now adds a runtime lock plus `/api/healthz` to reduce thread races and improve troubleshooting. It is more robust, but it still should not be treated as multi-worker or multi-instance safe.
 
 Minimum server recommendation:
 

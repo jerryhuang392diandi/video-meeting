@@ -20,6 +20,7 @@
 - 把录屏和虚化重逻辑进一步抽到 `static/room_recording.js` 与 `static/room_virtual_background.js`，减少增强功能继续挤占房间主链路。
 - 把注册页和邮箱验证码登录页的表单 intent 切换脚本抽到共享静态文件，避免认证页面继续复制同一段逻辑。
 - 把认证页顶部栏和 action card 抽成模板局部，减少登录/注册/找回密码/管理员登录页面的重复结构。
+- 给后端运行态补上 `runtime_state_lock` 和 `/api/healthz`，先把单进程内存状态的关键并发路径和排障入口收紧。
 - 将重构优先级写入文档，避免后续维护只依赖口头记忆。
 
 ## 优先级
@@ -74,10 +75,11 @@ The project has converged from the early browser-direct idea to a `Flask + Socke
 
 This pass only makes low-risk synchronization changes:
 
-- Remove the stale complex image-replacement branches from the room script.
-- Change the home-page technology chip to `LiveKit SFU` instead of the generic `WebRTC` label.
-- Tighten background-blur camera-source checks so only `live` camera tracks are used, and clean up failed canvas processing streams after startup failure.
-- Document refactor priorities so future maintenance does not rely on memory.
+- Add `active_sharer_*` state to `participant_snapshot` so room snapshots can repair missed share events and stale focus after refresh.
+- Reduce direct screen-share state writes by routing more updates through shared helpers.
+- Move final room-page socket listeners and bootstrap orchestration into `static/room_bootstrap.js`.
+- Move recording and virtual-background heavy logic into `static/room_recording.js` and `static/room_virtual_background.js`.
+- Add `runtime_state_lock` plus `/api/healthz` so the single-process runtime has tighter critical sections and a first-line troubleshooting endpoint.
 
 ## Priorities
 

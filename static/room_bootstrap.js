@@ -30,6 +30,8 @@
       normalizeParticipantSid,
       syncScreenShareSpeakerRule,
       updateShareUiState,
+      TEXT_SOCKET_RECONNECTING,
+      TEXT_SOCKET_RECONNECTED,
       TEXT_SCREEN_SHARE_MODE,
       TEXT_SCREEN_SHARE_STOPPED,
       TEXT_DANMAKU_ON,
@@ -42,12 +44,32 @@
       TEXT_SCREEN_SHARE_DENIED,
       roomState,
     } = ctx;
+    let hadTransientSocketDisconnect = false;
 
     socket.on('connect', () => {
       ensureCard('local', getDisplayName('local'), true);
       queueRenderLayout();
       socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME() });
       ensureLiveKitController()?.prepareConnection?.(LIVEKIT_URL);
+      if (hadTransientSocketDisconnect) {
+        setStatus(TEXT_SOCKET_RECONNECTED);
+        hadTransientSocketDisconnect = false;
+      }
+    });
+
+    socket.on('disconnect', (reason) => {
+      if (reason === 'io client disconnect') return;
+      hadTransientSocketDisconnect = true;
+      setStatus(TEXT_SOCKET_RECONNECTING, 'warning');
+    });
+
+    socket.on('connect_error', (err) => {
+      const detail = err?.message ? `${TEXT_SOCKET_RECONNECTING}: ${err.message}` : TEXT_SOCKET_RECONNECTING;
+      setStatus(detail, 'warning');
+    });
+
+    socket.io.on('reconnect_attempt', () => {
+      setStatus(TEXT_SOCKET_RECONNECTING, 'warning');
     });
 
     socket.on('join_ok', async (data) => {

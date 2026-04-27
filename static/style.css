@@ -148,13 +148,24 @@ button:hover, .anchor-btn:hover, .chip:hover { transform: translateY(-1px); }
   gap: 10px;
   align-items: center;
 }
+.top-actions > *,
+.lang-switch > * {
+  flex: 0 0 auto;
+}
 .chip, .user-pill, .feature-chip {
   padding: 10px 14px;
   border-radius: 999px;
   background: rgba(255,255,255,0.05);
   border: 1px solid var(--line);
   backdrop-filter: blur(10px);
+  white-space: nowrap;
 }
+.dashboard-topbar { align-items: flex-start; }
+.dashboard-topbar .dashboard-top-actions {
+  flex: 1 1 760px;
+  justify-content: flex-end;
+}
+.dashboard-topbar .lang-switch-label { white-space: nowrap; }
 .chip.active { background: rgba(130,177,255,.18); border-color: rgba(130,177,255,.34); }
 .chip.danger { color: white; background: rgba(255,123,147,.16); }
 .source-dock {

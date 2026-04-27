@@ -66,6 +66,10 @@ const TEXT_RECORD_SAVED = {{ t('recording_saved')|tojson }};
 const TEXT_RECORD_NOT_SUPPORTED = {{ t('recording_not_supported')|tojson }};
 const TEXT_LIVEKIT_CONFIG_MISSING = {{ t('livekit_config_missing')|tojson }};
 const TEXT_LIVEKIT_CONNECT_FAILED = {{ t('livekit_connect_failed')|tojson }};
+const TEXT_LIVEKIT_RECONNECTING = {{ t('livekit_reconnecting')|tojson }};
+const TEXT_LIVEKIT_RECONNECTED = {{ t('livekit_reconnected')|tojson }};
+const TEXT_SOCKET_RECONNECTING = {{ t('socket_reconnecting')|tojson }};
+const TEXT_SOCKET_RECONNECTED = {{ t('socket_reconnected')|tojson }};
 const TEXT_BLUR_BG_TIP = {{ t('blur_bg_tip')|tojson }};
 const TEXT_VIRTUAL_BG_LOADING = {{ t('virtual_bg_loading')|tojson }};
 const TEXT_VIRTUAL_BG_READY = {{ t('virtual_bg_enabled')|tojson }};
@@ -1406,6 +1410,8 @@ function ensureLiveKitController() {
     onScreenShareState: updateLiveKitShareFocus,
     onLocalScreenShareState: handleLocalLiveKitScreenShareState,
     setStatus,
+    textLiveKitReconnecting: TEXT_LIVEKIT_RECONNECTING,
+    textLiveKitReconnected: TEXT_LIVEKIT_RECONNECTED,
   });
   return livekitController;
 }
@@ -2060,6 +2066,8 @@ window.RoomPageBootstrap?.initialize?.({
   normalizeParticipantSid,
   syncScreenShareSpeakerRule,
   updateShareUiState,
+  TEXT_SOCKET_RECONNECTING,
+  TEXT_SOCKET_RECONNECTED,
   TEXT_SCREEN_SHARE_MODE,
   TEXT_SCREEN_SHARE_STOPPED,
   TEXT_DANMAKU_ON,

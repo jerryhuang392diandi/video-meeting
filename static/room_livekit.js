@@ -262,11 +262,15 @@
       onLocalScreenShareState,
       roomOptions,
       initialShareProfile,
+      setStatus,
+      textLiveKitReconnecting,
+      textLiveKitReconnected,
     } = options;
 
     let room = null;
     let connected = false;
     let connectPromise = null;
+    let manualDisconnect = false;
     let localState = createRemoteState();
     let shareProfile = normalizeShareProfile(initialShareProfile);
     let senderStatsCache = { bytesSent: null, timestamp: null };
@@ -371,6 +375,33 @@
       }
       addRemoteVideo(identity, stream);
       onScreenShareState(identity, !!state.screenVideo);
+    }
+
+    function syncRemoteParticipantFromPublications(participant) {
+      const identity = participant?.identity;
+      if (!identity) return;
+      const nextState = createRemoteState();
+      participant?.trackPublications?.forEach?.((publication) => {
+        setTrackField(nextState, publication?.source, getPublicationMediaTrack(publication));
+      });
+      remoteStates.set(identity, nextState);
+      syncRemoteParticipant(identity);
+    }
+
+    function syncAllParticipants() {
+      syncLocalStateFromPublications();
+      syncLocalPreview();
+      room?.remoteParticipants?.forEach?.((participant) => {
+        syncRemoteParticipantFromPublications(participant);
+      });
+    }
+
+    function clearAllRemoteParticipants() {
+      [...remoteStates.keys()].forEach((identity) => {
+        clearRemoteMedia(identity);
+        onScreenShareState(identity, false);
+      });
+      remoteStates.clear();
     }
 
     function trackToMediaStreamTrack(track) {
@@ -485,6 +516,27 @@
 
     function bindRoomEvents() {
       room
+        .on(lk.RoomEvent.Connected, () => {
+          connected = true;
+          syncAllParticipants();
+        })
+        .on(lk.RoomEvent.Reconnecting, () => {
+          connected = false;
+          if (textLiveKitReconnecting) {
+            setStatus?.(textLiveKitReconnecting, 'warning');
+          }
+        })
+        .on(lk.RoomEvent.Reconnected, () => {
+          connected = true;
+          syncAllParticipants();
+          applyActiveScreenShareProfile().catch(() => {});
+          if (textLiveKitReconnected) {
+            setStatus?.(textLiveKitReconnected);
+          }
+        })
+        .on(lk.RoomEvent.ParticipantConnected, (participant) => {
+          syncRemoteParticipantFromPublications(participant);
+        })
         .on(lk.RoomEvent.TrackSubscribed, (track, publication, participant) => {
           const mediaTrack = trackToMediaStreamTrack(track);
           if (!mediaTrack || !participant?.identity) return;
@@ -530,6 +582,12 @@
           connected = false;
           resetScreenShareStatsCache();
           onLocalScreenShareState?.(false);
+          syncLocalStateFromPublications();
+          syncLocalPreview();
+          clearAllRemoteParticipants();
+          if (!manualDisconnect && textLiveKitReconnecting) {
+            setStatus?.(textLiveKitReconnecting, 'warning');
+          }
         });
       if (lk.RoomEvent.TrackMuted) {
         room.on(lk.RoomEvent.TrackMuted, (publication, participant) => {
@@ -583,6 +641,7 @@
     async function connect() {
       if (connected && room) return room;
       if (connectPromise) return connectPromise;
+      manualDisconnect = false;
       connectPromise = (async () => {
         const tokenPayload = await fetchToken();
         const activeRoom = createRoomInstance();
@@ -595,8 +654,7 @@
           autoSubscribe: true,
         });
         connected = true;
-        syncLocalStateFromPublications();
-        syncLocalPreview();
+        syncAllParticipants();
         return activeRoom;
       })().finally(() => {
         connectPromise = null;
@@ -689,6 +747,7 @@
     }
 
     function disconnect() {
+      manualDisconnect = true;
       if (room) {
         try {
           room.disconnect();
@@ -702,7 +761,7 @@
         replacementCameraTrack = null;
       }
       localState = createRemoteState();
-      remoteStates.clear();
+      clearAllRemoteParticipants();
     }
 
     async function prepareConnection(targetUrl = url) {
