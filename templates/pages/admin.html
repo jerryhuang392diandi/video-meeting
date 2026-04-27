@@ -1,15 +1,17 @@
 {% extends 'pages/base.html' %}
 {% block title %}{{ t('admin_dashboard') }}{% endblock %}
 {% block content %}
-<header class="topbar compact">
-  <div>
+<header class="topbar compact admin-header">
+  <div class="admin-header-copy">
     <div class="brand">{{ t('admin_dashboard') }}</div>
     <div class="muted">{{ t('root_admin_console') }} · {{ t('time_display_timezone') }}: {{ display_timezone_label }} ({{ display_timezone }})</div>
   </div>
-  <div class="top-actions">
-    {% include 'partials/_language_switch.html' %}
-    <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
-    <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
+  <div class="top-actions admin-header-actions">
+    <div class="admin-header-nav">
+      {% include 'partials/_language_switch.html' %}
+      <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
+      <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
+    </div>
   </div>
 </header>
 
@@ -80,22 +82,23 @@
 
 <section class="grid two admin-mid-grid">
   <div class="panel panel-glow">
-    <div class="row-compact" style="justify-content: space-between; align-items: center; margin-bottom: 12px;">
-      <h2 style="margin: 0;">{{ t('active_meetings') }}</h2>
+    <div class="admin-section-summary">
+      <h2>{{ t('active_meetings') }}</h2>
       <div class="muted">{{ t('selected_count') }}: <span id="selectedActiveMeetingCount">0</span></div>
     </div>
     <form method="post" action="{{ url_for('admin_bulk_end_meetings') }}" id="bulkEndForm">
-      <div class="row-compact wrap-actions" style="margin-bottom: 12px;">
-        <label class="chip" style="cursor:pointer;">
-          <input type="checkbox" id="selectAllActiveMeetings" style="margin-right: 6px;">{{ t('select_all') }}
+      <div class="admin-bulk-toolbar">
+        <label class="chip admin-select-chip" for="selectAllActiveMeetings">
+          <input type="checkbox" id="selectAllActiveMeetings">
+          <span>{{ t('select_all') }}</span>
         </label>
         <button class="ghost-btn danger" type="submit" data-bulk-submit="1">{{ t('batch_end_meetings') }}</button>
       </div>
       {% for m in active_meetings %}
-      <div class="list-item stacked">
-        <div class="row-compact" style="justify-content: space-between; align-items: flex-start; width: 100%; gap: 12px;">
-          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-            <input type="checkbox" name="meeting_ids" value="{{ m.id }}" class="active-meeting-checkbox">
+      <div class="list-item stacked admin-meeting-item">
+        <div class="row-compact admin-meeting-row">
+          <label class="admin-meeting-select" for="activeMeeting{{ m.id }}">
+            <input type="checkbox" name="meeting_ids" value="{{ m.id }}" class="active-meeting-checkbox" id="activeMeeting{{ m.id }}">
             <span class="item-title">{{ m.room_id }} · {{ m.host_name }}</span>
           </label>
           <div class="row-compact wrap-actions">
@@ -130,23 +133,24 @@
 </section>
 
 <section class="panel panel-glow">
-  <div class="row-compact" style="justify-content: space-between; align-items: center; margin-bottom: 12px;">
-    <h2 style="margin: 0;">{{ t('history_records') }}</h2>
+  <div class="admin-section-summary">
+    <h2>{{ t('history_records') }}</h2>
     <div class="muted">{{ t('selected_count') }}: <span id="selectedMeetingCount">0</span></div>
   </div>
   <form method="post" action="{{ url_for('admin_bulk_delete_meetings') }}" id="bulkDeleteForm">
-    <div class="row-compact wrap-actions" style="margin-bottom: 12px;">
-      <label class="chip" style="cursor:pointer;">
-        <input type="checkbox" id="selectAllMeetings" style="margin-right: 6px;">{{ t('select_all') }}
+    <div class="admin-bulk-toolbar">
+      <label class="chip admin-select-chip" for="selectAllMeetings">
+        <input type="checkbox" id="selectAllMeetings">
+        <span>{{ t('select_all') }}</span>
       </label>
       <button class="ghost-btn danger" type="submit" data-bulk-submit="1">{{ t('batch_delete') }}</button>
     </div>
 
     {% for m in history_meetings %}
-    <div class="list-item stacked">
-      <div class="row-compact" style="justify-content: space-between; align-items: flex-start; width: 100%; gap: 12px;">
-        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-          <input type="checkbox" name="meeting_ids" value="{{ m.id }}" class="meeting-checkbox">
+    <div class="list-item stacked admin-meeting-item">
+      <div class="row-compact admin-meeting-row">
+        <label class="admin-meeting-select" for="historyMeeting{{ m.id }}">
+          <input type="checkbox" name="meeting_ids" value="{{ m.id }}" class="meeting-checkbox" id="historyMeeting{{ m.id }}">
           <span class="item-title">{{ m.room_id }} · {{ m.host_name }}</span>
         </label>
         <button class="ghost-btn danger" type="submit" formaction="{{ url_for('admin_delete_meeting', meeting_id=m.id) }}" formmethod="post">{{ t('delete_record') }}</button>
@@ -188,10 +192,6 @@
 
 {% endblock %}
 
-<style>
-.metric-chart-card{display:flex;flex-direction:column;gap:10px;align-items:center;justify-content:center;min-height:180px}.metric-ring{--pct:0;position:relative;width:118px;height:118px;border-radius:999px;display:grid;place-items:center;background:conic-gradient(rgba(98,196,255,.95) calc(var(--pct) * 1%), rgba(255,255,255,.08) 0)}.metric-ring::after{content:"";position:absolute;inset:10px;border-radius:999px;background:rgba(7,18,45,.96);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}.metric-ring span,.metric-ring strong{position:relative;z-index:1;display:block;text-align:center}.metric-ring span{font-size:12px;color:#9fb2d1}.metric-ring strong{font-size:22px;margin-top:2px}.admin-user-card{gap:18px}.admin-actions-grid{display:grid;gap:10px;width:100%}.admin-reset-form input{min-width:180px}.admin-alert-panel .status-grid strong{font-size:20px}
-</style>
-
 {% block scripts %}
 <script>
   window.renderLocalDateTimes && window.renderLocalDateTimes();
@@ -203,26 +203,42 @@
       const countNode = document.getElementById(options.countNodeId);
       const form = document.getElementById(options.formId);
       const emptyMessage = options.emptyMessage || '';
+      let syncingSelectAll = false;
 
-      function updateCount() {
-        const checkedCount = checkboxes.filter(item => item.checked).length;
+      function getCheckedCount() {
+        return checkboxes.filter(item => item.checked).length;
+      }
+
+      function updateSummary() {
+        const checkedCount = getCheckedCount();
+        const totalCount = checkboxes.length;
+
         if (countNode) countNode.textContent = String(checkedCount);
         if (selectAll) {
-          selectAll.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
-          selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+          syncingSelectAll = true;
+          selectAll.checked = totalCount > 0 && checkedCount === totalCount;
+          selectAll.indeterminate = checkedCount > 0 && checkedCount < totalCount;
+          syncingSelectAll = false;
         }
+      }
+
+      function toggleAll(checked) {
+        checkboxes.forEach((item) => {
+          item.checked = checked;
+        });
+        updateSummary();
       }
 
       if (selectAll) {
         selectAll.addEventListener('change', function () {
-          checkboxes.forEach(item => {
-            item.checked = selectAll.checked;
-          });
-          updateCount();
+          if (syncingSelectAll) return;
+          toggleAll(selectAll.checked);
         });
       }
 
-      checkboxes.forEach(item => item.addEventListener('change', updateCount));
+      checkboxes.forEach((item) => {
+        item.addEventListener('change', updateSummary);
+      });
 
       if (form) {
         form.addEventListener('submit', function (event) {
@@ -230,7 +246,7 @@
           if (submitter?.dataset?.bulkSubmit !== '1') {
             return;
           }
-          const checkedCount = checkboxes.filter(item => item.checked).length;
+          const checkedCount = getCheckedCount();
           if (!checkedCount) {
             event.preventDefault();
             if (emptyMessage) {
@@ -240,7 +256,7 @@
         });
       }
 
-      updateCount();
+      updateSummary();
     }
 
     bindBulkSelection({
