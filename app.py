@@ -115,6 +115,7 @@ EMAIL_VERIFY_CODE_TTL_MINUTES = max(1, int(os.environ.get("EMAIL_VERIFY_CODE_TTL
 EMAIL_CODE_SEND_LIMIT = max(1, int(os.environ.get("EMAIL_CODE_SEND_LIMIT", "2") or "2"))
 ADMIN_SECURITY_ALERTS_ENABLED = (os.environ.get("ADMIN_SECURITY_ALERTS_ENABLED", "1") or "").strip().lower() in {"1", "true", "yes", "on"}
 ADMIN_SECURITY_LINK_TTL_MINUTES = max(5, int(os.environ.get("ADMIN_SECURITY_LINK_TTL_MINUTES", "30") or "30"))
+ADMIN_SECURITY_RECOVERY_CODE = (os.environ.get("ADMIN_SECURITY_RECOVERY_CODE") or "").strip()
 SECURITY_LOCKDOWN_FILE = os.path.join(INSTANCE_DIR, "security_lockdown.json")
 
 def normalize_admin_login_path(value: str | None) -> str:
