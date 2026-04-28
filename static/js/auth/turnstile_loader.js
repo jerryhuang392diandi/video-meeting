@@ -1,5 +1,6 @@
 (function (global) {
   let loaderPromise = null;
+  const mountedBlocks = new WeakMap();
 
   function loadTurnstileScript() {
     if (global.turnstile?.render) return Promise.resolve(global.turnstile);
@@ -51,14 +52,29 @@
     if (text) node.textContent = text;
   }
 
+  function requestPendingFormSubmit(block) {
+    const form = block?.closest('form');
+    if (!form || block.dataset.submitPending !== '1') return;
+    block.dataset.submitPending = '0';
+    const tokenField = form.querySelector('input[name="cf-turnstile-response"]');
+    if (!tokenField?.value) return;
+    if (typeof form.requestSubmit === 'function') {
+      form.requestSubmit();
+    } else {
+      form.submit();
+    }
+  }
+
   function mountBlock(block, api) {
     const target = block.querySelector('.cf-turnstile');
     const siteKey = target?.dataset?.sitekey || '';
-    if (!target || !siteKey || target.dataset.rendered === '1') return;
-    api.render(target, {
+    if (!target || !siteKey) return;
+    if (mountedBlocks.has(block)) return mountedBlocks.get(block);
+    const widgetId = api.render(target, {
       sitekey: siteKey,
       callback: function () {
         setStatus(block, 'helpText');
+        requestPendingFormSubmit(block);
       },
       'expired-callback': function () {
         setStatus(block, 'expiredText');
@@ -68,21 +84,52 @@
         setStatus(block, 'failedText');
       },
     });
-    target.dataset.rendered = '1';
+    mountedBlocks.set(block, widgetId);
     setStatus(block, 'helpText');
+    return widgetId;
+  }
+
+  function initializeBlock(block) {
+    if (!block || mountedBlocks.has(block)) return Promise.resolve();
+    setStatus(block, 'loadingText');
+    return loadTurnstileScript()
+      .then((api) => {
+        mountBlock(block, api);
+      })
+      .catch(() => {
+        setStatus(block, 'failedText');
+        throw new Error('turnstile_init_failed');
+      });
+  }
+
+  function bindBlock(block) {
+    const form = block.closest('form');
+    if (!form || block.dataset.bound === '1') return;
+    block.dataset.bound = '1';
+
+    const eagerInit = function () {
+      initializeBlock(block).catch(() => {});
+    };
+
+    form.addEventListener('focusin', eagerInit, { once: true });
+    form.addEventListener('pointerdown', eagerInit, { once: true });
+
+    form.addEventListener('submit', function (event) {
+      const tokenField = form.querySelector('input[name="cf-turnstile-response"]');
+      if (tokenField?.value) return;
+      event.preventDefault();
+      block.dataset.submitPending = '1';
+      initializeBlock(block).catch(() => {});
+    });
   }
 
   function initialize() {
     const blocks = Array.from(document.querySelectorAll('[data-turnstile-block]'));
     if (!blocks.length) return;
-    blocks.forEach((block) => setStatus(block, 'loadingText'));
-    loadTurnstileScript()
-      .then((api) => {
-        blocks.forEach((block) => mountBlock(block, api));
-      })
-      .catch(() => {
-        blocks.forEach((block) => setStatus(block, 'failedText'));
-      });
+    blocks.forEach((block) => {
+      setStatus(block, 'helpText');
+      bindBlock(block);
+    });
   }
 
   if (document.readyState === 'loading') {

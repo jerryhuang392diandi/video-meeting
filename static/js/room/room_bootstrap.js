@@ -80,7 +80,9 @@
       (data.chat_history || []).forEach((item) => appendChatMessage(item));
       focusParticipant('local');
       roomState.setDanmakuEnabled(!!data.danmaku_enabled);
-      await finalizeJoinBootstrap(data);
+      finalizeJoinBootstrap(data).catch((err) => {
+        console.error(err);
+      });
       refreshRtcDiagnostics().catch(() => {});
       if (data && data.host_present === false && IS_HOST) {
         setStatus(TEXT_HOST_RETURNED_ROOM);

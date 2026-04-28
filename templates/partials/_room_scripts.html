@@ -1550,15 +1550,18 @@ async function toggleVirtualBackgroundAction() {
 
 async function finalizeJoinBootstrap(data) {
   applySnapshotSharerState(data?.active_sharer_sid || null);
-  await ensureLiveKitConnected();
   if (pendingReloadRecoveryHint) {
     const reloadHint = pendingReloadRecoveryHint;
     pendingReloadRecoveryHint = null;
+    await ensureLiveKitConnected();
     await restoreLiveKitMediaAfterReload(reloadHint);
     joinMediaBootstrapDone = true;
     return;
   }
   scheduleJoinMediaBootstrap();
+  ensureLiveKitConnected().catch((err) => {
+    console.error(err);
+  });
 }
 
 function downloadBlob(blob, filename) {
