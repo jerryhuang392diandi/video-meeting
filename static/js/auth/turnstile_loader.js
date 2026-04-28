@@ -107,13 +107,6 @@
     if (!form || block.dataset.bound === '1') return;
     block.dataset.bound = '1';
 
-    const eagerInit = function () {
-      initializeBlock(block).catch(() => {});
-    };
-
-    form.addEventListener('focusin', eagerInit, { once: true });
-    form.addEventListener('pointerdown', eagerInit, { once: true });
-
     form.addEventListener('submit', function (event) {
       const tokenField = form.querySelector('input[name="cf-turnstile-response"]');
       if (tokenField?.value) return;
@@ -129,6 +122,7 @@
     blocks.forEach((block) => {
       setStatus(block, 'helpText');
       bindBlock(block);
+      initializeBlock(block).catch(() => {});
     });
   }
 
