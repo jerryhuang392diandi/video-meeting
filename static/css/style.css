@@ -323,15 +323,15 @@ button:hover, .anchor-btn:hover, .chip:hover { transform: translateY(-1px); }
   min-width: 0;
 }
 .admin-header-actions {
-  flex: 1 1 640px;
+  flex: 0 1 auto;
   justify-content: flex-end;
 }
 .admin-header-nav {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   gap: 10px;
-  width: 100%;
+  width: auto;
 }
 .admin-header-nav > * {
   flex: 0 1 auto;

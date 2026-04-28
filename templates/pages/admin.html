@@ -9,8 +9,6 @@
   <div class="top-actions admin-header-actions app-topbar-actions">
     <nav class="admin-header-nav topbar-nav" aria-label="{{ t('nav_menu') }}">
       <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
-      <a class="chip" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
-      <a class="chip active" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>
     </nav>
     {% include 'partials/_language_switch.html' %}
     <details class="header-menu">

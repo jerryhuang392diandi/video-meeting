@@ -2133,7 +2133,7 @@ def login():
 @app.route(ADMIN_LOGIN_PATH, methods=["GET", "POST"], endpoint="admin_login")
 def admin_login():
     if current_user.is_authenticated and current_user.is_admin:
-        return redirect(url_for("admin_dashboard"))
+        return redirect(url_for("index"))
     if request.method == "GET":
         return render_template("pages/admin_login.html", admin_login_path=ADMIN_LOGIN_PATH)
 
@@ -2159,7 +2159,7 @@ def admin_login():
         return render_template("pages/admin_login.html", error=validation_error, admin_login_path=ADMIN_LOGIN_PATH)
 
     finalize_authenticated_session(user)
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("index"))
 
 @app.route("/login-email-code", methods=["GET", "POST"])
 def login_email_code():
