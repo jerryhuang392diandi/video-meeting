@@ -18,6 +18,7 @@
 - 主持人结束会议、清空聊天、控制房间行为
 - 管理员后台：用户管理、会议管理、密码重置申请、系统统计
 - 独立管理员登录入口、管理员邮件提醒和基础健康检查
+- 管理员安全告警、一键锁定和恢复码解锁
 - 中英文界面和基础 i18n 检查
 - 面向外国友人的中英双语 Quickstart 快速开始页
 - 更完整的用户指南，覆盖账户偏好、入会设备、聊天附件、屏幕共享和主持人操作
@@ -293,6 +294,7 @@ LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 ADMIN_USERNAME=localadmin
 ADMIN_PASSWORD=root1234
 ADMIN_LOGIN_PATH=/admin-login-local
+ADMIN_SECURITY_RECOVERY_CODE=replace-with-a-long-recovery-code
 PUBLIC_REGISTRATION_ENABLED=1
 STRICT_SECURITY_CHECKS=0
 TURNSTILE_SITE_KEY=
@@ -313,6 +315,7 @@ TURNSTILE_SECRET_KEY=
 | `LIVEKIT_API_SECRET` | 后端签发 LiveKit token 使用的 API secret | 从 LiveKit Cloud 项目设置复制，不要公开 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 管理后台初始登录账号 | 本地可用简单值，但不要和 Linux 的 `root` / `ubuntu` 登录用户混为一谈；线上必须改强密码 |
 | `ADMIN_LOGIN_PATH` | 独立管理员登录入口路径 | 本地可保持默认 `/admin-login`；公网建议改成长且不易猜的路径 |
+| `ADMIN_SECURITY_RECOVERY_CODE` | 安全锁定后的恢复码 | 线上强烈建议显式设置；不要提交到仓库 |
 | `PUBLIC_REGISTRATION_ENABLED` | 是否允许任何人直接注册 | 本地演示可开，公网建议设为 `0` |
 | `STRICT_SECURITY_CHECKS` | 是否在启动时拒绝弱 `SECRET_KEY` / `ADMIN_*` 配置 | 公网建议设为 `1` |
 | `EMAIL_AUTH_ENABLED` | 是否启用邮箱验证码注册/登录链路 | 本地可关闭；开启后要继续配置 SMTP |
@@ -342,6 +345,8 @@ http://127.0.0.1:5000
 
 默认会使用 `instance/app.db` 作为 SQLite 数据库。首次运行时如果没有设置管理员密码，应用会生成初始密码并写入 `instance/admin_password.txt`。
 
+如果没有显式设置 `ADMIN_SECURITY_RECOVERY_CODE`，应用还会生成恢复码并写入 `instance/security_recovery_code.txt`。这个文件只给服务器管理员自己保存，用于解除安全锁定。
+
 ### 6. 本地常见问题
 
 | 现象 | 优先检查 |
@@ -351,6 +356,7 @@ http://127.0.0.1:5000
 | `pip install` 很慢 | 可以换国内 PyPI 镜像，或先确认网络；服务器安装说明见 [部署指南准备项目目录](docs/DEPLOYMENT_GUIDE.md#4-准备项目目录) |
 | `/room/<会议号>` 返回 `503` | `.env` 里缺少 `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET`；排查步骤见 [部署指南常见问题](docs/DEPLOYMENT_GUIDE.md#16-常见问题) |
 | 服务看起来挂了或房间状态异常 | 先访问 `/api/healthz` 看 `status` 是否为 `ok`、`rtc_mode` 是否为 `livekit`、`livekit_enabled` 是否为 `true`、在线房间/连接数是否异常，再回看 systemd 与 Nginx 日志 |
+| 服务进入 `503 Security Lockdown` | 打开 `/admin/security/unlock` 输入恢复码；如果忘了恢复码，先到服务器查看 `instance/security_recovery_code.txt`，或检查 `.env` 中的 `ADMIN_SECURITY_RECOVERY_CODE` |
 | 录屏转 MP4 失败 | 是否安装 FFmpeg，并且 `ffmpeg -version` 能输出版本 |
 | 背景虚化启动失败 | 先确认摄像头已开启；如果刚关闭/重开过摄像头，等待本地画面恢复后再启用；该功能依赖浏览器加载 MediaPipe 模型 |
 
@@ -427,6 +433,7 @@ http://127.0.0.1:5000
 | `ADMIN_USERNAME` | 初始管理员用户名，默认 `root` |
 | `ADMIN_PASSWORD` | 初始管理员密码；未设置时自动生成 |
 | `ADMIN_LOGIN_PATH` | 独立管理员登录路径，默认 `/admin-login` |
+| `ADMIN_SECURITY_RECOVERY_CODE` | 安全锁定后的恢复码；未设置时自动生成到 `instance/security_recovery_code.txt` |
 | `PUBLIC_REGISTRATION_ENABLED` | 是否允许公开注册，默认开启 |
 | `STRICT_SECURITY_CHECKS` | 严格安全启动检查，开启后要求显式强 `SECRET_KEY`、强 `ADMIN_PASSWORD`，且不允许 `ADMIN_USERNAME=root` |
 | `EMAIL_AUTH_ENABLED` | 是否启用邮箱验证码注册/登录 |
@@ -935,6 +942,24 @@ LiveKit configuration is required. If it is missing, room media is unavailable a
 | `DEBUG_ROOM=1` | Enables room debug logging |
 
 Optional settings also include `EMAIL_SMTP_USERNAME`, `EMAIL_SMTP_PASSWORD`, `EMAIL_SMTP_USE_TLS`, `EMAIL_SMTP_USE_SSL`, `EMAIL_VERIFY_CODE_TTL_MINUTES`, `EMAIL_CODE_SEND_LIMIT`, `EMAIL_CODE_SEND_WINDOW_SECONDS`, `TURN_PUBLIC_HOST`, `TURN_URLS`, `TURN_USERNAME`, `TURN_PASSWORD`, `SESSION_COOKIE_SAMESITE`, `SESSION_COOKIE_SECURE`, `REMEMBER_COOKIE_SAMESITE`, `REMEMBER_COOKIE_SECURE`, `LOGIN_RATE_LIMIT_PER_IP`, `LOGIN_RATE_LIMIT_PER_USER`, `LOGIN_RATE_LIMIT_WINDOW_SECONDS`, `REGISTER_RATE_LIMIT_PER_IP`, `REGISTER_RATE_LIMIT_WINDOW_SECONDS`, `PASSWORD_RESET_RATE_LIMIT_PER_IP`, `PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS`, `SECURITY_HEADERS_ENABLED`, `PUBLIC_REGISTRATION_ENABLED`, `STRICT_SECURITY_CHECKS`, `TURNSTILE_SITE_KEY`, and `TURNSTILE_SECRET_KEY`.
+
+## Admin Security Recovery
+
+If admin email alerts are configured, the app can send security alerts in these cases:
+
+- admin credentials were entered on the public password login page;
+- an admin email was targeted from the public email-code login flow;
+- an admin successfully signed in from the dedicated admin entrance.
+
+Those emails include a one-click lockdown link. Once triggered, the service enters `503 Security Lockdown`, active sessions are disconnected, and `/api/healthz` reports `security_lockdown_active=true`.
+
+Recovery flow for beginners:
+
+1. Open `https://your-domain/admin/security/unlock`.
+2. Enter the recovery code.
+3. If you explicitly set `ADMIN_SECURITY_RECOVERY_CODE` in `.env`, use that value.
+4. If you did not set it, read the generated file `instance/security_recovery_code.txt` on the server.
+5. After unlocking, rotate `ADMIN_PASSWORD` and review recent security alert emails.
 
 ## Runtime Limits
 

@@ -12,7 +12,7 @@ This project is now a `Flask + Flask-SocketIO + LiveKit` online meeting app with
 - `i18n/translations.py`: Chinese/English translation keys used by `t(...)` in templates and backend.
 - `scripts/check_i18n.py`: lightweight i18n consistency checker for hardcoded Chinese in templates.
 - `docs/`: project docs, deployment notes, stability audit, and defense notes.
-- `instance/` (generated, ignored): SQLite DB, runtime uploads, generated admin password file.
+- `instance/` (generated, ignored): SQLite DB, runtime uploads, generated admin password file, security lockdown state, and recovery-code bootstrap file.
 
 ## Build, Test, and Development Commands
 - `python -m venv venv` then `venv\Scripts\activate` on Windows: create and activate local environment.
@@ -37,6 +37,8 @@ For templates, prefer translation keys through `t('key')` instead of inline UI t
 - `room_diagnostics.js`: RTC/LiveKit diagnostics summary.
 - `room_utils.js`: shared helpers.
 
+For admin and security-related UI, keep the visible navigation compact. The dedicated admin login should land on the admin home page, while `/admin` remains the admin console itself. Security lockdown and recovery now live in `/admin/security/unlock`, and the recovery code can come from `ADMIN_SECURITY_RECOVERY_CODE` or the generated `instance/security_recovery_code.txt` file.
+
 ## Testing Guidelines
 Before submitting:
 
@@ -45,7 +47,7 @@ Before submitting:
 - verify both `zh` and `en` UI paths for any changed template;
 - test a two-client room join flow, ideally desktop + mobile, and confirm first join works without refresh;
 - verify that joining with local camera/mic still blocked or not yet granted can still receive remote media;
-- if you changed admin logic, verify `/admin` and the main admin actions still work.
+- if you changed admin logic, verify the public login, dedicated admin login, admin home page, `/admin`, and `/admin/security/unlock` all still work.
 
 ## LiveKit Regression Guard
 The project’s primary media path is now LiveKit SFU. Do not reintroduce browser-mesh assumptions into the main room bootstrap path.
@@ -109,6 +111,7 @@ Current runtime reality:
 - room online state is still largely single-process memory;
 - LiveKit is external infrastructure and must be configured correctly;
 - `ffmpeg` is optional but required for some recording export paths;
+- admin security alerts and lockdown flows depend on SMTP being configured correctly;
 - deployment docs must stay aligned with actual env vars such as `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `PUBLIC_HOST`, and `PUBLIC_SCHEME`.
 
 ## Documentation Maintenance

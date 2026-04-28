@@ -705,6 +705,7 @@ ADMIN_USERNAME=meetingadmin
 ADMIN_PASSWORD=replace-with-strong-admin-password
 ADMIN_EMAIL=admin@example.com
 ADMIN_LOGIN_PATH=/manage-choose-a-long-random-path
+ADMIN_SECURITY_RECOVERY_CODE=replace-with-a-long-recovery-code
 PUBLIC_REGISTRATION_ENABLED=0
 EMAIL_AUTH_ENABLED=1
 EMAIL_SMTP_HOST=smtp.resend.com
@@ -754,6 +755,7 @@ ADMIN_USERNAME=meetingadmin
 ADMIN_PASSWORD=replace-with-strong-admin-password
 ADMIN_EMAIL=admin@example.com
 ADMIN_LOGIN_PATH=/manage-choose-a-long-random-path
+ADMIN_SECURITY_RECOVERY_CODE=replace-with-a-long-recovery-code
 PUBLIC_REGISTRATION_ENABLED=0
 EMAIL_AUTH_ENABLED=1
 EMAIL_SMTP_HOST=smtp.resend.com
@@ -806,6 +808,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 初始管理员账号和密码 | 推荐 |
 | `ADMIN_EMAIL` | 管理员账号邮箱；可用于独立管理员登录页登录；未设置时默认复用 `ADMIN_ALERT_EMAIL` | 推荐 |
 | `ADMIN_LOGIN_PATH` | 独立管理员登录入口路径，例如 `/manage-choose-a-long-random-path`；普通登录页会拒绝管理员账号 | 公网推荐 |
+| `ADMIN_SECURITY_RECOVERY_CODE` | 安全锁定后的恢复码；建议显式设置，避免只依赖服务器本地生成文件 | 强烈推荐 |
 | `PUBLIC_REGISTRATION_ENABLED` | 是否允许任何人自助注册；公网建议关闭 | 推荐 |
 | `EMAIL_AUTH_ENABLED` | 是否启用“用户名/邮箱 + 密码 + 邮箱验证码”注册登录链路 | 按需 |
 | `EMAIL_SMTP_HOST` / `EMAIL_SMTP_PORT` | SMTP 服务器地址和端口 | 启用邮箱验证时必填 |
@@ -838,6 +841,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 - 不要因为你是用 `root` 登录服务器，就顺手把 `ADMIN_USERNAME` 也设成 `root`。这是两个完全不同的概念。
 - 如果开启 `EMAIL_AUTH_ENABLED=1`，请确保 SMTP 发信配置正确；注册验证码和密码重置验证码都会直接发到用户邮箱。
 - 管理员提醒复用同一套 SMTP 配置：设置 `ADMIN_EMAIL_NOTIFY_ENABLED=1` 和 `ADMIN_ALERT_EMAIL=你的管理员邮箱` 后，新用户注册、用户进入会议房间以及高危管理操作都会按开关发送提醒。`ADMIN_ALERT_EMAIL` 是收提醒的邮箱；`ADMIN_EMAIL` 是管理员账号邮箱，默认复用 `ADMIN_ALERT_EMAIL`，所以也可以在独立管理员登录页用这个邮箱 + `ADMIN_PASSWORD` 登录。管理员邮箱只放服务器 `.env`，不要提交到 GitHub。
+- 如果同时配置了管理员邮箱和 SMTP，系统现在还支持管理员安全告警：普通入口触发管理员凭据尝试、普通邮箱验证码入口触发管理员邮箱尝试、以及管理员成功登录时，都会发送带“一键锁定链接”的安全邮件。锁定后可通过 `/admin/security/unlock` + 恢复码恢复服务。
 - 线上 systemd 不要直接运行 `python app.py`。那会启动 Werkzeug 开发服务器；如果你在 `systemctl status video-meeting` 里看到 `Werkzeug appears to be used in a production deployment` 或 `This is a development server`，说明当前运行方式不对。
 - 如果你不熟悉终端编辑器，可以直接保留 EOF 写法；最后那个单独一行的 `EOF` 表示写入结束。
 - `TURNSTILE_SECRET_KEY` 不能自己随便生成，必须和 `TURNSTILE_SITE_KEY` 一起从同一个 Cloudflare Turnstile 站点页面复制。
@@ -845,6 +849,95 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 - 修改 `.env` 后必须重启服务，后面 `systemd` 章节会执行这一步。
 - LiveKit 三项缺失时，房间页返回 `503` 是正常保护逻辑。
 - SQLite 数据库、上传文件、生成的管理员密码等运行时文件在 `instance/`，备份时不要漏掉。
+- 如果没有设置 `ADMIN_SECURITY_RECOVERY_CODE`，应用会在首次启动后生成 `instance/security_recovery_code.txt`。生产环境建议立刻把恢复码抄到密码管理器里。
+
+### 5.2 管理员安全锁定与恢复
+
+适合新手的理解方式：
+
+- “锁定”是指服务故意返回 `503 Security Lockdown`，并断开当前在线连接，防止继续被人操作。
+- “恢复码”是只有你自己知道的一段字符串，用来从锁定模式恢复服务。
+- “一键锁定链接”会出现在管理员安全告警邮件里。
+
+推荐配置：
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(24))"
+```
+
+把输出内容填进：
+
+```env
+ADMIN_SECURITY_RECOVERY_CODE=替换成你自己生成的恢复码
+```
+
+修改后重启服务：
+
+```bash
+sudo systemctl restart video-meeting
+sudo systemctl status video-meeting --no-pager
+```
+
+如果你没有手动设置恢复码，第一次启动后可以在服务器上查看自动生成的文件：
+
+```bash
+cd /opt/video-meeting
+ls -l instance
+cat instance/security_recovery_code.txt
+```
+
+看到安全告警邮件后的新手操作建议：
+
+1. 先确认邮件中的登录时间、IP、User-Agent 是否是你本人。
+2. 如果不是你本人，先点邮件里的“一键锁定链接”。
+3. 锁定后浏览器访问：
+   `https://你的域名/admin/security/unlock`
+4. 输入恢复码恢复服务。
+5. 立刻修改 `.env` 里的 `ADMIN_PASSWORD`，必要时也轮换 `SECRET_KEY`。
+6. 修改完后重启服务。
+
+Linux 常用命令：
+
+```bash
+cd /opt/video-meeting
+sudo systemctl restart video-meeting
+sudo systemctl status video-meeting --no-pager
+sudo journalctl -u video-meeting -n 100 --no-pager
+grep -n "ADMIN_PASSWORD" /opt/video-meeting/.env
+grep -n "ADMIN_SECURITY_RECOVERY_CODE" /opt/video-meeting/.env
+cat /opt/video-meeting/instance/security_recovery_code.txt
+```
+
+如果你决定直接改 `.env` 里的管理员密码：
+
+```bash
+sudo nano /opt/video-meeting/.env
+```
+
+把这一行改掉：
+
+```env
+ADMIN_PASSWORD=替换成新的强密码
+```
+
+保存退出后执行：
+
+```bash
+sudo systemctl restart video-meeting
+```
+
+再访问健康检查确认：
+
+```bash
+curl -s https://你的域名/api/healthz
+```
+
+你应该重点看这些字段：
+
+- `status`
+- `livekit_enabled`
+- `security_lockdown_active`
+- `security_lockdown_reason`
 
 ### 5.1 邮箱验证注册 / 登录接入
 

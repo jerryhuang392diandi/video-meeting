@@ -113,6 +113,9 @@ ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS = (os.environ.get("ADMIN_NOTIFY_ON_DANGEROUS_A
 ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS = max(0, int(os.environ.get("ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS", "300") or "300"))
 EMAIL_VERIFY_CODE_TTL_MINUTES = max(1, int(os.environ.get("EMAIL_VERIFY_CODE_TTL_MINUTES", "10") or "10"))
 EMAIL_CODE_SEND_LIMIT = max(1, int(os.environ.get("EMAIL_CODE_SEND_LIMIT", "2") or "2"))
+ADMIN_SECURITY_ALERTS_ENABLED = (os.environ.get("ADMIN_SECURITY_ALERTS_ENABLED", "1") or "").strip().lower() in {"1", "true", "yes", "on"}
+ADMIN_SECURITY_LINK_TTL_MINUTES = max(5, int(os.environ.get("ADMIN_SECURITY_LINK_TTL_MINUTES", "30") or "30"))
+SECURITY_LOCKDOWN_FILE = os.path.join(INSTANCE_DIR, "security_lockdown.json")
 
 def normalize_admin_login_path(value: str | None) -> str:
     raw = (value or "/admin-login").strip() or "/admin-login"
@@ -131,6 +134,8 @@ REQUEST_THROTTLE = {}
 REQUEST_THROTTLE_LOCK = threading.Lock()
 ADMIN_NOTIFICATION_THROTTLE = {}
 ADMIN_NOTIFICATION_THROTTLE_LOCK = threading.Lock()
+SECURITY_LOCKDOWN_LOCK = threading.Lock()
+SECURITY_LOCKDOWN_STATE = {"enabled": False, "activated_at": None, "reason": "", "source": ""}
 WEAK_SECRET_VALUES = {
     "",
     "changeme",
@@ -190,6 +195,19 @@ def email_delivery_configured() -> bool:
 
 def admin_email_notifications_configured() -> bool:
     return bool(ADMIN_EMAIL_NOTIFY_ENABLED and ADMIN_ALERT_EMAIL and email_delivery_configured())
+
+
+def admin_security_alert_recipients() -> list[str]:
+    recipients = []
+    for address in [ADMIN_EMAIL, ADMIN_ALERT_EMAIL]:
+        normalized = normalize_email(address)
+        if normalized and looks_like_email(normalized) and normalized not in recipients:
+            recipients.append(normalized)
+    return recipients
+
+
+def admin_security_alerts_configured() -> bool:
+    return bool(ADMIN_SECURITY_ALERTS_ENABLED and admin_security_alert_recipients() and email_delivery_configured())
 
 
 def email_auth_active() -> bool:
@@ -409,6 +427,23 @@ def persist_bootstrap_secret(filename: str, value: str):
         pass
 
 
+def get_admin_security_recovery_code() -> str:
+    if ADMIN_SECURITY_RECOVERY_CODE:
+        return ADMIN_SECURITY_RECOVERY_CODE
+    path = os.path.join(INSTANCE_DIR, "security_recovery_code.txt")
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                existing = (handle.read() or "").strip()
+                if existing:
+                    return existing
+        except OSError:
+            pass
+    generated = secrets.token_urlsafe(18)
+    persist_bootstrap_secret("security_recovery_code.txt", generated)
+    return generated
+
+
 def livekit_server_url() -> str:
     return (os.environ.get("LIVEKIT_URL") or "").strip()
 
@@ -602,6 +637,17 @@ class EmailVerificationCode(db.Model):
     user = db.relationship("User", backref="email_verification_codes", lazy=True)
 
 
+class AdminSecurityActionToken(db.Model):
+    __tablename__ = "admin_security_action_tokens"
+
+    id = db.Column(db.Integer, primary_key=True)
+    action = db.Column(db.String(32), nullable=False, index=True)
+    token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -719,6 +765,7 @@ def ensure_user_columns():
         cur.execute("ALTER TABLE users ADD COLUMN auto_enable_speaker BOOLEAN DEFAULT 1")
     cur.execute("CREATE TABLE IF NOT EXISTS password_reset_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, username VARCHAR(64) NOT NULL, contact VARCHAR(128), note TEXT, status VARCHAR(16) DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)")
     cur.execute("CREATE TABLE IF NOT EXISTS email_verification_codes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, email VARCHAR(255) NOT NULL, purpose VARCHAR(32) NOT NULL, code_hash VARCHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))")
+    cur.execute("CREATE TABLE IF NOT EXISTS admin_security_action_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, action VARCHAR(32) NOT NULL, token_hash VARCHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)")
     conn.commit()
     conn.close()
 
@@ -844,6 +891,139 @@ def _format_admin_notification_body(title: str, fields: dict[str, object]) -> st
             continue
         lines.append(f"{key}: {value}")
     return "\n".join(lines)
+
+
+def _security_action_token_hash(raw_token: str) -> str:
+    return hashlib.sha256((raw_token or "").encode("utf-8")).hexdigest()
+
+
+def create_admin_security_action_token(*, action: str, expires_minutes: int | None = None) -> str:
+    raw_token = secrets.token_urlsafe(32)
+    token = AdminSecurityActionToken(
+        action=(action or "lockdown").strip().lower()[:32],
+        token_hash=_security_action_token_hash(raw_token),
+        expires_at=datetime.utcnow() + timedelta(minutes=expires_minutes or ADMIN_SECURITY_LINK_TTL_MINUTES),
+    )
+    db.session.add(token)
+    db.session.commit()
+    return raw_token
+
+
+def consume_admin_security_action_token(*, action: str, raw_token: str) -> AdminSecurityActionToken | None:
+    token = AdminSecurityActionToken.query.filter_by(
+        action=(action or "lockdown").strip().lower()[:32],
+        token_hash=_security_action_token_hash(raw_token),
+        used_at=None,
+    ).order_by(AdminSecurityActionToken.created_at.desc()).first()
+    if not token or token.expires_at < datetime.utcnow():
+        return None
+    token.used_at = datetime.utcnow()
+    db.session.commit()
+    return token
+
+
+def _load_security_lockdown_state() -> None:
+    with SECURITY_LOCKDOWN_LOCK:
+        if not os.path.exists(SECURITY_LOCKDOWN_FILE):
+            SECURITY_LOCKDOWN_STATE.update({"enabled": False, "activated_at": None, "reason": "", "source": ""})
+            return
+        try:
+            with open(SECURITY_LOCKDOWN_FILE, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except Exception:
+            payload = {}
+        SECURITY_LOCKDOWN_STATE.update(
+            {
+                "enabled": bool(payload.get("enabled")),
+                "activated_at": payload.get("activated_at"),
+                "reason": str(payload.get("reason") or "")[:200],
+                "source": str(payload.get("source") or "")[:120],
+            }
+        )
+
+
+def _save_security_lockdown_state_locked() -> None:
+    with open(SECURITY_LOCKDOWN_FILE, "w", encoding="utf-8") as fh:
+        json.dump(SECURITY_LOCKDOWN_STATE, fh, ensure_ascii=False, indent=2)
+
+
+def security_lockdown_active() -> bool:
+    with SECURITY_LOCKDOWN_LOCK:
+        return bool(SECURITY_LOCKDOWN_STATE.get("enabled"))
+
+
+def activate_security_lockdown(*, reason: str, source: str) -> None:
+    with SECURITY_LOCKDOWN_LOCK:
+        SECURITY_LOCKDOWN_STATE.update(
+            {
+                "enabled": True,
+                "activated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+                "reason": (reason or "security lockdown").strip()[:200],
+                "source": (source or "unknown").strip()[:120],
+            }
+        )
+        _save_security_lockdown_state_locked()
+    with runtime_state_lock:
+        active_sids = list(sid_to_user.keys())
+    for sid in active_sids:
+        try:
+            socketio.server.disconnect(sid, namespace="/")
+        except Exception:
+            app.logger.exception("Failed to disconnect sid during security lockdown: %s", sid)
+    app.logger.warning("Security lockdown activated: %s (%s)", reason, source)
+
+
+def clear_security_lockdown(*, reason: str, source: str) -> None:
+    with SECURITY_LOCKDOWN_LOCK:
+        SECURITY_LOCKDOWN_STATE.update(
+            {
+                "enabled": False,
+                "activated_at": None,
+                "reason": (reason or "").strip()[:200],
+                "source": (source or "").strip()[:120],
+            }
+        )
+        if os.path.exists(SECURITY_LOCKDOWN_FILE):
+            try:
+                os.remove(SECURITY_LOCKDOWN_FILE)
+            except OSError:
+                _save_security_lockdown_state_locked()
+    app.logger.warning("Security lockdown cleared: %s (%s)", reason, source)
+
+
+def send_admin_security_alert(*, subject: str, fields: dict[str, object], cooldown_key: str | None = None, cooldown_seconds: int = 0) -> None:
+    if not admin_security_alerts_configured():
+        return
+    if cooldown_key and cooldown_seconds > 0:
+        now = time.time()
+        key = f"security_alert:{cooldown_key}"[:180]
+        with ADMIN_NOTIFICATION_THROTTLE_LOCK:
+            last_sent = ADMIN_NOTIFICATION_THROTTLE.get(key, 0)
+            if now - last_sent < cooldown_seconds:
+                return
+            ADMIN_NOTIFICATION_THROTTLE[key] = now
+    raw_token = create_admin_security_action_token(action="lockdown")
+    lockdown_url = url_for("admin_security_lockdown", token=raw_token, _external=True)
+    payload = {
+        **fields,
+        "One-click lockdown URL": lockdown_url,
+        "Lockdown URL expires in minutes": ADMIN_SECURITY_LINK_TTL_MINUTES,
+        "If this was not you": "Open the lockdown URL immediately to force the service offline.",
+    }
+    body = _format_admin_notification_body(subject, payload)
+
+    def _send():
+        for recipient in admin_security_alert_recipients():
+            try:
+                send_email_message(
+                    to_address=recipient,
+                    subject=f"[Security Alert] {subject}",
+                    text_body=body,
+                )
+            except Exception:
+                app.logger.exception("Failed to send admin security alert email to %s", recipient)
+
+    threading.Thread(target=_send, daemon=True).start()
 
 
 def send_admin_notification(subject: str, body: str) -> None:
@@ -1762,6 +1942,31 @@ def ensure_default_lang():
 
 
 @app.before_request
+def enforce_security_lockdown():
+    if not security_lockdown_active():
+        return
+    if request.path.startswith("/static/"):
+        return
+    if request.path.startswith("/admin/security/lockdown/"):
+        return
+    if request.path.startswith("/admin/security/unlock"):
+        return
+    if request.path == "/api/healthz":
+        return
+    if getattr(current_user, "is_authenticated", False):
+        logout_user()
+        session.clear()
+    reason = SECURITY_LOCKDOWN_STATE.get("reason") or "security lockdown"
+    activated_at = SECURITY_LOCKDOWN_STATE.get("activated_at") or datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    return (
+        f"<h1>503 Security Lockdown</h1><p>Activated at UTC {activated_at}.</p><p>Reason: {reason}</p>"
+        "<p>Open /admin/security/unlock and enter the recovery code to restore service.</p>",
+        503,
+        {"Content-Type": "text/html; charset=utf-8"},
+    )
+
+
+@app.before_request
 def enforce_single_session():
     if not current_user.is_authenticated:
         return
@@ -2121,6 +2326,20 @@ def login():
         return render_template("pages/login.html", error=validation_error)
     if not user.check_password(password):
         return render_template("pages/login.html", error=t("invalid_login"))
+    if user.is_admin:
+        snap = _request_snapshot()
+        send_admin_security_alert(
+            subject="Admin credentials were used on the public login page",
+            fields={
+                "Identifier": identifier,
+                "IP": snap["ip"],
+                "Path": snap["path"],
+                "User-Agent": snap["user_agent"],
+            },
+            cooldown_key=f"public-login-admin:{identifier}:{snap['ip']}",
+            cooldown_seconds=300,
+        )
+        return render_template("pages/login.html", error=t("invalid_login"))
     validation_error = validate_login_target_user(user, identifier=identifier)
     if validation_error:
         return render_template("pages/login.html", error=validation_error)
@@ -2159,6 +2378,19 @@ def admin_login():
         return render_template("pages/admin_login.html", error=validation_error, admin_login_path=ADMIN_LOGIN_PATH)
 
     finalize_authenticated_session(user)
+    snap = _request_snapshot()
+    send_admin_security_alert(
+        subject="Admin login succeeded",
+        fields={
+            "Admin username": user.username,
+            "Admin email": user.email or ADMIN_EMAIL or "not set",
+            "IP": snap["ip"],
+            "Path": snap["path"],
+            "User-Agent": snap["user_agent"],
+        },
+        cooldown_key=f"admin-login-success:{user.id}:{snap['ip']}",
+        cooldown_seconds=30,
+    )
     return redirect(url_for("index"))
 
 @app.route("/login-email-code", methods=["GET", "POST"])
@@ -2195,7 +2427,20 @@ def login_email_code():
         if not user or not user.email:
             return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("email_not_registered"))
         if user.is_admin:
-            return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("admin_use_admin_login"))
+            snap = _request_snapshot()
+            send_admin_security_alert(
+                subject="Admin email was targeted from the public email-code login",
+                fields={
+                    "Email": email,
+                    "IP": snap["ip"],
+                    "Path": snap["path"],
+                    "User-Agent": snap["user_agent"],
+                },
+                cooldown_key=f"public-email-admin:{email}:{snap['ip']}",
+                cooldown_seconds=300,
+            )
+            message = build_email_code_sent_message(purpose="login", scope=email)
+            return render_email_code_template("login_email_code.html", purpose="login", scope=email, message=message)
         if not user.is_active_user:
             return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("account_disabled"))
         retry_after = consume_email_code_send_budget(purpose="login", scope=user.email)
@@ -2220,6 +2465,8 @@ def login_email_code():
         return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=turnstile_error), 403
     if not re.fullmatch(r"\d{6}", email_code):
         return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("verification_code_required"))
+    if user and user.is_admin:
+        return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=t("verification_code_invalid"))
     validation_error = validate_login_target_user(user, identifier=email)
     if validation_error or not user or not user.email:
         return render_email_code_template("login_email_code.html", purpose="login", scope=email, error=validation_error or t("email_not_registered"))
@@ -2464,8 +2711,46 @@ def api_healthz():
         "status": "ok",
         "rtc_mode": get_rtc_mode(),
         "livekit_enabled": livekit_enabled(),
+        "security_lockdown_active": security_lockdown_active(),
+        "security_lockdown_reason": SECURITY_LOCKDOWN_STATE.get("reason") if security_lockdown_active() else "",
         **snapshot,
     })
+
+
+@app.get("/admin/security/lockdown/<token>")
+def admin_security_lockdown(token: str):
+    consumed = consume_admin_security_action_token(action="lockdown", raw_token=token)
+    if not consumed:
+        return "<h1>Link invalid</h1><p>This security lockdown link is invalid, expired, or already used.</p>", 410
+    activate_security_lockdown(reason="Triggered from admin security email", source=f"token:{consumed.id}")
+    return (
+        "<h1>Security lockdown activated</h1>"
+        "<p>The service has entered lockdown mode and active sessions were disconnected.</p>"
+        "<p>Open /admin/security/unlock and enter the recovery code to restore service.</p>",
+        200,
+        {"Content-Type": "text/html; charset=utf-8"},
+    )
+
+
+@app.route("/admin/security/unlock", methods=["GET", "POST"])
+def admin_security_unlock():
+    error = None
+    success = None
+    active_note = t("security_unlock_active_note") if security_lockdown_active() else t("security_unlock_idle_note")
+    if request.method == "POST":
+        submitted = (request.form.get("recovery_code") or "").strip()
+        if submitted and secrets.compare_digest(submitted, get_admin_security_recovery_code()):
+            clear_security_lockdown(reason="Recovery code accepted", source="unlock-form")
+            success = t("security_unlock_success_desc")
+            active_note = t("security_unlock_idle_note")
+        else:
+            error = t("security_unlock_invalid_code")
+    return render_template(
+        "pages/security_unlock.html",
+        error=error,
+        success=success,
+        active_note=active_note,
+    )
 
 
 
@@ -3573,9 +3858,11 @@ def on_disconnect():
 
 
 with app.app_context():
+    _load_security_lockdown_state()
     db.create_all()
     ensure_user_columns()
     ensure_admin()
+    get_admin_security_recovery_code()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,36 @@
+{% extends 'pages/base.html' %}
+{% block title %}{{ t('security_unlock_title') }}{% endblock %}
+{% block shell_class %}auth-shell narrow-shell{% endblock %}
+{% block content %}
+{% set auth_brand_title = t('security_unlock_title') %}
+{% set auth_brand_subtitle = t('security_unlock_subtitle') %}
+{% set auth_topbar_href = url_for('login') %}
+{% set auth_topbar_label = t('nav_login') %}
+{% include 'partials/_auth_topbar.html' %}
+
+<section class="hero-card auth-landing-card glass-highlight">
+  <div class="landing-copy">
+    <span class="eyebrow">{{ t('security_first') }}</span>
+    <h1>{{ t('security_unlock_title') }}</h1>
+    <p class="landing-tagline">{{ t('security_unlock_desc') }}</p>
+    <div class="feature-list">
+      <span class="feature-chip">{{ t('admin_mode') }}</span>
+      <span class="feature-chip">{{ t('security_first') }}</span>
+      <span class="feature-chip">{{ t('support_tag') }}</span>
+    </div>
+    <p class="muted small-note">{{ active_note }}</p>
+  </div>
+
+  <form method="post" class="form-card elevated-card auth-form-card">
+    {% if success %}
+      <div class="notice">{{ success }}</div>
+    {% endif %}
+    {% if error %}
+      <div class="notice error">{{ error }}</div>
+    {% endif %}
+    <label>{{ t('security_unlock_recovery_code') }}</label>
+    <input name="recovery_code" type="password" autocomplete="one-time-code" required />
+    <button class="primary-btn" type="submit">{{ t('security_unlock_submit') }}</button>
+  </form>
+</section>
+{% endblock %}
