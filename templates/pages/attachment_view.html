@@ -27,6 +27,11 @@
         <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
         <a class="chip" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
       </nav>
+      <div class="lang-switch" aria-label="{{ t('language') }}">
+        <span class="lang-switch-label">{{ t('language_switch_label') }}</span>
+        <a class="chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}" lang="zh">中文</a>
+        <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}" lang="en">EN</a>
+      </div>
       <details class="header-menu">
         <summary class="chip">{{ current_user.username if current_user.is_authenticated else t('nav_menu') }}</summary>
         <div class="header-menu-panel">
@@ -34,18 +39,19 @@
           <div class="menu-section">
             {% if current_user.is_authenticated %}
             <a class="menu-link" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>
+            <a class="menu-link" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
+            <a class="menu-link" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
+            <a class="menu-link" href="{{ url_for('help_page') }}">{{ t('help_page_title') }}</a>
             <a class="menu-link" href="{{ url_for('support_page') }}">{{ t('support_page_title') }}</a>
+            {% if current_user.is_admin %}<a class="menu-link" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
             <a class="menu-link danger" href="{{ url_for('logout') }}">{{ t('nav_logout') }}</a>
             {% else %}
             <a class="menu-link" href="{{ url_for('login') }}">{{ t('nav_login') }}</a>
+            <a class="menu-link" href="{{ url_for('register') }}">{{ t('nav_register') }}</a>
+            <a class="menu-link" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
+            <a class="menu-link" href="{{ url_for('help_page') }}">{{ t('help_page_title') }}</a>
             <a class="menu-link" href="{{ url_for('support_page') }}">{{ t('support_page_title') }}</a>
             {% endif %}
-          </div>
-          <div class="menu-divider"></div>
-          <div class="lang-switch" aria-label="{{ t('language') }}">
-            <span class="lang-switch-label">{{ t('language_switch_label') }}</span>
-            <a class="chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}" lang="zh">中文</a>
-            <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}" lang="en">EN</a>
           </div>
         </div>
       </details>

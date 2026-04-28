@@ -11,16 +11,18 @@
       <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
       <a class="chip" href="{{ url_for('login') }}">{{ t('nav_login') }}</a>
     </nav>
+    {% include 'partials/_language_switch.html' %}
     <details class="header-menu">
       <summary class="chip header-menu-trigger">{{ t('nav_menu') }}</summary>
       <div class="header-menu-panel">
         <div class="menu-heading">{{ t('quick_actions') }}</div>
         <div class="menu-section">
+          <a class="menu-link" href="{{ url_for('login') }}">{{ t('nav_login') }}</a>
+          <a class="menu-link" href="{{ url_for('register') }}">{{ t('nav_register') }}</a>
+          <a class="menu-link" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
           <a class="menu-link" href="{{ url_for('support_page') }}">{{ t('support_page_title') }}</a>
           <a class="menu-link" href="{{ url_for('help_page') }}">{{ t('help_page_title') }}</a>
         </div>
-        <div class="menu-divider"></div>
-        {% include 'partials/_language_switch.html' %}
       </div>
     </details>
   </div>

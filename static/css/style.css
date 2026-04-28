@@ -219,7 +219,7 @@ button:hover, .anchor-btn:hover, .chip:hover { transform: translateY(-1px); }
   position: absolute;
   top: calc(100% + 12px);
   right: 0;
-  width: min(280px, calc(100vw - 32px));
+  width: min(320px, calc(100vw - 32px));
   padding: 14px;
   border-radius: 18px;
   border: 1px solid rgba(255,255,255,.1);
@@ -265,11 +265,19 @@ button:hover, .anchor-btn:hover, .chip:hover { transform: translateY(-1px); }
   justify-content: space-between;
   gap: 12px;
   width: 100%;
+  min-height: 46px;
   padding: 11px 12px;
   border-radius: 14px;
   color: var(--text);
   background: rgba(255,255,255,.04);
   border: 1px solid rgba(255,255,255,.06);
+}
+.menu-link::after {
+  content: "›";
+  opacity: .55;
+}
+.menu-link.danger::after {
+  content: "";
 }
 .menu-link:hover {
   background: rgba(130,177,255,.12);

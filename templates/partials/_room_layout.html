@@ -11,6 +11,7 @@
       {% if current_user.is_admin %}<a class="chip" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
     </nav>
     <span class="user-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
+    {% include 'partials/_language_switch.html' %}
     <details class="header-menu">
       <summary class="user-pill header-menu-trigger">{{ current_user.username }}</summary>
       <div class="header-menu-panel">
@@ -20,11 +21,12 @@
         </div>
         <div class="menu-section">
           <a class="menu-link" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>
+          <a class="menu-link" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
           <a class="menu-link" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
+          <a class="menu-link" href="{{ url_for('help_page') }}">{{ t('help_page_title') }}</a>
           <a class="menu-link" href="{{ url_for('support_page') }}">{{ t('support_page_title') }}</a>
+          {% if current_user.is_admin %}<a class="menu-link" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
         </div>
-        <div class="menu-divider"></div>
-        {% include 'partials/_language_switch.html' %}
         <div class="menu-divider"></div>
         <div class="menu-section">
           <a class="menu-link danger" href="{{ url_for('logout') }}">{{ t('nav_logout') }}</a>
