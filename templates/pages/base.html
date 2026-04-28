@@ -61,6 +61,24 @@
       });
     };
     document.addEventListener('DOMContentLoaded', window.renderLocalDateTimes);
+    document.addEventListener('DOMContentLoaded', function () {
+      const menus = Array.from(document.querySelectorAll('details.header-menu'));
+      if (!menus.length) return;
+
+      document.addEventListener('click', function (event) {
+        menus.forEach((menu) => {
+          if (!menu.contains(event.target)) {
+            menu.removeAttribute('open');
+          }
+        });
+      });
+
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+          menus.forEach((menu) => menu.removeAttribute('open'));
+        }
+      });
+    });
   </script>
   {% block scripts %}{% endblock %}
 </body>

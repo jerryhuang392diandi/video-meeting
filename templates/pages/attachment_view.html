@@ -13,7 +13,7 @@
     .meta{flex:1;min-width:0}.meta h1{font-size:22px;margin:0 0 8px;word-break:break-word}.meta p{margin:4px 0;color:#b8c7e6}
     .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 16px;border-radius:12px;text-decoration:none;border:1px solid rgba(255,255,255,.08);color:#eef4ff;background:rgba(255,255,255,.05)}
     .btn.primary{background:linear-gradient(135deg,#7aa8ff,#67d4ff);color:#081225;border:none;font-weight:700}
-    .top-actions{display:flex;justify-content:flex-end;margin-bottom:14px}.lang-switch{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}.lang-switch-label{padding:0 8px;color:#9eb2d2;font-size:12px;font-weight:700;white-space:nowrap}.chip{padding:10px 14px;border-radius:999px;color:#eef4ff;text-decoration:none;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}.chip.active{background:rgba(130,177,255,.18);border-color:rgba(130,177,255,.34)}
+    .top-actions{display:flex;justify-content:flex-end;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}.top-nav{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.lang-switch{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}.lang-switch-label{padding:0 8px;color:#9eb2d2;font-size:12px;font-weight:700;white-space:nowrap}.chip{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:999px;color:#eef4ff;text-decoration:none;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}.chip.active{background:rgba(130,177,255,.18);border-color:rgba(130,177,255,.34)}.header-menu{position:relative}.header-menu summary{list-style:none;cursor:pointer}.header-menu summary::-webkit-details-marker{display:none}.header-menu summary::after{content:"▾";font-size:12px;opacity:.75;margin-left:6px}.header-menu[open] summary::after{content:"▴"}.header-menu-panel{position:absolute;top:calc(100% + 10px);right:0;width:min(280px,calc(100vw - 48px));padding:14px;border-radius:18px;border:1px solid rgba(255,255,255,.1);background:rgba(11,20,38,.98);box-shadow:0 20px 60px rgba(0,0,0,.35);z-index:20}.menu-heading{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8ea6c9;margin-bottom:10px}.menu-section{display:grid;gap:8px}.menu-link{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;border-radius:14px;color:#eef4ff;text-decoration:none;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06)}.menu-link.danger{color:#ffd6dd;background:rgba(255,123,147,.12);border-color:rgba(255,123,147,.22)}.menu-divider{height:1px;margin:12px 0;background:rgba(255,255,255,.08)}.header-menu-panel .lang-switch{width:100%;justify-content:space-between}
     .source-dock{position:fixed;right:18px;bottom:18px;z-index:80;display:flex;align-items:center;gap:8px;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:999px;background:rgba(8,17,31,.76);box-shadow:0 16px 42px rgba(0,0,0,.28);backdrop-filter:blur(16px)}.source-dock-label{padding:0 6px;color:#9eb2d2;font-size:12px;font-weight:800;white-space:nowrap}.source-link{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:7px 11px;border:1px solid rgba(255,255,255,.1);border-radius:999px;background:rgba(255,255,255,.06);color:#eef4ff;font-size:13px;font-weight:800;line-height:1;text-decoration:none}.source-icon{width:18px;height:18px;flex:0 0 auto;fill:currentColor}.gitee-mark{display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:#c71d23;color:#fff;font-size:13px;font-weight:900}@media(max-width:720px){.source-dock{position:relative;right:auto;bottom:auto;width:calc(100% - 48px);margin:0 auto 18px;justify-content:center;flex-wrap:wrap}.source-dock-label{flex:1 1 100%;text-align:center}.source-link{flex:1 1 120px}}
     .preview{margin-top:18px;border-radius:18px;overflow:hidden;background:#020814;border:1px solid rgba(255,255,255,.08);min-height:280px;display:flex;align-items:center;justify-content:center}
     .preview iframe,.preview img,.preview video,.preview audio,.preview pre{width:100%;max-width:100%;border:0}.preview img,.preview video{display:block;max-height:78vh;object-fit:contain;background:#000}.preview iframe{height:78vh;background:#fff}.preview pre{margin:0;padding:18px;white-space:pre-wrap;word-break:break-word;color:#eaf2ff;background:#06111f;min-height:280px;box-sizing:border-box}
@@ -23,11 +23,32 @@
 <body>
   <div class="wrap">
     <div class="top-actions">
-      <div class="lang-switch" aria-label="{{ t('language') }}">
-        <span class="lang-switch-label">{{ t('language_switch_label') }}</span>
-        <a class="chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}" lang="zh">中文</a>
-        <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}" lang="en">EN</a>
-      </div>
+      <nav class="top-nav" aria-label="{{ t('nav_menu') }}">
+        <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
+        <a class="chip" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
+      </nav>
+      <details class="header-menu">
+        <summary class="chip">{{ current_user.username if current_user.is_authenticated else t('nav_menu') }}</summary>
+        <div class="header-menu-panel">
+          <div class="menu-heading">{{ t('quick_actions') }}</div>
+          <div class="menu-section">
+            {% if current_user.is_authenticated %}
+            <a class="menu-link" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>
+            <a class="menu-link" href="{{ url_for('support_page') }}">{{ t('support_page_title') }}</a>
+            <a class="menu-link danger" href="{{ url_for('logout') }}">{{ t('nav_logout') }}</a>
+            {% else %}
+            <a class="menu-link" href="{{ url_for('login') }}">{{ t('nav_login') }}</a>
+            <a class="menu-link" href="{{ url_for('support_page') }}">{{ t('support_page_title') }}</a>
+            {% endif %}
+          </div>
+          <div class="menu-divider"></div>
+          <div class="lang-switch" aria-label="{{ t('language') }}">
+            <span class="lang-switch-label">{{ t('language_switch_label') }}</span>
+            <a class="chip {% if lang == 'zh' %}active{% endif %}" href="{{ url_for('set_language', lang='zh') }}" lang="zh">中文</a>
+            <a class="chip {% if lang == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}" lang="en">EN</a>
+          </div>
+        </div>
+      </details>
     </div>
     <div class="card">
       <div class="head">

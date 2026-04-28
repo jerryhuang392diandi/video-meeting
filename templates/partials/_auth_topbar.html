@@ -1,12 +1,26 @@
-<header class="topbar compact">
-  <div>
+<header class="topbar compact app-topbar">
+  <div class="app-topbar-copy">
     <div class="brand">{{ auth_brand_title }}</div>
     <div class="muted">{{ auth_brand_subtitle }}</div>
   </div>
-  <div class="top-actions">
-    {% include 'partials/_language_switch.html' %}
-    {% if auth_topbar_href and auth_topbar_label %}
-    <a class="chip" href="{{ auth_topbar_href }}">{{ auth_topbar_label }}</a>
-    {% endif %}
+  <div class="top-actions app-topbar-actions">
+    <nav class="topbar-nav" aria-label="{{ t('nav_menu') }}">
+      <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
+      <a class="chip" href="{{ url_for('help_page') }}">{{ t('help_page_title') }}</a>
+    </nav>
+    <details class="header-menu">
+      <summary class="chip header-menu-trigger">{{ t('nav_menu') }}</summary>
+      <div class="header-menu-panel">
+        <div class="menu-heading">{{ t('quick_actions') }}</div>
+        <div class="menu-section">
+          {% if auth_topbar_href and auth_topbar_label %}
+          <a class="menu-link" href="{{ auth_topbar_href }}">{{ auth_topbar_label }}</a>
+          {% endif %}
+          <a class="menu-link" href="{{ url_for('support_page') }}">{{ t('support_page_title') }}</a>
+        </div>
+        <div class="menu-divider"></div>
+        {% include 'partials/_language_switch.html' %}
+      </div>
+    </details>
   </div>
 </header>

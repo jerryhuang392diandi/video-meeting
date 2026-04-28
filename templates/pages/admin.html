@@ -1,17 +1,37 @@
 {% extends 'pages/base.html' %}
 {% block title %}{{ t('admin_dashboard') }}{% endblock %}
 {% block content %}
-<header class="topbar compact admin-header">
-  <div class="admin-header-copy">
+<header class="topbar compact admin-header app-topbar">
+  <div class="admin-header-copy app-topbar-copy">
     <div class="brand">{{ t('admin_dashboard') }}</div>
     <div class="muted">{{ t('root_admin_console') }} · {{ t('time_display_timezone') }}: {{ display_timezone_label }} ({{ display_timezone }})</div>
   </div>
-  <div class="top-actions admin-header-actions">
-    <div class="admin-header-nav">
-      {% include 'partials/_language_switch.html' %}
-      <a class="chip" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
+  <div class="top-actions admin-header-actions app-topbar-actions">
+    <nav class="admin-header-nav topbar-nav" aria-label="{{ t('nav_menu') }}">
       <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
-    </div>
+      <a class="chip" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
+      <a class="chip active" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>
+    </nav>
+    <details class="header-menu">
+      <summary class="user-pill header-menu-trigger">{{ current_user.username }}</summary>
+      <div class="header-menu-panel">
+        <div class="menu-user">
+          <span>{{ t('admin_mode') }}</span>
+          <strong>{{ current_user.username }}</strong>
+        </div>
+        <div class="menu-section">
+          <a class="menu-link" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>
+          <a class="menu-link" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
+          <a class="menu-link" href="{{ url_for('support_page') }}">{{ t('support_page_title') }}</a>
+        </div>
+        <div class="menu-divider"></div>
+        {% include 'partials/_language_switch.html' %}
+        <div class="menu-divider"></div>
+        <div class="menu-section">
+          <a class="menu-link danger" href="{{ url_for('logout') }}">{{ t('nav_logout') }}</a>
+        </div>
+      </div>
+    </details>
   </div>
 </header>
 
