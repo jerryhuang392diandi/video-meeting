@@ -18,7 +18,7 @@
 
 | 文档 | 用途 | 适合读者 |
 | --- | --- | --- |
-| [../README.md](../README.md) / [English](../README.md#video-meeting-system) | 项目总览、完整页面入口、中英文和移动/桌面适配状态、快速开始、本地依赖安装、本地启动、配置和基本检查 | 第一次打开项目的人 |
+| [../README.md](../README.md) / [English](../README.md#video-meeting-system) | 项目总览、完整页面入口、中英文和移动/桌面适配状态、快速开始、本地依赖安装、本地启动、管理员入口/邮箱验证/健康检查等关键配置和基本检查 | 第一次打开项目的人 |
 | [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) / [English](DEPLOYMENT_GUIDE.md#deployment-and-update-guide) | 云服务器购买入口、备案、SSH/FinalShell 登录、DNS/Cloudflare、Nginx、WebSocket、HTTPS、LiveKit Cloud、自建 LiveKit、systemd、Git 三端协作、服务更新、`/api/healthz` 健康检查、日志排查和官方参考资料 | 部署和维护项目的人，尤其是第一次部署的人 |
 | [STABILITY_AUDIT.md](STABILITY_AUDIT.md) / [English](STABILITY_AUDIT.md#stability-audit) | 当前架构边界、风险、回归重点和演进方向 | 修改核心逻辑的人 |
 | [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md) / [English](REFACTOR_AUDIT.md#refactor-audit) | 当前重构巡检结论、优先级、推荐拆分顺序和改动前检查 | 准备重构或长期维护的人 |
@@ -59,7 +59,7 @@ This folder contains the project overview, deployment guide, stability audit, an
 
 | Document | Purpose | Audience |
 | --- | --- | --- |
-| [../README.md](../README.md) / [English](../README.md#video-meeting-system) | Project overview, complete page entry points, i18n and mobile/desktop adaptation status, Quick Start, local tool installation, local startup, configuration, and basic checks | First-time readers |
+| [../README.md](../README.md) / [English](../README.md#video-meeting-system) | Project overview, complete page entry points, i18n and mobile/desktop adaptation status, Quick Start, local tool installation, local startup, plus key admin-login/email-auth/health-check settings and basic checks | First-time readers |
 | [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) / [English](DEPLOYMENT_GUIDE.md#deployment-and-update-guide) | Cloud provider entry points, ICP filing notes, SSH/FinalShell login, DNS/Cloudflare, Nginx, WebSocket, HTTPS, LiveKit Cloud, self-hosted LiveKit, systemd, Git three-side workflow, service updates, `/api/healthz` checks, log troubleshooting, and official references | Deployers and maintainers, especially first-time deployers |
 | [STABILITY_AUDIT.md](STABILITY_AUDIT.md) / [English](STABILITY_AUDIT.md#stability-audit) | Architecture boundaries, risks, regression focus, and future direction | People changing core logic |
 | [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md) / [English](REFACTOR_AUDIT.md#refactor-audit) | Current refactor audit, priorities, recommended split order, and pre-change checks | People planning refactors or long-term maintenance |

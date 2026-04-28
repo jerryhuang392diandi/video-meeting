@@ -14,8 +14,10 @@
 - 房间聊天、@ 提及、图片/视频/文档附件
 - 附件查看权限与下载权限控制
 - 背景虚化和浏览器端录屏
+- 邮箱验证码登录/注册链路，以及找回密码申请
 - 主持人结束会议、清空聊天、控制房间行为
 - 管理员后台：用户管理、会议管理、密码重置申请、系统统计
+- 独立管理员登录入口、管理员邮件提醒和基础健康检查
 - 中英文界面和基础 i18n 检查
 - 面向外国友人的中英双语 Quickstart 快速开始页
 - 更完整的用户指南，覆盖账户偏好、入会设备、聊天附件、屏幕共享和主持人操作
@@ -35,7 +37,14 @@
 | `/account` | 个人账户与偏好 | 修改昵称、语言、地区/时区、附件权限、默认设备开关 |
 | `/history` | 历史会议 | 查看自己创建或参加过的会议 |
 | `/room/<会议号>` | 会议房间 | 参会者实际开会页面，通常通过邀请链接进入 |
-| `/admin` | 管理员后台 | root / 管理员处理用户、会议、密码重置、系统统计 |
+| `/admin` | 管理员后台 | 已登录管理员处理用户、会议、密码重置、系统统计 |
+
+补充说明：
+
+- 管理员真正的登录入口默认不是 `/admin`，而是 `.env` 中的 `ADMIN_LOGIN_PATH`，默认值为 `/admin-login`。
+- `/admin` 只接受已经完成管理员身份认证的会话；普通用户登录页会拒绝管理员账号。
+- `/login-email-code` 是邮箱验证码登录页，通常在启用 `EMAIL_AUTH_ENABLED=1` 后与常规密码登录并存。
+- `/api/healthz` 会返回 `status`、`rtc_mode`、`livekit_enabled`、在线房间数和 socket 数等运行态摘要，适合排障第一步查看。
 
 时间显示规则：
 
@@ -283,6 +292,7 @@ LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 
 ADMIN_USERNAME=localadmin
 ADMIN_PASSWORD=root1234
+ADMIN_LOGIN_PATH=/admin-login-local
 PUBLIC_REGISTRATION_ENABLED=1
 STRICT_SECURITY_CHECKS=0
 TURNSTILE_SITE_KEY=
@@ -302,8 +312,12 @@ TURNSTILE_SECRET_KEY=
 | `LIVEKIT_API_KEY` | 后端签发 LiveKit token 使用的 API key | 从 LiveKit Cloud 项目设置复制 |
 | `LIVEKIT_API_SECRET` | 后端签发 LiveKit token 使用的 API secret | 从 LiveKit Cloud 项目设置复制，不要公开 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 管理后台初始登录账号 | 本地可用简单值，但不要和 Linux 的 `root` / `ubuntu` 登录用户混为一谈；线上必须改强密码 |
+| `ADMIN_LOGIN_PATH` | 独立管理员登录入口路径 | 本地可保持默认 `/admin-login`；公网建议改成长且不易猜的路径 |
 | `PUBLIC_REGISTRATION_ENABLED` | 是否允许任何人直接注册 | 本地演示可开，公网建议设为 `0` |
 | `STRICT_SECURITY_CHECKS` | 是否在启动时拒绝弱 `SECRET_KEY` / `ADMIN_*` 配置 | 公网建议设为 `1` |
+| `EMAIL_AUTH_ENABLED` | 是否启用邮箱验证码注册/登录链路 | 本地可关闭；开启后要继续配置 SMTP |
+| `EMAIL_SMTP_HOST` / `EMAIL_FROM_ADDRESS` | 发验证码/提醒邮件所需的最小 SMTP 配置 | 只在启用邮箱验证或管理员提醒时必填 |
+| `ADMIN_ALERT_EMAIL` / `ADMIN_EMAIL_NOTIFY_ENABLED` | 管理员提醒收件箱与提醒开关 | 仅服务器 `.env` 配置；不要提交到仓库 |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 站点 key 和服务端 secret | 大陆用户需先实测可用性 |
 
 LiveKit 的三项配置必须来自同一个 LiveKit 项目。Flask 只负责校验用户并签发 token，浏览器拿到 token 后会直接连 `LIVEKIT_URL`；所以这个地址必须能被你的浏览器访问。
@@ -336,7 +350,7 @@ http://127.0.0.1:5000
 | `git` 命令不存在 | Git 是否安装；重新打开终端 |
 | `pip install` 很慢 | 可以换国内 PyPI 镜像，或先确认网络；服务器安装说明见 [部署指南准备项目目录](docs/DEPLOYMENT_GUIDE.md#4-准备项目目录) |
 | `/room/<会议号>` 返回 `503` | `.env` 里缺少 `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET`；排查步骤见 [部署指南常见问题](docs/DEPLOYMENT_GUIDE.md#16-常见问题) |
-| 服务看起来挂了或房间状态异常 | 先访问 `/api/healthz` 看 Flask 进程是否仍存活、`livekit_enabled` 是否为 `true`、在线房间/连接数是否异常，再回看 systemd 与 Nginx 日志 |
+| 服务看起来挂了或房间状态异常 | 先访问 `/api/healthz` 看 `status` 是否为 `ok`、`rtc_mode` 是否为 `livekit`、`livekit_enabled` 是否为 `true`、在线房间/连接数是否异常，再回看 systemd 与 Nginx 日志 |
 | 录屏转 MP4 失败 | 是否安装 FFmpeg，并且 `ffmpeg -version` 能输出版本 |
 | 背景虚化启动失败 | 先确认摄像头已开启；如果刚关闭/重开过摄像头，等待本地画面恢复后再启用；该功能依赖浏览器加载 MediaPipe 模型 |
 
@@ -412,13 +426,18 @@ http://127.0.0.1:5000
 | `PUBLIC_SCHEME` | 对外访问协议，通常为 `http` 或 `https` |
 | `ADMIN_USERNAME` | 初始管理员用户名，默认 `root` |
 | `ADMIN_PASSWORD` | 初始管理员密码；未设置时自动生成 |
+| `ADMIN_LOGIN_PATH` | 独立管理员登录路径，默认 `/admin-login` |
 | `PUBLIC_REGISTRATION_ENABLED` | 是否允许公开注册，默认开启 |
 | `STRICT_SECURITY_CHECKS` | 严格安全启动检查，开启后要求显式强 `SECRET_KEY`、强 `ADMIN_PASSWORD`，且不允许 `ADMIN_USERNAME=root` |
+| `EMAIL_AUTH_ENABLED` | 是否启用邮箱验证码注册/登录 |
+| `EMAIL_SMTP_HOST` / `EMAIL_SMTP_PORT` | SMTP 服务器地址和端口 |
+| `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME` | 邮件发件地址和显示名称 |
+| `ADMIN_ALERT_EMAIL` / `ADMIN_EMAIL_NOTIFY_ENABLED` | 管理员提醒收件箱和提醒开关 |
 | `TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key，留空则关闭 |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret key，留空则关闭 |
 | `DEBUG_ROOM=1` | 输出房间相关调试日志 |
 
-可选项包括 `TURN_PUBLIC_HOST`、`TURN_URLS`、`TURN_USERNAME`、`TURN_PASSWORD`、`SESSION_COOKIE_SAMESITE`、`SESSION_COOKIE_SECURE`、`REMEMBER_COOKIE_SAMESITE`、`REMEMBER_COOKIE_SECURE`、`LOGIN_RATE_LIMIT_PER_IP`、`LOGIN_RATE_LIMIT_PER_USER`、`PUBLIC_REGISTRATION_ENABLED`、`STRICT_SECURITY_CHECKS`、`TURNSTILE_SITE_KEY`、`TURNSTILE_SECRET_KEY`。
+可选项还包括 `EMAIL_SMTP_USERNAME`、`EMAIL_SMTP_PASSWORD`、`EMAIL_SMTP_USE_TLS`、`EMAIL_SMTP_USE_SSL`、`EMAIL_VERIFY_CODE_TTL_MINUTES`、`EMAIL_CODE_SEND_LIMIT`、`EMAIL_CODE_SEND_WINDOW_SECONDS`、`TURN_PUBLIC_HOST`、`TURN_URLS`、`TURN_USERNAME`、`TURN_PASSWORD`、`SESSION_COOKIE_SAMESITE`、`SESSION_COOKIE_SECURE`、`REMEMBER_COOKIE_SAMESITE`、`REMEMBER_COOKIE_SECURE`、`LOGIN_RATE_LIMIT_PER_IP`、`LOGIN_RATE_LIMIT_PER_USER`、`LOGIN_RATE_LIMIT_WINDOW_SECONDS`、`REGISTER_RATE_LIMIT_PER_IP`、`REGISTER_RATE_LIMIT_WINDOW_SECONDS`、`PASSWORD_RESET_RATE_LIMIT_PER_IP`、`PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS`、`SECURITY_HEADERS_ENABLED`、`PUBLIC_REGISTRATION_ENABLED`、`STRICT_SECURITY_CHECKS`、`TURNSTILE_SITE_KEY`、`TURNSTILE_SECRET_KEY`。
 
 ## 运行限制
 
@@ -495,8 +514,10 @@ An online meeting system built with `Flask + Flask-SocketIO + LiveKit`. The curr
 - Room chat, @ mentions, image/video/document attachments
 - Attachment view and download permission control
 - Virtual background and browser-side screen recording
+- Email-code login/register flows and password-reset requests
 - Host controls for ending meetings, clearing chat, and managing room behavior
 - Admin dashboard for users, meetings, password reset requests, and system stats
+- Separate admin login path, admin email alerts, and a basic health endpoint
 - Chinese/English UI and a lightweight i18n checker
 - Bilingual Quickstart page for international guests
 - Full User Guide covering account preferences, join-time devices, chat attachments, screen sharing, and host actions
@@ -516,7 +537,14 @@ An online meeting system built with `Flask + Flask-SocketIO + LiveKit`. The curr
 | `/account` | Account and preferences | Name, language, timezone, attachment permission, and default device settings |
 | `/history` | Meeting history | Meetings created or joined by the current user |
 | `/room/<room_id>` | Meeting room | Actual in-meeting page, usually opened from an invite link |
-| `/admin` | Admin dashboard | Root/admin users managing users, meetings, reset requests, and stats |
+| `/admin` | Admin dashboard | Authenticated admins managing users, meetings, reset requests, and stats |
+
+Additional notes:
+
+- The actual admin sign-in path is not `/admin`. It comes from `ADMIN_LOGIN_PATH` in `.env`, and defaults to `/admin-login`.
+- `/admin` only accepts an authenticated admin session; the normal login page rejects admin accounts.
+- `/login-email-code` is the email-code login page and normally appears alongside password login when `EMAIL_AUTH_ENABLED=1`.
+- `/api/healthz` returns `status`, `rtc_mode`, `livekit_enabled`, room counts, socket counts, and other runtime counters for first-line troubleshooting.
 
 Time display rules:
 
@@ -759,6 +787,7 @@ LIVEKIT_API_SECRET=replace-with-livekit-api-secret
 
 ADMIN_USERNAME=localadmin
 ADMIN_PASSWORD=root1234
+ADMIN_LOGIN_PATH=/admin-login-local
 PUBLIC_REGISTRATION_ENABLED=1
 STRICT_SECURITY_CHECKS=0
 TURNSTILE_SITE_KEY=
@@ -778,8 +807,12 @@ Configuration explanation:
 | `LIVEKIT_API_KEY` | API key used by the backend to sign LiveKit tokens | Copy from the same LiveKit project |
 | `LIVEKIT_API_SECRET` | API secret used by the backend to sign LiveKit tokens | Copy from the same LiveKit project and keep private |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Initial admin login | Simple values are fine locally, but this is not the Linux SSH user such as `root` or `ubuntu`; use a strong password in production |
+| `ADMIN_LOGIN_PATH` | Separate admin login path | Keep the default `/admin-login` locally; use a long hard-to-guess path online |
 | `PUBLIC_REGISTRATION_ENABLED` | Whether anyone can self-register | Fine for local demos; set `0` on public deployments |
 | `STRICT_SECURITY_CHECKS` | Refuse weak `SECRET_KEY` / `ADMIN_*` settings at startup | Set `1` on public deployments |
+| `EMAIL_AUTH_ENABLED` | Enable the email-code register/login flow | Can stay off locally; SMTP config is required when enabled |
+| `EMAIL_SMTP_HOST` / `EMAIL_FROM_ADDRESS` | Minimum SMTP settings required for verification or alert emails | Required only when email auth or admin alerts are enabled |
+| `ADMIN_ALERT_EMAIL` / `ADMIN_EMAIL_NOTIFY_ENABLED` | Admin alert inbox and alert switch | Keep these only in server-side `.env`; never commit them |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile site key and server secret | Test availability first for mainland users |
 
 The three LiveKit values must come from the same LiveKit project. Flask only checks meeting permission and issues a token; the browser connects directly to `LIVEKIT_URL`, so that URL must be reachable from your browser.
@@ -814,7 +847,7 @@ Meeting history timestamps use the current user's region/timezone preference fro
 | `git` command is missing | Confirm Git is installed, then reopen the terminal |
 | `pip install` is slow | Try a PyPI mirror or check the network; server setup details are in [Prepare Project Directory](docs/DEPLOYMENT_GUIDE.md#4-prepare-the-project-directory) |
 | `/room/<room_id>` returns `503` | `.env` is missing `LIVEKIT_URL`, `LIVEKIT_API_KEY`, or `LIVEKIT_API_SECRET`; see [Common Issues](docs/DEPLOYMENT_GUIDE.md#16-common-issues) |
-| The service seems down or room state looks wrong | Check `/api/healthz` first to confirm the Flask process is alive, whether `livekit_enabled` is `true`, and whether room/socket counts look abnormal, then review systemd and Nginx logs |
+| The service seems down or room state looks wrong | Check `/api/healthz` first: confirm `status=ok`, `rtc_mode=livekit`, `livekit_enabled=true`, and whether room/socket counts look abnormal, then review systemd and Nginx logs |
 | MP4 recording remux fails | Confirm FFmpeg is installed and `ffmpeg -version` prints a version |
 | Virtual background fails to start | Turn the camera on first; after toggling the camera, wait for local video to recover before enabling it; this feature also depends on the browser loading the MediaPipe model |
 
@@ -890,13 +923,18 @@ LiveKit configuration is required. If it is missing, room media is unavailable a
 | `PUBLIC_SCHEME` | Public scheme, usually `http` or `https` |
 | `ADMIN_USERNAME` | Initial admin username, defaults to `root` |
 | `ADMIN_PASSWORD` | Initial admin password; generated if not set |
+| `ADMIN_LOGIN_PATH` | Separate admin login path, defaults to `/admin-login` |
 | `PUBLIC_REGISTRATION_ENABLED` | Whether public self-registration is enabled, defaults to on |
 | `STRICT_SECURITY_CHECKS` | Strict startup guard; requires explicit strong `SECRET_KEY`, strong `ADMIN_PASSWORD`, and non-`root` `ADMIN_USERNAME` |
+| `EMAIL_AUTH_ENABLED` | Whether to enable email-code registration/login |
+| `EMAIL_SMTP_HOST` / `EMAIL_SMTP_PORT` | SMTP host and port |
+| `EMAIL_FROM_ADDRESS` / `EMAIL_FROM_NAME` | Sender address and display name |
+| `ADMIN_ALERT_EMAIL` / `ADMIN_EMAIL_NOTIFY_ENABLED` | Admin alert inbox and alert switch |
 | `TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key; leave empty to disable |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret key; leave empty to disable |
 | `DEBUG_ROOM=1` | Enables room debug logging |
 
-Optional settings include `TURN_PUBLIC_HOST`, `TURN_URLS`, `TURN_USERNAME`, `TURN_PASSWORD`, `SESSION_COOKIE_SAMESITE`, `SESSION_COOKIE_SECURE`, `REMEMBER_COOKIE_SAMESITE`, `REMEMBER_COOKIE_SECURE`, `LOGIN_RATE_LIMIT_PER_IP`, `LOGIN_RATE_LIMIT_PER_USER`, `PUBLIC_REGISTRATION_ENABLED`, `STRICT_SECURITY_CHECKS`, `TURNSTILE_SITE_KEY`, and `TURNSTILE_SECRET_KEY`.
+Optional settings also include `EMAIL_SMTP_USERNAME`, `EMAIL_SMTP_PASSWORD`, `EMAIL_SMTP_USE_TLS`, `EMAIL_SMTP_USE_SSL`, `EMAIL_VERIFY_CODE_TTL_MINUTES`, `EMAIL_CODE_SEND_LIMIT`, `EMAIL_CODE_SEND_WINDOW_SECONDS`, `TURN_PUBLIC_HOST`, `TURN_URLS`, `TURN_USERNAME`, `TURN_PASSWORD`, `SESSION_COOKIE_SAMESITE`, `SESSION_COOKIE_SECURE`, `REMEMBER_COOKIE_SAMESITE`, `REMEMBER_COOKIE_SECURE`, `LOGIN_RATE_LIMIT_PER_IP`, `LOGIN_RATE_LIMIT_PER_USER`, `LOGIN_RATE_LIMIT_WINDOW_SECONDS`, `REGISTER_RATE_LIMIT_PER_IP`, `REGISTER_RATE_LIMIT_WINDOW_SECONDS`, `PASSWORD_RESET_RATE_LIMIT_PER_IP`, `PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS`, `SECURITY_HEADERS_ENABLED`, `PUBLIC_REGISTRATION_ENABLED`, `STRICT_SECURITY_CHECKS`, `TURNSTILE_SITE_KEY`, and `TURNSTILE_SECRET_KEY`.
 
 ## Runtime Limits
 
