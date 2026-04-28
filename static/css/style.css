@@ -160,10 +160,21 @@ button:hover, .anchor-btn:hover, .chip:hover { transform: translateY(-1px); }
   backdrop-filter: blur(10px);
   white-space: nowrap;
 }
-.dashboard-topbar { align-items: flex-start; }
+.dashboard-topbar {
+  align-items: flex-start;
+  gap: 18px 24px;
+}
+.dashboard-topbar > div:first-child {
+  flex: 0 1 460px;
+}
 .dashboard-topbar .dashboard-top-actions {
   flex: 1 1 760px;
   justify-content: flex-end;
+  gap: 8px;
+}
+.dashboard-topbar .dashboard-top-actions .chip,
+.dashboard-topbar .dashboard-top-actions .user-pill {
+  padding: 10px 12px;
 }
 .dashboard-topbar .lang-switch-label { white-space: nowrap; }
 .admin-header {
@@ -642,6 +653,16 @@ video {
 
 @media (max-width: 1080px) {
   .dashboard-hero, .grid.three { grid-template-columns: 1fr; }
+}
+@media (max-width: 1480px) {
+  .dashboard-topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .dashboard-topbar .dashboard-top-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 @media (max-width: 960px) {
   .grid.two, .auth-card, .room-grid-layout { grid-template-columns: 1fr; }
