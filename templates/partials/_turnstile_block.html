@@ -1,0 +1,11 @@
+<div
+  class="auth-turnstile-block"
+  data-turnstile-block
+  data-loading-text="{{ t('turnstile_loading') }}"
+  data-help-text="{{ t('turnstile_help') }}"
+  data-failed-text="{{ t('turnstile_load_failed') }}"
+  data-expired-text="{{ t('turnstile_expired') }}"
+>
+  <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>
+  <div class="muted small-note" data-turnstile-status>{{ t('turnstile_loading') }}</div>
+</div>

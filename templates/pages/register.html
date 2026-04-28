@@ -6,7 +6,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css', v=asset_version('css/auth.css')) }}" />
   <script src="{{ url_for('static', filename='js/auth/auth_flow.js') }}?v={{ asset_version('js/auth/auth_flow.js') }}"></script>
   {% if turnstile_enabled %}
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  <script src="{{ url_for('static', filename='js/auth/turnstile_loader.js') }}?v={{ asset_version('js/auth/turnstile_loader.js') }}"></script>
   {% endif %}
 {% endblock %}
 {% block content %}
@@ -73,10 +73,7 @@
     <label>{{ t('password') }}</label>
     <input name="password" type="password" required />
     {% if turnstile_enabled %}
-    <div class="auth-turnstile-block">
-      <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>
-      <div class="muted small-note">{{ t('turnstile_help') }}</div>
-    </div>
+    {% include 'partials/_turnstile_block.html' %}
     {% endif %}
     {% if email_auth_enabled %}
     <div class="auth-inline-actions">

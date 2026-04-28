@@ -1,6 +1,5 @@
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
 <script src="{{ url_for('static', filename='js/room/room_utils.js') }}?v={{ asset_version('js/room/room_utils.js') }}"></script>
 <script src="{{ url_for('static', filename='js/room/room_ui.js') }}?v={{ asset_version('js/room/room_ui.js') }}"></script>
 <script src="{{ url_for('static', filename='js/room/room_diagnostics.js') }}?v={{ asset_version('js/room/room_diagnostics.js') }}"></script>
@@ -78,6 +77,8 @@ const TEXT_VIRTUAL_BG_OFF = {{ t('virtual_bg_disabled')|tojson }};
 const TEXT_VIRTUAL_BG_NEEDS_CAMERA = {{ t('virtual_bg_needs_camera')|tojson }};
 const TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE = {{ t('virtual_bg_camera_unavailable')|tojson }};
 const TEXT_VIRTUAL_BG_PROCESSING_TIMEOUT = {{ t('virtual_bg_processing_timeout')|tojson }};
+const TEXT_VIRTUAL_BG_DEPENDENCY_LOADING = {{ t('virtual_bg_dependency_loading')|tojson }};
+const TEXT_VIRTUAL_BG_DEPENDENCY_UNAVAILABLE = {{ t('virtual_bg_dependency_unavailable')|tojson }};
 const TEXT_RECORD_CONVERTING = {{ t('record_converting_mp4')|tojson }};
 const TEXT_RECORD_MP4_FAILED = {{ t('record_mp4_failed')|tojson }};
 const TEXT_RECORD_MP4_SERVER_ERROR = {{ t('record_mp4_server_error')|tojson }};
@@ -295,6 +296,8 @@ const virtualBackgroundController = window.RoomPageVirtualBackground.createContr
   getProcessedFrameCount: () => processedFrameCount,
   TEXT_VIRTUAL_BG_NEEDS_CAMERA,
   TEXT_VIRTUAL_BG_LOADING,
+  TEXT_VIRTUAL_BG_DEPENDENCY_LOADING,
+  TEXT_VIRTUAL_BG_DEPENDENCY_UNAVAILABLE,
   TEXT_VIRTUAL_BG_PROCESSING_TIMEOUT,
   TEXT_VIRTUAL_BG_READY,
   TEXT_VIRTUAL_BG_FAILED,

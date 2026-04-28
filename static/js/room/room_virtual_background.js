@@ -1,5 +1,50 @@
 (function (global) {
+  let segmentationScriptPromise = null;
+
   function createController(ctx) {
+    function loadSegmentationSdk() {
+      if (typeof global.SelfieSegmentation !== 'undefined') return Promise.resolve(global.SelfieSegmentation);
+      if (segmentationScriptPromise) return segmentationScriptPromise;
+      segmentationScriptPromise = new Promise((resolve, reject) => {
+        const existing = document.querySelector('script[data-mediapipe-selfie-segmentation="1"]');
+        const script = existing || document.createElement('script');
+        let settled = false;
+        const finish = (fn, value) => {
+          if (settled) return;
+          settled = true;
+          fn(value);
+        };
+        const timer = global.setTimeout(() => {
+          finish(reject, new Error(ctx.TEXT_VIRTUAL_BG_DEPENDENCY_UNAVAILABLE));
+        }, 10000);
+        const handleLoad = () => {
+          global.clearTimeout(timer);
+          if (typeof global.SelfieSegmentation !== 'undefined') {
+            finish(resolve, global.SelfieSegmentation);
+          } else {
+            finish(reject, new Error(ctx.TEXT_VIRTUAL_BG_DEPENDENCY_UNAVAILABLE));
+          }
+        };
+        const handleError = () => {
+          global.clearTimeout(timer);
+          finish(reject, new Error(ctx.TEXT_VIRTUAL_BG_DEPENDENCY_UNAVAILABLE));
+        };
+        script.addEventListener('load', handleLoad, { once: true });
+        script.addEventListener('error', handleError, { once: true });
+        if (!existing) {
+          script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js';
+          script.async = true;
+          script.defer = true;
+          script.dataset.mediapipeSelfieSegmentation = '1';
+          document.head.appendChild(script);
+        }
+      }).catch((error) => {
+        segmentationScriptPromise = null;
+        throw error;
+      });
+      return segmentationScriptPromise;
+    }
+
     function cleanupProcessedVideoStream({ stopCanvas = false } = {}) {
       const processedVideoStream = ctx.getProcessedVideoStream();
       if (processedVideoStream && processedVideoStream !== ctx.getRawCameraStream()) {
@@ -152,8 +197,10 @@
 
     async function loadSegmentationModel() {
       if (ctx.getSegmentationModel()) return ctx.getSegmentationModel();
+      ctx.setStatus(ctx.TEXT_VIRTUAL_BG_DEPENDENCY_LOADING, 'warning');
+      await loadSegmentationSdk();
       if (typeof SelfieSegmentation === 'undefined') {
-        throw new Error('SelfieSegmentation not loaded');
+        throw new Error(ctx.TEXT_VIRTUAL_BG_DEPENDENCY_UNAVAILABLE);
       }
       const segmentationModel = new SelfieSegmentation({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
