@@ -841,7 +841,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 - 不要因为你是用 `root` 登录服务器，就顺手把 `ADMIN_USERNAME` 也设成 `root`。这是两个完全不同的概念。
 - 如果开启 `EMAIL_AUTH_ENABLED=1`，请确保 SMTP 发信配置正确；注册验证码和密码重置验证码都会直接发到用户邮箱。
 - 管理员提醒复用同一套 SMTP 配置：设置 `ADMIN_EMAIL_NOTIFY_ENABLED=1` 和 `ADMIN_ALERT_EMAIL=你的管理员邮箱` 后，新用户注册、用户进入会议房间以及高危管理操作都会按开关发送提醒。`ADMIN_ALERT_EMAIL` 是收提醒的邮箱；`ADMIN_EMAIL` 是管理员账号邮箱，默认复用 `ADMIN_ALERT_EMAIL`，所以也可以在独立管理员登录页用这个邮箱 + `ADMIN_PASSWORD` 登录。管理员邮箱只放服务器 `.env`，不要提交到 GitHub。
-- 如果同时配置了管理员邮箱和 SMTP，系统现在还支持管理员安全告警：普通入口触发管理员凭据尝试、普通邮箱验证码入口触发管理员邮箱尝试、以及管理员成功登录时，都会发送带“一键锁定链接”的安全邮件。锁定后可通过 `/admin/security/unlock` + 恢复码恢复服务。
+- 如果同时配置了管理员邮箱和 SMTP，系统现在还支持管理员安全告警：普通入口触发管理员凭据尝试、普通邮箱验证码入口触发管理员邮箱尝试、以及管理员成功登录时，都会发送带“一键锁定链接”和“忽略本次告警链接”的安全邮件。锁定后可通过 `/admin/security/unlock` + 恢复码恢复服务。
 - 线上 systemd 不要直接运行 `python app.py`。那会启动 Werkzeug 开发服务器；如果你在 `systemctl status video-meeting` 里看到 `Werkzeug appears to be used in a production deployment` 或 `This is a development server`，说明当前运行方式不对。
 - 如果你不熟悉终端编辑器，可以直接保留 EOF 写法；最后那个单独一行的 `EOF` 表示写入结束。
 - `TURNSTILE_SECRET_KEY` 不能自己随便生成，必须和 `TURNSTILE_SITE_KEY` 一起从同一个 Cloudflare Turnstile 站点页面复制。
@@ -857,7 +857,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 
 - “锁定”是指服务故意返回 `503 Security Lockdown`，并断开当前在线连接，防止继续被人操作。
 - “恢复码”是只有你自己知道的一段字符串，用来从锁定模式恢复服务。
-- “一键锁定链接”会出现在管理员安全告警邮件里。
+- “一键锁定链接”会出现在管理员安全告警邮件里，默认会长期有效，直到你点击锁定，或者点击同一封邮件里的“忽略本次告警链接”使其失效。
 
 推荐配置：
 
@@ -890,11 +890,12 @@ cat instance/security_recovery_code.txt
 
 1. 先确认邮件中的登录时间、IP、User-Agent 是否是你本人。
 2. 如果不是你本人，先点邮件里的“一键锁定链接”。
-3. 锁定后浏览器访问：
+3. 如果确认只是误报，可以点同一封邮件里的“忽略本次告警链接”，这样该邮件内的锁定链接会立即失效。
+4. 锁定后浏览器访问：
    `https://你的域名/admin/security/unlock`
-4. 输入恢复码恢复服务。
-5. 立刻修改 `.env` 里的 `ADMIN_PASSWORD`，必要时也轮换 `SECRET_KEY`。
-6. 修改完后重启服务。
+5. 输入恢复码恢复服务。
+6. 立刻修改 `.env` 里的 `ADMIN_PASSWORD`，必要时也轮换 `SECRET_KEY`。
+7. 修改完后重启服务。
 
 Linux 常用命令：
 
@@ -2720,6 +2721,7 @@ Configuration:
 | `ADMIN_NOTIFY_ON_ROOM_JOIN` | Notify the admin when a user joins a meeting room, default `1` | Optional |
 | `ADMIN_NOTIFY_ON_DANGEROUS_ACTIONS` | Notify the admin when high-risk admin actions occur, such as kicking/deleting users, password resets, disabling/enabling accounts, password-reset request updates, and ending/deleting meetings | Optional |
 | `ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS` | Cooldown for duplicate room-join alerts from the same user in the same room, default `300` seconds | Optional |
+| `ADMIN_SECURITY_LINK_TTL_MINUTES` | Lifetime of the admin security lockdown / ignore links, default about `5 years`; the intended flow is to keep them valid until used or ignored | Optional |
 | `STRICT_SECURITY_CHECKS` | Refuse weak `SECRET_KEY` / `ADMIN_*` settings at startup | Recommended online |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Human verification for login/register/password reset | Optional |
 | `TURN_PUBLIC_HOST` | Public host used when generating TURN/STUN addresses | Optional |

@@ -114,7 +114,17 @@ ADMIN_ROOM_JOIN_NOTIFY_COOLDOWN_SECONDS = max(0, int(os.environ.get("ADMIN_ROOM_
 EMAIL_VERIFY_CODE_TTL_MINUTES = max(1, int(os.environ.get("EMAIL_VERIFY_CODE_TTL_MINUTES", "10") or "10"))
 EMAIL_CODE_SEND_LIMIT = max(1, int(os.environ.get("EMAIL_CODE_SEND_LIMIT", "2") or "2"))
 ADMIN_SECURITY_ALERTS_ENABLED = (os.environ.get("ADMIN_SECURITY_ALERTS_ENABLED", "1") or "").strip().lower() in {"1", "true", "yes", "on"}
-ADMIN_SECURITY_LINK_TTL_MINUTES = max(5, int(os.environ.get("ADMIN_SECURITY_LINK_TTL_MINUTES", "30") or "30"))
+ADMIN_SECURITY_LINK_DEFAULT_TTL_MINUTES = 60 * 24 * 365 * 5
+ADMIN_SECURITY_LINK_TTL_MINUTES = max(
+    60,
+    int(
+        os.environ.get(
+            "ADMIN_SECURITY_LINK_TTL_MINUTES",
+            str(ADMIN_SECURITY_LINK_DEFAULT_TTL_MINUTES),
+        )
+        or str(ADMIN_SECURITY_LINK_DEFAULT_TTL_MINUTES)
+    ),
+)
 ADMIN_SECURITY_RECOVERY_CODE = (os.environ.get("ADMIN_SECURITY_RECOVERY_CODE") or "").strip()
 SECURITY_LOCKDOWN_FILE = os.path.join(INSTANCE_DIR, "security_lockdown.json")
 
@@ -267,6 +277,8 @@ def _too_many_attempts_response(template_name: str, *, status_code: int = 429):
         response = render_email_code_template(template_name, purpose="register", error=error)
     elif template_name == "login_email_code.html":
         response = render_email_code_template(template_name, purpose="login", error=error)
+    elif template_name == "forgot_password.html":
+        response = render_email_code_template(template_name, purpose="password_reset", error=error)
     elif template_name == "admin_login.html":
         response = render_template("pages/admin_login.html", error=error, admin_login_path=ADMIN_LOGIN_PATH)
     else:
@@ -643,6 +655,7 @@ class AdminSecurityActionToken(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     action = db.Column(db.String(32), nullable=False, index=True)
+    context_key = db.Column(db.String(64), nullable=True, index=True)
     token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
     expires_at = db.Column(db.DateTime, nullable=False)
     used_at = db.Column(db.DateTime, nullable=True)
@@ -766,7 +779,11 @@ def ensure_user_columns():
         cur.execute("ALTER TABLE users ADD COLUMN auto_enable_speaker BOOLEAN DEFAULT 1")
     cur.execute("CREATE TABLE IF NOT EXISTS password_reset_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, username VARCHAR(64) NOT NULL, contact VARCHAR(128), note TEXT, status VARCHAR(16) DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)")
     cur.execute("CREATE TABLE IF NOT EXISTS email_verification_codes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, email VARCHAR(255) NOT NULL, purpose VARCHAR(32) NOT NULL, code_hash VARCHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))")
-    cur.execute("CREATE TABLE IF NOT EXISTS admin_security_action_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, action VARCHAR(32) NOT NULL, token_hash VARCHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)")
+    cur.execute("CREATE TABLE IF NOT EXISTS admin_security_action_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, action VARCHAR(32) NOT NULL, context_key VARCHAR(64), token_hash VARCHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, used_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)")
+    cur.execute("PRAGMA table_info(admin_security_action_tokens)")
+    admin_token_cols = {row[1] for row in cur.fetchall()}
+    if "context_key" not in admin_token_cols:
+        cur.execute("ALTER TABLE admin_security_action_tokens ADD COLUMN context_key VARCHAR(64)")
     conn.commit()
     conn.close()
 
@@ -898,10 +915,11 @@ def _security_action_token_hash(raw_token: str) -> str:
     return hashlib.sha256((raw_token or "").encode("utf-8")).hexdigest()
 
 
-def create_admin_security_action_token(*, action: str, expires_minutes: int | None = None) -> str:
+def create_admin_security_action_token(*, action: str, expires_minutes: int | None = None, context_key: str | None = None) -> str:
     raw_token = secrets.token_urlsafe(32)
     token = AdminSecurityActionToken(
         action=(action or "lockdown").strip().lower()[:32],
+        context_key=(context_key or "").strip()[:64] or None,
         token_hash=_security_action_token_hash(raw_token),
         expires_at=datetime.utcnow() + timedelta(minutes=expires_minutes or ADMIN_SECURITY_LINK_TTL_MINUTES),
     )
@@ -921,6 +939,24 @@ def consume_admin_security_action_token(*, action: str, raw_token: str) -> Admin
     token.used_at = datetime.utcnow()
     db.session.commit()
     return token
+
+
+def invalidate_admin_security_action_tokens(*, context_key: str | None, actions: list[str] | tuple[str, ...] | set[str] | None = None) -> int:
+    normalized_context = (context_key or "").strip()[:64]
+    if not normalized_context:
+        return 0
+    query = AdminSecurityActionToken.query.filter_by(context_key=normalized_context, used_at=None)
+    normalized_actions = [
+        (action or "").strip().lower()[:32]
+        for action in (actions or [])
+        if (action or "").strip()
+    ]
+    if normalized_actions:
+        query = query.filter(AdminSecurityActionToken.action.in_(normalized_actions))
+    updated = query.update({"used_at": datetime.utcnow()}, synchronize_session=False)
+    if updated:
+        db.session.commit()
+    return updated
 
 
 def _load_security_lockdown_state() -> None:
@@ -1003,12 +1039,16 @@ def send_admin_security_alert(*, subject: str, fields: dict[str, object], cooldo
             if now - last_sent < cooldown_seconds:
                 return
             ADMIN_NOTIFICATION_THROTTLE[key] = now
-    raw_token = create_admin_security_action_token(action="lockdown")
+    alert_context = secrets.token_urlsafe(18)
+    raw_token = create_admin_security_action_token(action="lockdown", context_key=alert_context)
+    ignore_token = create_admin_security_action_token(action="ignore_lockdown", context_key=alert_context)
     lockdown_url = url_for("admin_security_lockdown", token=raw_token, _external=True)
+    ignore_url = url_for("admin_security_lockdown_ignore", token=ignore_token, _external=True)
     payload = {
         **fields,
         "One-click lockdown URL": lockdown_url,
-        "Lockdown URL expires in minutes": ADMIN_SECURITY_LINK_TTL_MINUTES,
+        "Ignore this alert URL": ignore_url,
+        "Link validity": "The lockdown link stays active until you use it or open the ignore link from this alert email.",
         "If this was not you": "Open the lockdown URL immediately to force the service offline.",
     }
     body = _format_admin_notification_body(subject, payload)
@@ -2082,6 +2122,7 @@ def account_page():
 def forgot_password_page():
     message = None
     error = None
+    email_code_scope = None
     if request.method == "POST":
         retry_after = _consume_request_budget(
             "forgot_password_ip",
@@ -2101,6 +2142,9 @@ def forgot_password_page():
             error = t("login_identifier_required") if email_auth_active() else t("username_password_required")
         else:
             user = find_user_by_identifier(identifier)
+            email_code_scope = user.email if user and user.email and user.email_verified else (
+                normalize_email(identifier) if looks_like_email(identifier) else None
+            )
             if email_auth_active() and email_delivery_configured():
                 if intent == "send_code":
                     if user and user.email and user.email_verified:
@@ -2121,7 +2165,13 @@ def forgot_password_page():
                     if user and user.email and user.email_verified:
                         turnstile_ok, turnstile_error = verify_turnstile_response(request.form.get("cf-turnstile-response"))
                         if not turnstile_ok:
-                            return render_template("pages/forgot_password.html", message=message, error=turnstile_error), 403
+                            return render_email_code_template(
+                                "forgot_password.html",
+                                purpose="password_reset",
+                                scope=email_code_scope,
+                                message=message,
+                                error=turnstile_error,
+                            ), 403
                         elif not re.fullmatch(r"\d{6}", email_code):
                             error = t("verification_code_required")
                         elif not new_password:
@@ -2148,7 +2198,13 @@ def forgot_password_page():
                         error = t("password_reset_email_unavailable")
             else:
                 error = t("password_reset_email_unavailable")
-    return render_template("pages/forgot_password.html", message=message, error=error)
+    return render_email_code_template(
+        "forgot_password.html",
+        purpose="password_reset",
+        scope=email_code_scope,
+        message=message,
+        error=error,
+    )
 
 
 @app.route("/forgot-password-support", methods=["GET", "POST"])
@@ -2723,11 +2779,27 @@ def admin_security_lockdown(token: str):
     consumed = consume_admin_security_action_token(action="lockdown", raw_token=token)
     if not consumed:
         return "<h1>Link invalid</h1><p>This security lockdown link is invalid, expired, or already used.</p>", 410
+    invalidate_admin_security_action_tokens(context_key=consumed.context_key, actions={"ignore_lockdown"})
     activate_security_lockdown(reason="Triggered from admin security email", source=f"token:{consumed.id}")
     return (
         "<h1>Security lockdown activated</h1>"
         "<p>The service has entered lockdown mode and active sessions were disconnected.</p>"
         "<p>Open /admin/security/unlock and enter the recovery code to restore service.</p>",
+        200,
+        {"Content-Type": "text/html; charset=utf-8"},
+    )
+
+
+@app.get("/admin/security/lockdown/ignore/<token>")
+def admin_security_lockdown_ignore(token: str):
+    consumed = consume_admin_security_action_token(action="ignore_lockdown", raw_token=token)
+    if not consumed:
+        return "<h1>Link invalid</h1><p>This ignore link is invalid, expired, or already used.</p>", 410
+    invalidate_admin_security_action_tokens(context_key=consumed.context_key, actions={"lockdown"})
+    return (
+        "<h1>Security alert dismissed</h1>"
+        "<p>This alert email's lockdown link has been invalidated.</p>"
+        "<p>A new security alert email will generate a new lockdown link if another suspicious event happens.</p>",
         200,
         {"Content-Type": "text/html; charset=utf-8"},
     )
