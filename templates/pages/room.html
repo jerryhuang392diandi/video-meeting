@@ -1,5 +1,6 @@
 {% extends 'pages/base.html' %}
 {% block title %}{{ t('meeting_room') }}{% endblock %}
+{% block shell_class %}room-shell{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/room.css') }}" />
 {% endblock %}
