@@ -77,11 +77,11 @@
     {% endif %}
     {% if email_auth_enabled %}
     <div class="auth-inline-actions">
-      <button class="ghost-btn" type="submit" value="send_code" formnovalidate data-code-submit="1" {% if email_code_send_locked %}disabled{% endif %}>{{ t(email_code_button_key) }}</button>
-      <button class="primary-btn" type="submit" data-full-submit="1">{{ t('submit_register') }}</button>
+      <button class="ghost-btn" type="submit" name="submit_action" value="send_code" formnovalidate data-code-submit="1" {% if email_code_send_locked %}disabled{% endif %}>{{ t(email_code_button_key) }}</button>
+      <button class="primary-btn" type="submit" name="submit_action" value="register" data-full-submit="1">{{ t('submit_register') }}</button>
     </div>
     {% else %}
-    <button class="primary-btn" type="submit" data-full-submit="1">{{ t('submit_register') }}</button>
+    <button class="primary-btn" type="submit" name="submit_action" value="register" data-full-submit="1">{{ t('submit_register') }}</button>
     {% endif %}
     {% endif %}
     <div class="auth-action-grid compact">

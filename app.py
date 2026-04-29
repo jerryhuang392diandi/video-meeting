@@ -358,6 +358,13 @@ def build_email_code_limit_error() -> str:
     )
 
 
+def resolve_submit_intent(default: str) -> str:
+    submit_action = (request.form.get("submit_action") or "").strip()
+    if submit_action:
+        return submit_action
+    return (request.form.get("intent") or default).strip()
+
+
 def _validate_public_security_settings() -> list[str]:
     issues = []
     secret_key_env = (os.environ.get("SECRET_KEY") or "").strip()
@@ -2134,7 +2141,7 @@ def forgot_password_page():
             response, status_code, headers = _too_many_attempts_response("forgot_password.html")
             headers["Retry-After"] = str(retry_after)
             return response, status_code, headers
-        intent = (request.form.get("intent") or "submit").strip()
+        intent = resolve_submit_intent("submit")
         identifier = (request.form.get("identifier") or "").strip()[:255]
         email_code = (request.form.get("email_code") or "").strip()
         new_password = (request.form.get("new_password") or "").strip()
@@ -2269,7 +2276,7 @@ def register():
         headers["Retry-After"] = str(retry_after)
         return response, status_code, headers
 
-    intent = (request.form.get("intent") or "register").strip()
+    intent = resolve_submit_intent("register")
     username = (request.form.get("username") or "").strip()
     email = normalize_email(request.form.get("email"))
     password = (request.form.get("password") or "").strip()
@@ -2457,7 +2464,7 @@ def login_email_code():
     if request.method == "GET":
         return render_email_code_template("login_email_code.html", purpose="login")
 
-    intent = (request.form.get("intent") or "email_code").strip()
+    intent = resolve_submit_intent("email_code")
     email = normalize_email(request.form.get("email"))
     retry_after_ip = _consume_request_budget(
         "login_ip",
