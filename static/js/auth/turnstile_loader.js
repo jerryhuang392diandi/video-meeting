@@ -1,6 +1,8 @@
 (function (global) {
   let loaderPromise = null;
   const mountedBlocks = new WeakMap();
+  let retryTimer = null;
+  const pendingBlocks = new WeakSet();
 
   function loadTurnstileScript() {
     if (global.turnstile?.render) return Promise.resolve(global.turnstile);
@@ -45,6 +47,27 @@
     return loaderPromise;
   }
 
+  function isRenderable(block) {
+    if (!block || !document.body.contains(block)) return false;
+    const target = block.querySelector('.cf-turnstile');
+    if (!target) return false;
+    const style = global.getComputedStyle(block);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    const rect = target.getBoundingClientRect();
+    return rect.width >= 200 && rect.height >= 40;
+  }
+
+  function ensureTokenField(form) {
+    if (!form) return null;
+    let tokenField = form.querySelector('input[name="cf-turnstile-response"]');
+    if (tokenField) return tokenField;
+    tokenField = document.createElement('input');
+    tokenField.type = 'hidden';
+    tokenField.name = 'cf-turnstile-response';
+    form.appendChild(tokenField);
+    return tokenField;
+  }
+
   function setStatus(block, key) {
     const node = block?.querySelector('[data-turnstile-status]');
     if (!node) return;
@@ -56,7 +79,7 @@
     const form = block?.closest('form');
     if (!form || block.dataset.submitPending !== '1') return;
     block.dataset.submitPending = '0';
-    const tokenField = form.querySelector('input[name="cf-turnstile-response"]');
+    const tokenField = ensureTokenField(form);
     if (!tokenField?.value) return;
     if (typeof form.requestSubmit === 'function') {
       form.requestSubmit();
@@ -68,33 +91,46 @@
   function mountBlock(block, api) {
     const target = block.querySelector('.cf-turnstile');
     const siteKey = target?.dataset?.sitekey || '';
+    const form = block.closest('form');
     if (!target || !siteKey) return;
     if (mountedBlocks.has(block)) return mountedBlocks.get(block);
     const widgetId = api.render(target, {
       sitekey: siteKey,
-      callback: function () {
+      callback: function (token) {
+        const tokenField = ensureTokenField(form);
+        if (tokenField) tokenField.value = token || '';
         setStatus(block, 'helpText');
         requestPendingFormSubmit(block);
       },
       'expired-callback': function () {
+        const tokenField = ensureTokenField(form);
+        if (tokenField) tokenField.value = '';
         setStatus(block, 'expiredText');
-        try { api.reset(target); } catch (_) {}
+        try { api.reset(widgetId); } catch (_) {}
       },
       'error-callback': function () {
+        const tokenField = ensureTokenField(form);
+        if (tokenField) tokenField.value = '';
         setStatus(block, 'failedText');
       },
     });
     mountedBlocks.set(block, widgetId);
+    ensureTokenField(form);
     setStatus(block, 'helpText');
     return widgetId;
   }
 
   function initializeBlock(block) {
     if (!block || mountedBlocks.has(block)) return Promise.resolve();
+    if (!isRenderable(block)) {
+      pendingBlocks.add(block);
+      return Promise.resolve();
+    }
     setStatus(block, 'loadingText');
     return loadTurnstileScript()
       .then((api) => {
         mountBlock(block, api);
+        pendingBlocks.delete(block);
       })
       .catch(() => {
         setStatus(block, 'failedText');
@@ -106,14 +142,36 @@
     const form = block.closest('form');
     if (!form || block.dataset.bound === '1') return;
     block.dataset.bound = '1';
+    ensureTokenField(form);
 
     form.addEventListener('submit', function (event) {
-      const tokenField = form.querySelector('input[name="cf-turnstile-response"]');
+      const tokenField = ensureTokenField(form);
       if (tokenField?.value) return;
       event.preventDefault();
       block.dataset.submitPending = '1';
       initializeBlock(block).catch(() => {});
     });
+  }
+
+  function retryVisibleBlocks() {
+    const blocks = Array.from(document.querySelectorAll('[data-turnstile-block]'));
+    blocks.forEach((block) => {
+      const tokenField = ensureTokenField(block.closest('form'));
+      if (tokenField?.value) return;
+       if (!isRenderable(block)) {
+        pendingBlocks.add(block);
+        return;
+      }
+      initializeBlock(block).catch(() => {});
+    });
+  }
+
+  function scheduleRetry() {
+    if (retryTimer) global.clearTimeout(retryTimer);
+    retryTimer = global.setTimeout(() => {
+      retryTimer = null;
+      retryVisibleBlocks();
+    }, 1200);
   }
 
   function initialize() {
@@ -124,7 +182,22 @@
       bindBlock(block);
       initializeBlock(block).catch(() => {});
     });
+    scheduleRetry();
   }
+
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) scheduleRetry();
+  });
+  document.addEventListener('focusin', function (event) {
+    if (event.target instanceof HTMLElement && event.target.closest('form')) {
+      scheduleRetry();
+    }
+  });
+  global.addEventListener('pageshow', scheduleRetry);
+  global.addEventListener('load', scheduleRetry);
+  global.addEventListener('resize', scheduleRetry);
+  global.addEventListener('orientationchange', scheduleRetry);
+  global.addEventListener('online', scheduleRetry);
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initialize, { once: true });
