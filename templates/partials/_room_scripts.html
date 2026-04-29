@@ -143,7 +143,6 @@ const {
 const { createRenderScheduler, createTaskQueue } = window.RoomPageUi;
 const { createRtcDiagnosticsController } = window.RoomPageDiagnostics;
 let currentGridPage = 0;
-let videoSearchKeyword = '';
 
 function getGridPageSize() {
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
@@ -227,7 +226,6 @@ const videoPager = document.getElementById('videoPager');
 const videoPrevPageBtn = document.getElementById('videoPrevPageBtn');
 const videoNextPageBtn = document.getElementById('videoNextPageBtn');
 const videoHomePageBtn = document.getElementById('videoHomePageBtn');
-const videoSearchInput = document.getElementById('videoSearchInput');
 const videoPagerInfo = document.getElementById('videoPagerInfo');
 const shareScreenBtn = document.getElementById('shareScreenBtn');
 const shareProfileBtn = document.getElementById('shareProfileBtn');
@@ -1064,38 +1062,27 @@ function getGridColumns(cardCount) {
 function updateVideoPager(totalCards, totalPages) {
   if (!videoPager || !videoPrevPageBtn || !videoNextPageBtn || !videoPagerInfo) return;
   const pageSize = getGridPageSize();
-  const hasSearch = !!getVideoSearchKeyword();
-  const showPager = !currentSharerSid && ((totalCards > pageSize && totalPages > 1) || hasSearch);
+  const showPager = !currentSharerSid && totalCards > pageSize && totalPages > 1;
   videoPager.classList.toggle('hidden', !showPager);
   if (!showPager) {
     videoPagerInfo.textContent = '1 / 1';
     if (videoHomePageBtn) videoHomePageBtn.disabled = true;
-    if (videoSearchInput) videoSearchInput.value = videoSearchKeyword;
     return;
   }
   videoPagerInfo.textContent = `${currentGridPage + 1} / ${totalPages}`;
   videoPrevPageBtn.disabled = currentGridPage <= 0;
   videoNextPageBtn.disabled = currentGridPage >= totalPages - 1;
   if (videoHomePageBtn) videoHomePageBtn.disabled = currentGridPage <= 0;
-  if (videoSearchInput && videoSearchInput.value !== videoSearchKeyword) videoSearchInput.value = videoSearchKeyword;
-}
-
-function getVideoSearchKeyword() {
-  return String(videoSearchKeyword || '').trim().toLocaleLowerCase('zh-Hans-CN');
 }
 
 function getRenderableCards() {
   const orderedSids = ['local', ...Object.keys(participantMeta)];
   const seen = new Set();
-  const keyword = getVideoSearchKeyword();
   return orderedSids
     .filter(sid => {
       if (seen.has(sid)) return false;
       seen.add(sid);
-      if (!keyword) return true;
-      const displayName = sid === 'local' ? getDisplayName('local') : getDisplayName(sid);
-      const haystack = `${displayName || ''} ${sid || ''} ${ROOM_ID || ''}`.toLocaleLowerCase('zh-Hans-CN');
-      return haystack.includes(keyword);
+      return true;
     })
     .map(sid => ensureCard(
       sid,

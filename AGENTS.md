@@ -6,7 +6,7 @@ This project is now a `Flask + Flask-SocketIO + LiveKit` online meeting app with
 - `app.py`: routes, REST APIs, Socket.IO events, SQLAlchemy models, runtime config, LiveKit token handling.
 - `templates/pages/`: page templates for login, home, room, admin, history, and account screens.
 - `templates/partials/`: shared fragments, especially `_room_layout.html`, `_room_scripts.html`, `_auth_topbar.html`, and `_language_switch.html`.
-- `static/css/`: shared page and room styles.
+- `static/css/`: shared page styles in `style.css`, room-only responsive layout in `room.css`.
 - `static/js/auth/`: auth flow scripts.
 - `static/js/room/`: room frontend logic (`room_livekit.js`, `room_ui.js`, `room_chat.js`, `room_diagnostics.js`, `room_utils.js`, `room_bootstrap.js`, `room_recording.js`, `room_virtual_background.js`).
 - `i18n/translations.py`: Chinese/English translation keys used by `t(...)` in templates and backend.
@@ -36,6 +36,8 @@ For templates, prefer translation keys through `t('key')` instead of inline UI t
 - `room_chat.js`: chat rendering and attachment rendering.
 - `room_diagnostics.js`: RTC/LiveKit diagnostics summary.
 - `room_utils.js`: shared helpers.
+- `room.css`: canonical room-page layout and responsive rules for the top bar, control rail, stage, and chat sheet.
+- `style.css`: shared non-room page shell and general reusable UI rules; avoid putting new room-only layout fixes here unless they are true shared primitives.
 
 For admin and security-related UI, keep the visible navigation compact. The dedicated admin login should land on the admin home page, while `/admin` remains the admin console itself. Security lockdown and recovery now live in `/admin/security/unlock`, and the recovery code can come from `ADMIN_SECURITY_RECOVERY_CODE` or the generated `instance/security_recovery_code.txt` file.
 

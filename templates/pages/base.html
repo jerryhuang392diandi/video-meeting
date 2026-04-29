@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v=asset_version('css/style.css')) }}" />
   {% block head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <div class="page-bg"></div>
   <div class="shell {% block shell_class %}{% endblock %}">
     {% block content %}{% endblock %}

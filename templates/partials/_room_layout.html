@@ -1,58 +1,70 @@
-<header class="topbar compact app-topbar">
-  <div class="app-topbar-copy">
-    <div class="brand">{{ t('meeting_room') }}</div>
-    <div class="muted">{{ t('room_id') }}: {{ room_id }}</div>
-    <div class="muted">{{ t('record_password_label') }}: {{ room_password }}</div>
+<header class="topbar compact app-topbar room-topbar">
+  <div class="app-topbar-copy room-topbar-copy">
+    <div class="room-topbar-head">
+      <div class="brand">{{ t('meeting_room') }}</div>
+      <span class="user-pill room-count-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
+    </div>
+    <div class="room-meta-strip">
+      <div class="muted room-meta-pill">{{ t('room_id') }}: {{ room_id }}</div>
+      <div class="muted room-meta-pill">{{ t('record_password_label') }}: {{ room_password }}</div>
+    </div>
   </div>
-  <div class="top-actions app-topbar-actions">
+  <div class="top-actions app-topbar-actions room-topbar-actions">
     <nav class="topbar-nav" aria-label="{{ t('nav_menu') }}">
       <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
       <a class="chip" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
       {% if current_user.is_admin %}<a class="chip" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
     </nav>
-    <span class="user-pill">{{ t('online_count') }}: <span id="participantCount">1</span></span>
-    {% include 'partials/_language_switch.html' %}
-    <details class="header-menu">
-      <summary class="user-pill header-menu-trigger">{{ current_user.username }}</summary>
-      <div class="header-menu-panel">
-        <div class="menu-user">
-          <span>{{ t('current_user') }}</span>
-          <strong>{{ current_user.username }}</strong>
+    <div class="room-topbar-tools">
+      {% include 'partials/_language_switch.html' %}
+      <details class="header-menu">
+        <summary class="user-pill header-menu-trigger">{{ current_user.username }}</summary>
+        <div class="header-menu-panel">
+          <div class="menu-user">
+            <span>{{ t('current_user') }}</span>
+            <strong>{{ current_user.username }}</strong>
+          </div>
+          <div class="menu-section">
+            <a class="menu-link" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>
+            <a class="menu-link" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
+            <a class="menu-link" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
+            <a class="menu-link" href="{{ url_for('help_page') }}">{{ t('help_page_title') }}</a>
+            <a class="menu-link" href="{{ url_for('support_page') }}">{{ t('support_page_title') }}</a>
+            {% if current_user.is_admin %}<a class="menu-link" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
+          </div>
+          <div class="menu-divider"></div>
+          <div class="menu-section">
+            <a class="menu-link danger" href="{{ url_for('logout') }}">{{ t('nav_logout') }}</a>
+          </div>
         </div>
-        <div class="menu-section">
-          <a class="menu-link" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>
-          <a class="menu-link" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
-          <a class="menu-link" href="{{ url_for('quickstart_page') }}">{{ t('quickstart_nav') }}</a>
-          <a class="menu-link" href="{{ url_for('help_page') }}">{{ t('help_page_title') }}</a>
-          <a class="menu-link" href="{{ url_for('support_page') }}">{{ t('support_page_title') }}</a>
-          {% if current_user.is_admin %}<a class="menu-link" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
-        </div>
-        <div class="menu-divider"></div>
-        <div class="menu-section">
-          <a class="menu-link danger" href="{{ url_for('logout') }}">{{ t('nav_logout') }}</a>
-        </div>
-      </div>
-    </details>
+      </details>
+    </div>
   </div>
 </header>
 
 <section class="grid room-grid-layout">
   <aside class="panel side-panel panel-glow">
-    <h2>{{ t('permissions') }}</h2>
-    <div class="stack-controls button-grid-2">
-      <button class="ghost-btn" id="shareScreenBtn">{{ t('share_screen') }}</button>
-      <button class="ghost-btn" id="shareProfileBtn">{{ t('share_profile_button') }}</button>
-      <button class="ghost-btn" id="virtualBgBtn">{{ t('blur_bg') }}</button>
-      <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
-      <button class="ghost-btn" id="toggleMicBtn">{{ t('mic') }}</button>
-      <button class="ghost-btn" id="toggleSpeakerBtn">{{ t('speaker') }}</button>
-      <button class="ghost-btn" id="toggleCameraBtn">{{ t('camera') }}</button>
-      <button class="ghost-btn danger" id="leaveMeetingBtn">{{ t('leave') }}</button>
-      {% if is_host %}<button class="ghost-btn danger" id="hostEndMeetingBtn">{{ t('host_end_meeting') }}</button>{% endif %}
+    <div class="side-panel-section controls-section">
+      <div class="side-panel-heading">
+        <h2>{{ t('permissions') }}</h2>
+        <div class="small-note">{{ t('room_ready') }}</div>
+      </div>
+      <div class="stack-controls button-grid-2">
+        <button class="ghost-btn" id="shareScreenBtn">{{ t('share_screen') }}</button>
+        <button class="ghost-btn" id="shareProfileBtn">{{ t('share_profile_button') }}</button>
+        <button class="ghost-btn" id="virtualBgBtn">{{ t('blur_bg') }}</button>
+        <button class="ghost-btn" id="recordingBtn">{{ t('recording') }}</button>
+        <button class="ghost-btn" id="toggleMicBtn">{{ t('mic') }}</button>
+        <button class="ghost-btn" id="toggleSpeakerBtn">{{ t('speaker') }}</button>
+        <button class="ghost-btn" id="toggleCameraBtn">{{ t('camera') }}</button>
+        <button class="ghost-btn danger" id="leaveMeetingBtn">{{ t('leave') }}</button>
+        {% if is_host %}<button class="ghost-btn danger" id="hostEndMeetingBtn">{{ t('host_end_meeting') }}</button>{% endif %}
+      </div>
+      <div class="small-note" id="shareProfileTip"></div>
+      <div class="small-note" id="virtualBgTip">{{ t('blur_bg_tip') }}</div>
+      <div id="statusBox" class="notice">{{ t('room_ready') }}</div>
     </div>
-    <div class="small-note" id="shareProfileTip"></div>
-    <div class="small-note" id="virtualBgTip">{{ t('blur_bg_tip') }}</div>
-    <div id="statusBox" class="notice">{{ t('room_ready') }}</div>
+
     <div class="mini-panel">
       <div class="muted">{{ t('profile_section') }}</div>
       <label>{{ t('display_name') }}</label>
@@ -106,8 +118,8 @@
         <button id="videoNextPageBtn" class="ghost-btn pager-btn" type="button">{{ t('next_page') }}</button>
       </div>
     </div>
-      <div id="danmakuLayer" class="danmaku-layer"></div>
-      <button id="chatShowBtn" class="chat-side-toggle chat-show-btn hidden" type="button">{{ t('chat_short') }} ◀</button>
+    <div id="danmakuLayer" class="danmaku-layer"></div>
+    <button id="chatShowBtn" class="chat-side-toggle chat-show-btn hidden" type="button">{{ t('chat_short') }} ◀</button>
     <div id="chatWindow" class="chat-window">
       <button id="chatMobileHandle" class="chat-mobile-handle" type="button" aria-label="{{ t('drag_chat_panel') }}">
         <span></span>
