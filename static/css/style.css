@@ -795,6 +795,24 @@ video {
   .grid.two, .auth-card, .room-grid-layout { grid-template-columns: 1fr; }
   .hero-copy h1 { font-size: 32px; }
   .topbar { flex-direction: column; align-items: flex-start; }
+  .app-topbar,
+  .dashboard-topbar,
+  .admin-header {
+    gap: 12px;
+  }
+  .app-topbar-copy,
+  .app-topbar-actions,
+  .dashboard-topbar .dashboard-top-actions,
+  .admin-header-copy,
+  .admin-header-actions,
+  .topbar-nav,
+  .dashboard-meta-row,
+  .dashboard-link-row,
+  .admin-header-nav {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+  }
   .top-actions,
   .app-topbar-actions,
   .dashboard-topbar .dashboard-top-actions {
