@@ -823,25 +823,12 @@ video {
     font-size: 24px;
   }
   .top-actions {
-    align-items: stretch;
-  }
-  .top-actions .chip,
-  .top-actions .user-pill,
-  .topbar-nav .chip,
-  .header-menu {
-    flex: 1 1 calc(50% - 10px);
-  }
-  .top-actions .chip,
-  .top-actions .user-pill,
-  .topbar-nav .chip,
-  .header-menu-trigger {
-    justify-content: center;
-    text-align: center;
-    width: 100%;
+    align-items: center;
   }
   .top-actions .lang-switch {
-    flex: 1 1 100%;
-    justify-content: center;
+    width: auto;
+    max-width: 100%;
+    justify-content: flex-start;
   }
   .app-topbar-actions,
   .dashboard-topbar .dashboard-top-actions {
@@ -852,6 +839,27 @@ video {
   .dashboard-link-row {
     width: 100%;
     gap: 8px;
+  }
+  .top-actions > *,
+  .topbar-nav > *,
+  .dashboard-meta-row > *,
+  .dashboard-link-row > * {
+    flex: 0 1 auto;
+    min-width: 0;
+    width: auto;
+    max-width: 100%;
+  }
+  .top-actions .chip,
+  .top-actions .user-pill,
+  .topbar-nav .chip,
+  .header-menu-trigger {
+    width: auto;
+    max-width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+  .header-menu {
+    flex: 0 0 auto;
   }
   .header-menu-panel,
   .header-menu-panel.left {
@@ -883,9 +891,12 @@ video {
   .button-grid-2 { grid-template-columns: 1fr; }
 }
 @media (max-width: 460px) {
-  .top-actions .chip,
-  .top-actions .user-pill {
-    flex-basis: 100%;
+  .app-topbar .top-actions,
+  .app-topbar .topbar-nav,
+  .dashboard-topbar .dashboard-top-actions,
+  .dashboard-topbar .dashboard-meta-row,
+  .dashboard-topbar .dashboard-link-row {
+    gap: 6px;
   }
 }
 
@@ -2165,11 +2176,14 @@ textarea {
     align-items: center !important;
   }
   .top-actions > * {
+    flex: 0 1 auto !important;
+    width: auto !important;
     max-width: 100% !important;
   }
   .lang-switch {
-    width: 100%;
-    justify-content: flex-start;
+    width: auto !important;
+    max-width: 100% !important;
+    justify-content: flex-start !important;
   }
   .room-grid-layout {
     display: grid !important;

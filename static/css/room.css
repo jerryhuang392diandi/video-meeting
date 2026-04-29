@@ -709,7 +709,14 @@
     .room-shell .user-pill,
     .room-shell .lang-switch,
     .room-shell .header-menu {
-        flex: 1 1 calc(50% - 6px);
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .room-shell .header-menu-trigger {
+        width: auto;
+        max-width: 100%;
     }
 
     .room-grid-layout {
@@ -918,7 +925,7 @@
     .room-shell .user-pill,
     .room-shell .lang-switch,
     .room-shell .header-menu {
-        flex: 1 1 100%;
+        flex: 0 1 auto;
     }
 
     .stack-controls.button-grid-2,

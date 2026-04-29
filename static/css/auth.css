@@ -19,3 +19,20 @@
 .auth-process-icon{grid-row:span 2;width:34px;height:34px;border-radius:12px}
 button[disabled],.ghost-btn[disabled],.primary-btn[disabled]{opacity:.55;cursor:not-allowed;transform:none}
 @media(max-width:520px){.auth-inline-actions{grid-template-columns:1fr}.auth-action-card{padding:11px 12px}.auth-action-icon{width:34px;height:34px;border-radius:12px}}
+@media(max-width:720px){
+  .auth-shell .app-topbar{gap:12px;margin-bottom:14px}
+  .auth-shell .app-topbar-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px}
+  .auth-shell .app-topbar .topbar-nav{display:none}
+  .auth-shell .app-topbar .lang-switch{width:100%;min-width:0;justify-content:flex-start;flex-wrap:nowrap;gap:8px;padding:5px}
+  .auth-shell .app-topbar .lang-switch-label{padding-left:4px;padding-right:2px}
+  .auth-shell .app-topbar .lang-chip{min-width:48px;padding:8px 10px}
+  .auth-shell .app-topbar .header-menu,.auth-shell .app-topbar .header-menu-trigger{width:auto;flex:0 0 auto}
+  .auth-shell .app-topbar .header-menu-panel,.auth-shell .app-topbar .header-menu-panel.left{left:auto;right:0}
+  .auth-shell .landing-actions{display:grid;grid-template-columns:1fr;gap:10px;margin:20px 0 14px}
+  .auth-shell .landing-actions .ghost-btn{width:100%;justify-content:center}
+}
+@media(max-width:560px){
+  .auth-shell .app-topbar-copy .brand{font-size:24px}
+  .auth-shell .app-topbar-copy .muted{font-size:13px}
+  .auth-shell .app-topbar .lang-switch-label{font-size:11px}
+}
