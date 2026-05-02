@@ -60,6 +60,16 @@ body.room-page .room-shell .header-menu-panel {
     z-index: 1;
 }
 
+body.room-page .room-shell .room-topbar {
+    z-index: 30;
+}
+
+body.room-page .room-shell .side-panel,
+body.room-page .room-shell .video-panel,
+body.room-page .room-shell .chat-window {
+    z-index: 1;
+}
+
 body.room-page .room-topbar,
 body.room-page .side-panel,
 body.room-page .video-panel {
@@ -179,7 +189,7 @@ body.room-page .room-topbar .header-menu-panel {
     right: 0;
     left: auto;
     width: min(320px, calc(100vw - 32px));
-    z-index: 40;
+    z-index: 80;
 }
 
 body.room-page .room-grid-layout {
