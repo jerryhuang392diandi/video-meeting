@@ -2,7 +2,7 @@
   let segmentationScriptPromise = null;
 
   function createController(ctx) {
-    function loadSegmentationSdk() {
+    function loadSegmentationSdk({ timeoutMs = 18000 } = {}) {
       if (typeof global.SelfieSegmentation !== 'undefined') return Promise.resolve(global.SelfieSegmentation);
       if (segmentationScriptPromise) return segmentationScriptPromise;
       segmentationScriptPromise = new Promise((resolve, reject) => {
@@ -16,7 +16,7 @@
         };
         const timer = global.setTimeout(() => {
           finish(reject, new Error(ctx.TEXT_VIRTUAL_BG_DEPENDENCY_UNAVAILABLE));
-        }, 10000);
+        }, timeoutMs);
         const handleLoad = () => {
           global.clearTimeout(timer);
           if (typeof global.SelfieSegmentation !== 'undefined') {
@@ -195,9 +195,11 @@
       return nextStream;
     }
 
-    async function loadSegmentationModel() {
+    async function loadSegmentationModel({ quiet = false } = {}) {
       if (ctx.getSegmentationModel()) return ctx.getSegmentationModel();
-      ctx.setStatus(ctx.TEXT_VIRTUAL_BG_DEPENDENCY_LOADING, 'warning');
+      if (!quiet) {
+        ctx.setStatus(ctx.TEXT_VIRTUAL_BG_DEPENDENCY_LOADING, 'warning');
+      }
       await loadSegmentationSdk();
       if (typeof SelfieSegmentation === 'undefined') {
         throw new Error(ctx.TEXT_VIRTUAL_BG_DEPENDENCY_UNAVAILABLE);
@@ -209,6 +211,15 @@
       segmentationModel.onResults(onSegmentationResults);
       ctx.setSegmentationModel(segmentationModel);
       return segmentationModel;
+    }
+
+    async function warmupSegmentationModel() {
+      try {
+        await loadSegmentationModel({ quiet: true });
+        return true;
+      } catch (_) {
+        return false;
+      }
     }
 
     function onSegmentationResults(results) {
@@ -283,16 +294,15 @@
       ctx.setStatus(ctx.TEXT_VIRTUAL_BG_LOADING, 'warning');
 
       try {
-        await loadSegmentationModel();
+        await loadSegmentationModel({ quiet: false });
         if (!hasLiveVideoTrack(sourceStream)) {
           throw new Error(ctx.TEXT_VIRTUAL_BG_CAMERA_UNAVAILABLE);
         }
         if (ctx.rawPreviewVideo.srcObject !== sourceStream) {
           ctx.rawPreviewVideo.srcObject = sourceStream;
-          ctx.rawPreviewVideo.load?.();
         }
         await ctx.rawPreviewVideo.play().catch(() => {});
-        await waitForVideoReady(ctx.rawPreviewVideo, 4000);
+        await waitForVideoReady(ctx.rawPreviewVideo, 6000);
 
         const startCount = ctx.getProcessedFrameCount();
 
@@ -300,8 +310,8 @@
         ctx.updateVirtualBackgroundButtonState();
         await startSegmentationLoop();
 
-        const deadline = Date.now() + 5000;
-        while (ctx.getProcessedFrameCount() < startCount + 2) {
+        const deadline = Date.now() + 8000;
+        while (ctx.getProcessedFrameCount() < startCount + 1) {
           if (activationToken !== ctx.getVirtualBgActivationToken()) return false;
           if (Date.now() > deadline) throw new Error(ctx.TEXT_VIRTUAL_BG_PROCESSING_TIMEOUT);
           await new Promise((resolve) => setTimeout(resolve, 60));
@@ -360,6 +370,7 @@
       waitForVideoReady,
       ensureProcessedCanvasStream,
       loadSegmentationModel,
+      warmupSegmentationModel,
       startSegmentationLoop,
       activateVirtualBackground,
       cleanup,

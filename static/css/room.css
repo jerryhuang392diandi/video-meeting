@@ -21,17 +21,17 @@
 
 body.room-page {
     background:
-        radial-gradient(circle at top left, rgba(52, 211, 153, 0.12), transparent 24%),
-        radial-gradient(circle at top right, rgba(125, 211, 252, 0.14), transparent 28%),
-        linear-gradient(180deg, var(--room-bg-top), var(--room-bg-bottom) 44%, #050c18 100%);
+        radial-gradient(circle at top left, rgba(95, 211, 255, 0.14), transparent 28%),
+        radial-gradient(circle at top right, rgba(130, 177, 255, 0.12), transparent 26%),
+        linear-gradient(180deg, #0b1426 0%, #08111f 52%, #08111f 100%);
 }
 
 body.room-page .page-bg {
     background-image:
-        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
-    background-size: 28px 28px;
-    mask-image: radial-gradient(circle at center, black, transparent 82%);
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 36px 36px;
+    mask-image: radial-gradient(circle at center, black, transparent 78%);
 }
 
 body.room-page .source-dock {
@@ -40,34 +40,13 @@ body.room-page .source-dock {
 
 body.room-page .shell.room-shell {
     position: relative;
-    max-width: 1880px;
-    padding: 18px clamp(14px, 2vw, 26px) 28px;
+    max-width: 1480px;
+    padding: 28px 20px 40px;
 }
 
 body.room-page .room-shell::before,
 body.room-page .room-shell::after {
-    content: "";
-    position: fixed;
-    pointer-events: none;
-    z-index: 0;
-    border-radius: 999px;
-    filter: blur(24px);
-}
-
-body.room-page .room-shell::before {
-    top: 88px;
-    left: max(-80px, calc(50vw - 930px));
-    width: 280px;
-    height: 280px;
-    background: radial-gradient(circle, rgba(52, 211, 153, 0.16), transparent 70%);
-}
-
-body.room-page .room-shell::after {
-    top: 120px;
-    right: max(-80px, calc(50vw - 930px));
-    width: 360px;
-    height: 360px;
-    background: radial-gradient(circle, rgba(125, 211, 252, 0.2), transparent 72%);
+    display: none;
 }
 
 body.room-page .room-shell .app-topbar,
@@ -85,43 +64,46 @@ body.room-page .room-topbar,
 body.room-page .side-panel,
 body.room-page .video-panel {
     border: 1px solid var(--room-line);
-    border-radius: var(--room-radius-xl);
-    background:
-        linear-gradient(135deg, rgba(147, 197, 253, 0.08), transparent 35%),
-        linear-gradient(180deg, rgba(10, 22, 42, 0.97), rgba(6, 14, 27, 0.95));
-    box-shadow: var(--room-shadow);
-    backdrop-filter: blur(18px);
+    border-radius: 22px;
+    background: rgba(16, 26, 48, 0.85);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, .28);
+    backdrop-filter: blur(16px);
 }
 
 body.room-page .room-topbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
-    gap: 18px 22px;
-    align-items: start;
-    margin-bottom: 18px;
-    padding: 18px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 16px 20px;
+    align-items: flex-start;
+    margin-bottom: 22px;
+    padding: 20px 22px;
+    overflow: visible;
 }
 
 body.room-page .room-topbar-copy,
 body.room-page .room-topbar-actions {
     min-width: 0;
+    flex: 1 1 320px;
 }
 
 body.room-page .room-topbar-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
+    flex-wrap: wrap;
     gap: 12px;
 }
 
 body.room-page .brand {
-    font-size: clamp(24px, 2vw, 32px);
-    line-height: 1.02;
+    font-size: 28px;
+    line-height: 1.1;
 }
 
 body.room-page .room-count-pill {
     min-height: 44px;
     white-space: nowrap;
+    margin-left: auto;
 }
 
 body.room-page .room-meta-strip {
@@ -146,12 +128,18 @@ body.room-page .room-meta-pill {
 }
 
 body.room-page .room-topbar-actions {
-    display: grid;
-    justify-items: end;
-    gap: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px 12px;
 }
 
 body.room-page .topbar-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
     justify-content: flex-end;
 }
 
@@ -168,16 +156,26 @@ body.room-page .room-topbar-tools {
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 10px;
+    align-items: center;
+    position: relative;
+    z-index: 5;
+}
+
+body.room-page .room-topbar .header-menu-panel {
+    right: 0;
+    left: auto;
 }
 
 body.room-page .room-grid-layout {
     display: grid;
-    grid-template-columns: minmax(264px, 296px) minmax(0, 1fr);
-    gap: 18px;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 312px);
+    gap: 20px;
     align-items: start;
 }
 
 body.room-page .side-panel {
+    grid-column: 2;
+    grid-row: 1;
     position: sticky;
     top: 18px;
     display: grid;
@@ -205,7 +203,7 @@ body.room-page .stack-controls.button-grid-2 {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
-    margin-top: 12px;
+    margin-top: 10px;
 }
 
 body.room-page .stack-controls .ghost-btn,
@@ -237,9 +235,9 @@ body.room-page .stack-controls .ghost-btn.danger {
 
 body.room-page #statusBox.notice {
     margin-top: 12px;
-    border-radius: 18px;
-    background: linear-gradient(135deg, rgba(52, 211, 153, 0.14), rgba(125, 211, 252, 0.12));
-    border-color: rgba(125, 211, 252, 0.2);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--room-line);
     color: var(--room-text);
 }
 
@@ -249,9 +247,9 @@ body.room-page .small-note {
 
 body.room-page .mini-panel {
     padding: 14px;
-    border-radius: 20px;
+    border-radius: 18px;
     border: 1px solid var(--room-line);
-    background: var(--room-panel-soft);
+    background: rgba(255, 255, 255, 0.04);
 }
 
 body.room-page .mini-panel label {
@@ -344,13 +342,15 @@ body.room-page .diagnostics-output {
 }
 
 body.room-page .video-panel {
+    grid-column: 1;
+    grid-row: 1;
     position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(280px, 332px);
     grid-auto-flow: row;
     gap: 18px;
     min-height: 0;
-    padding: 18px;
+    padding: 20px;
     overflow: hidden;
 }
 
@@ -405,7 +405,7 @@ body.room-page .video-stage {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 228px;
     gap: 14px;
-    min-height: clamp(420px, 62vh, 720px);
+    min-height: clamp(380px, 56vh, 680px);
     align-items: stretch;
 }
 
@@ -480,12 +480,12 @@ body.room-page .screen-share-wrapper {
 
 body.room-page .video-main .video-card,
 body.room-page .video-stage.focus-layout .video-main .video-card {
-    min-height: clamp(260px, 36vh, 440px);
+    min-height: clamp(240px, 34vh, 420px);
     aspect-ratio: 16 / 9;
 }
 
 body.room-page .video-stage.screen-share-mode .video-main .video-card {
-    min-height: clamp(340px, 54vh, 640px);
+    min-height: clamp(300px, 48vh, 560px);
 }
 
 body.room-page .video-stage.grid-layout .video-main .video-card,
@@ -1251,12 +1251,16 @@ body.room-page.chat-dragging {
     }
 
     body.room-page .side-panel {
+        grid-column: auto;
+        grid-row: auto;
         position: static;
         order: 2;
         max-height: none;
     }
 
     body.room-page .video-panel {
+        grid-column: auto;
+        grid-row: auto;
         order: 1;
     }
 }
@@ -1315,18 +1319,18 @@ body.room-page.chat-dragging {
     }
 
     body.room-page .room-topbar {
-        padding: 16px;
+        padding: 16px 18px;
         gap: 16px;
     }
 
     body.room-page .room-topbar-head {
-        flex-direction: column;
         align-items: flex-start;
     }
 
     body.room-page .room-count-pill {
         width: 100%;
         justify-content: center;
+        margin-left: 0;
     }
 
     body.room-page .room-meta-strip {

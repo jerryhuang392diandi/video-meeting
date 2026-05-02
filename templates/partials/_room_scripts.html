@@ -1135,7 +1135,7 @@ function renderLayout(force = false) {
   }
   if (!focusTarget) return;
 
-  const canUseGrid = !currentSharerSid && !hiddenSidebar;
+  const canUseGrid = !currentSharerSid && cards.length > 1;
   const shouldUseGrid = canUseGrid && cards.length <= pageSize;
   const shouldUsePagedGrid = canUseGrid && cards.length > pageSize;
 
@@ -1145,6 +1145,7 @@ function renderLayout(force = false) {
   videoStage.classList.toggle('focus-layout', !shouldUseGrid && !shouldUsePagedGrid);
 
   if (shouldUseGrid || shouldUsePagedGrid) {
+    hiddenSidebar = false;
     videoStage.classList.add('sidebar-hidden');
     const start = shouldUsePagedGrid ? currentGridPage * pageSize : 0;
     const end = shouldUsePagedGrid ? start + pageSize : cards.length;
@@ -2157,5 +2158,11 @@ window.RoomPageBootstrap?.initialize?.({
     setPendingReloadRecoveryHint: (value) => { pendingReloadRecoveryHint = value; },
   },
 });
+
+if (!IS_MOBILE) {
+  window.setTimeout(() => {
+    virtualBackgroundController.warmupSegmentationModel?.().catch?.(() => {});
+  }, 1200);
+}
 
 </script>
