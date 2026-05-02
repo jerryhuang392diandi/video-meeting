@@ -1353,40 +1353,6 @@ body.room-page.chat-dragging {
 }
 
 @media (max-width: 768px) {
-    body.room-page .shell.room-shell {
-        padding: 16px 12px calc(18px + env(safe-area-inset-bottom, 0px));
-    }
-
-    body.room-page .room-topbar,
-    body.room-page .side-panel,
-    body.room-page .video-panel {
-        border-radius: 24px;
-    }
-
-    body.room-page .room-topbar {
-        padding: 16px 18px;
-        gap: 16px;
-    }
-
-    body.room-page .room-topbar-head {
-        align-items: flex-start;
-    }
-
-    body.room-page .room-count-pill {
-        width: 100%;
-        justify-content: center;
-        margin-left: 0;
-    }
-
-    body.room-page .room-meta-strip {
-        display: grid;
-    }
-
-    body.room-page .room-meta-pill {
-        width: 100%;
-        border-radius: 16px;
-    }
-
     body.room-page .topbar-nav,
     body.room-page .room-topbar-tools,
     body.room-page .app-topbar-actions,
@@ -1410,21 +1376,6 @@ body.room-page.chat-dragging {
     body.room-page .header-menu-trigger {
         width: 100%;
         justify-content: center;
-    }
-
-    body.room-page .side-panel,
-    body.room-page .video-panel {
-        padding: 14px;
-    }
-
-    body.room-page .stack-controls.button-grid-2 {
-        gap: 8px;
-    }
-
-    body.room-page .stack-controls .ghost-btn,
-    body.room-page .stack-controls .primary-btn {
-        min-height: 48px;
-        border-radius: 16px;
     }
 
     body.room-page .video-stage,
@@ -1496,25 +1447,6 @@ body.room-page.chat-dragging {
         height: 5px;
         border-radius: 999px;
         background: rgba(255, 255, 255, 0.2);
-    }
-
-    body.room-page .chat-window,
-    body.room-page #chatWindow.chat-window {
-        width: 100%;
-        height: clamp(400px, var(--mobile-chat-height, 58vh), 78vh);
-        max-height: 78vh;
-        border-radius: 26px;
-        background:
-            linear-gradient(180deg, rgba(12, 25, 46, 0.98), rgba(4, 11, 22, 0.99));
-    }
-
-    body.room-page .chat-header {
-        padding: 12px 14px 10px;
-    }
-
-    body.room-page .chat-header .row-compact {
-        flex-wrap: wrap;
-        gap: 8px;
     }
 
     body.room-page #chatHideBtn {
@@ -1606,7 +1538,7 @@ body.room-page.chat-dragging {
 
     body.room-page .shell.room-shell {
         max-width: none;
-        padding: 10px 10px calc(14px + env(safe-area-inset-bottom, 0px));
+        padding: 10px 10px calc(22px + env(safe-area-inset-bottom, 0px));
     }
 
     body.room-page .room-topbar {
@@ -1735,14 +1667,14 @@ body.room-page.chat-dragging {
     body.room-page .room-grid-layout {
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 14px;
     }
 
     body.room-page .video-panel {
         order: 1;
         display: grid;
         grid-template-columns: 1fr;
-        gap: 10px;
+        gap: 12px;
         padding: 10px;
         border-radius: 18px;
         background: rgba(8, 17, 31, 0.9);
@@ -1752,7 +1684,7 @@ body.room-page.chat-dragging {
     body.room-page .side-panel {
         order: 2;
         display: grid;
-        gap: 10px;
+        gap: 14px;
         padding: 0;
         border: 0;
         background: transparent;
@@ -1861,18 +1793,36 @@ body.room-page.chat-dragging {
     }
 
     body.room-page .stack-controls.button-grid-2 {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 8px;
+        display: flex;
+        gap: 10px;
+        margin-inline: -2px;
+        padding: 2px 2px 8px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scroll-snap-type: x proximity;
+        scrollbar-gutter: stable;
+        scrollbar-width: thin;
     }
 
     body.room-page .stack-controls .ghost-btn,
     body.room-page .stack-controls .primary-btn {
+        flex: 0 0 86px;
         min-height: 48px;
         padding: 8px 6px;
         border-radius: 14px;
         font-size: 12px;
         line-height: 1.15;
         white-space: normal;
+        scroll-snap-align: start;
+    }
+
+    body.room-page .stack-controls.button-grid-2::-webkit-scrollbar {
+        height: 6px;
+    }
+
+    body.room-page .stack-controls.button-grid-2::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.45);
     }
 
     body.room-page #statusBox.notice {
@@ -1911,7 +1861,8 @@ body.room-page.chat-dragging {
         height: clamp(360px, var(--mobile-chat-height, 56vh), 72vh);
         max-height: 72vh;
         border-radius: 18px;
-        overflow: hidden;
+        overflow: hidden auto;
+        scrollbar-gutter: stable;
         background: rgba(10, 20, 36, 0.96);
     }
 
