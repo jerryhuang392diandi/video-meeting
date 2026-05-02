@@ -172,7 +172,7 @@ body.room-page .room-topbar-tools {
 
 body.room-page .room-grid-layout {
     display: grid;
-    grid-template-columns: minmax(288px, 324px) minmax(0, 1fr);
+    grid-template-columns: minmax(264px, 296px) minmax(0, 1fr);
     gap: 18px;
     align-items: start;
 }
@@ -346,7 +346,7 @@ body.room-page .diagnostics-output {
 body.room-page .video-panel {
     position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 368px);
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 332px);
     grid-auto-flow: row;
     gap: 18px;
     min-height: 0;
@@ -421,11 +421,14 @@ body.room-page .video-main {
     gap: 14px;
     align-content: start;
     min-height: 0;
+    width: 100%;
 }
 
-body.room-page .video-stage.grid-1 .video-main {
+body.room-page .video-stage.grid-1 .video-main,
+body.room-page .video-stage.focus-layout .video-main {
     grid-template-columns: 1fr !important;
-    max-width: min(960px, 100%);
+    width: 100%;
+    max-width: min(1120px, 100%);
     margin-inline: auto;
 }
 
@@ -477,7 +480,8 @@ body.room-page .screen-share-wrapper {
 
 body.room-page .video-main .video-card,
 body.room-page .video-stage.focus-layout .video-main .video-card {
-    min-height: clamp(280px, 42vh, 520px);
+    min-height: clamp(260px, 36vh, 440px);
+    aspect-ratio: 16 / 9;
 }
 
 body.room-page .video-stage.screen-share-mode .video-main .video-card {
@@ -1222,11 +1226,11 @@ body.room-page.chat-dragging {
 
 @media (max-width: 1400px) {
     body.room-page .video-panel {
-        grid-template-columns: minmax(0, 1fr) minmax(300px, 336px);
+        grid-template-columns: minmax(0, 1fr) minmax(272px, 312px);
     }
 
     body.room-page .danmaku-layer {
-        right: calc(336px + 18px);
+        right: calc(312px + 18px);
     }
 }
 
