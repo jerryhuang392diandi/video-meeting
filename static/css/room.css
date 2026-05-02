@@ -161,33 +161,60 @@ body.room-page .room-topbar-tools {
     z-index: 5;
 }
 
+body.room-page .room-topbar-tools .header-menu {
+    position: static;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-self: flex-start;
+}
+
+body.room-page .room-topbar-tools .header-menu-trigger {
+    position: relative;
+    z-index: 2;
+}
+
 body.room-page .room-topbar .header-menu-panel {
+    position: absolute;
+    top: calc(100% + 12px);
     right: 0;
     left: auto;
+    width: min(320px, calc(100vw - 32px));
+    z-index: 40;
 }
 
 body.room-page .room-grid-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 312px);
+    grid-template-columns: minmax(0, 1fr);
     gap: 20px;
     align-items: start;
 }
 
 body.room-page .side-panel {
-    grid-column: 2;
-    grid-row: 1;
-    position: sticky;
-    top: 18px;
     display: grid;
-    gap: 14px;
-    max-height: calc(100vh - 120px);
-    padding: 18px;
-    overflow: auto;
+    grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(240px, 1fr));
+    gap: 18px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    overflow: visible;
 }
 
 body.room-page .side-panel-section,
 body.room-page .mini-panel {
     min-width: 0;
+    padding: 18px;
+    border-radius: 22px;
+    border: 1px solid var(--room-line);
+    background: rgba(16, 26, 48, 0.85);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, .28);
+    backdrop-filter: blur(16px);
+}
+
+body.room-page .controls-section {
+    grid-column: 1;
+    grid-row: 1 / span 2;
 }
 
 body.room-page .side-panel-heading {
@@ -243,13 +270,6 @@ body.room-page #statusBox.notice {
 
 body.room-page .small-note {
     color: var(--room-muted);
-}
-
-body.room-page .mini-panel {
-    padding: 14px;
-    border-radius: 18px;
-    border: 1px solid var(--room-line);
-    background: rgba(255, 255, 255, 0.04);
 }
 
 body.room-page .mini-panel label {
@@ -342,15 +362,13 @@ body.room-page .diagnostics-output {
 }
 
 body.room-page .video-panel {
-    grid-column: 1;
-    grid-row: 1;
     position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(280px, 332px);
     grid-auto-flow: row;
-    gap: 18px;
+    gap: 20px;
     min-height: 0;
-    padding: 20px;
+    padding: 22px;
     overflow: hidden;
 }
 
@@ -404,8 +422,8 @@ body.room-page .screen-share-banner.hidden {
 body.room-page .video-stage {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 228px;
-    gap: 14px;
-    min-height: clamp(380px, 56vh, 680px);
+    gap: 16px;
+    min-height: clamp(420px, 62vh, 760px);
     align-items: stretch;
 }
 
@@ -418,7 +436,7 @@ body.room-page .video-stage.paged-grid {
 body.room-page .video-main {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
+    gap: 16px;
     align-content: start;
     min-height: 0;
     width: 100%;
@@ -480,17 +498,17 @@ body.room-page .screen-share-wrapper {
 
 body.room-page .video-main .video-card,
 body.room-page .video-stage.focus-layout .video-main .video-card {
-    min-height: clamp(240px, 34vh, 420px);
+    min-height: clamp(280px, 40vh, 520px);
     aspect-ratio: 16 / 9;
 }
 
 body.room-page .video-stage.screen-share-mode .video-main .video-card {
-    min-height: clamp(300px, 48vh, 560px);
+    min-height: clamp(340px, 54vh, 640px);
 }
 
 body.room-page .video-stage.grid-layout .video-main .video-card,
 body.room-page .video-stage.paged-grid .video-main .video-card {
-    min-height: clamp(220px, 29vh, 360px) !important;
+    min-height: clamp(220px, 28vh, 340px) !important;
     aspect-ratio: 16 / 9;
 }
 
@@ -709,11 +727,11 @@ body.room-page .chat-window {
     display: flex;
     flex-direction: column;
     min-height: 0;
-    height: min(78vh, 820px);
-    max-height: min(78vh, 820px);
+    height: min(76vh, 760px);
+    max-height: min(76vh, 760px);
     overflow: hidden;
     border: 1px solid var(--room-line);
-    border-radius: 24px;
+    border-radius: 22px;
     background:
         linear-gradient(180deg, rgba(12, 24, 46, 0.98), rgba(6, 14, 26, 0.98));
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -1232,36 +1250,26 @@ body.room-page.chat-dragging {
     body.room-page .danmaku-layer {
         right: calc(312px + 18px);
     }
+
+    body.room-page .side-panel {
+        grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(220px, 1fr));
+    }
 }
 
 @media (max-width: 1180px) {
-    body.room-page .room-topbar {
-        grid-template-columns: 1fr;
-    }
-
     body.room-page .room-topbar-actions,
     body.room-page .room-topbar-tools,
     body.room-page .topbar-nav {
-        justify-items: start;
         justify-content: flex-start;
     }
 
-    body.room-page .room-grid-layout {
-        grid-template-columns: 1fr;
-    }
-
     body.room-page .side-panel {
-        grid-column: auto;
-        grid-row: auto;
-        position: static;
-        order: 2;
-        max-height: none;
+        grid-template-columns: 1fr 1fr;
     }
 
-    body.room-page .video-panel {
-        grid-column: auto;
+    body.room-page .controls-section {
+        grid-column: 1 / -1;
         grid-row: auto;
-        order: 1;
     }
 }
 
@@ -1269,6 +1277,14 @@ body.room-page.chat-dragging {
     body.room-page .video-panel {
         grid-template-columns: 1fr;
         overflow: hidden;
+    }
+
+    body.room-page .side-panel {
+        grid-template-columns: 1fr;
+    }
+
+    body.room-page .controls-section {
+        grid-column: auto;
     }
 
     body.room-page #chatWindow,
@@ -1309,7 +1325,7 @@ body.room-page.chat-dragging {
 
 @media (max-width: 768px) {
     body.room-page .shell.room-shell {
-        padding: 12px 12px calc(18px + env(safe-area-inset-bottom, 0px));
+        padding: 16px 12px calc(18px + env(safe-area-inset-bottom, 0px));
     }
 
     body.room-page .room-topbar,
@@ -1372,6 +1388,21 @@ body.room-page.chat-dragging {
         padding: 14px;
     }
 
+    body.room-page .side-panel {
+        gap: 14px;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        backdrop-filter: none;
+        padding: 0;
+    }
+
+    body.room-page .side-panel-section,
+    body.room-page .mini-panel {
+        padding: 14px;
+        border-radius: 20px;
+    }
+
     body.room-page .stack-controls.button-grid-2 {
         gap: 8px;
     }
@@ -1406,7 +1437,7 @@ body.room-page.chat-dragging {
     body.room-page .video-stage.screen-share-mode .video-main .video-card,
     body.room-page .video-stage.grid-layout .video-main .video-card,
     body.room-page .video-stage.paged-grid .video-main .video-card {
-        min-height: clamp(220px, 34vh, 320px) !important;
+        min-height: clamp(220px, 36vh, 340px) !important;
         aspect-ratio: 16 / 9;
         margin: 0;
         align-self: stretch;
