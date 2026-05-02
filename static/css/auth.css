@@ -17,8 +17,8 @@
 .auth-process-list strong,.auth-process-list small{display:block}
 .auth-process-list small{color:var(--muted);line-height:1.5}
 .auth-process-icon{grid-row:span 2;width:34px;height:34px;border-radius:12px}
-.auth-turnstile-block{display:grid;gap:8px;width:100%;min-width:0}
-.auth-turnstile-block .cf-turnstile{display:block;width:100%;max-width:100%;min-height:78px;overflow:visible}
+.auth-turnstile-block{display:grid;gap:8px;width:100%;min-width:0;margin-top:16px}
+.auth-turnstile-block .cf-turnstile{display:block;width:100%;max-width:100%;min-height:65px;overflow:hidden}
 .auth-turnstile-block .cf-turnstile iframe{display:block;max-width:100%}
 button[disabled],.ghost-btn[disabled],.primary-btn[disabled]{opacity:.55;cursor:not-allowed;transform:none}
 @media(max-width:520px){.auth-inline-actions{grid-template-columns:1fr}.auth-action-card{padding:11px 12px}.auth-action-icon{width:34px;height:34px;border-radius:12px}}
@@ -34,7 +34,7 @@ button[disabled],.ghost-btn[disabled],.primary-btn[disabled]{opacity:.55;cursor:
   .auth-shell .app-topbar .lang-chip{min-width:48px;padding:8px 10px}
   .auth-shell .app-topbar .header-menu,.auth-shell .app-topbar .header-menu-trigger{width:auto;flex:0 0 auto}
   .auth-shell .app-topbar .header-menu-panel,.auth-shell .app-topbar .header-menu-panel.left{left:auto;right:0}
-  .auth-turnstile-block .cf-turnstile{min-height:84px}
+  .auth-turnstile-block .cf-turnstile{min-height:78px}
   .auth-shell .landing-actions{display:grid;grid-template-columns:1fr;gap:10px;margin:20px 0 14px}
   .auth-shell .landing-actions .ghost-btn{width:100%;justify-content:center}
 }

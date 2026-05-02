@@ -462,6 +462,9 @@ body.room-page .participant-video,
 body.room-page .remote-video-wrapper,
 body.room-page .local-video-wrapper,
 body.room-page .screen-share-wrapper {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
     position: relative;
     overflow: hidden;
     border-radius: 22px;
@@ -1257,7 +1260,7 @@ body.room-page.chat-dragging {
 @media (max-width: 960px) {
     body.room-page .video-panel {
         grid-template-columns: 1fr;
-        overflow: visible;
+        overflow: hidden;
     }
 
     body.room-page #chatWindow,
@@ -1376,6 +1379,8 @@ body.room-page.chat-dragging {
     body.room-page .video-stage.grid-layout,
     body.room-page .video-stage.paged-grid {
         min-height: 0;
+        width: 100%;
+        max-width: 100%;
     }
 
     body.room-page .video-main,
@@ -1385,6 +1390,7 @@ body.room-page.chat-dragging {
     body.room-page .video-stage.paged-grid .video-main {
         grid-template-columns: 1fr !important;
         max-width: none;
+        width: 100%;
     }
 
     body.room-page .video-main .video-card,
@@ -1392,7 +1398,10 @@ body.room-page.chat-dragging {
     body.room-page .video-stage.screen-share-mode .video-main .video-card,
     body.room-page .video-stage.grid-layout .video-main .video-card,
     body.room-page .video-stage.paged-grid .video-main .video-card {
-        min-height: clamp(240px, 36vh, 380px) !important;
+        min-height: clamp(220px, 34vh, 320px) !important;
+        aspect-ratio: 16 / 9;
+        margin: 0;
+        align-self: stretch;
     }
 
     body.room-page .video-sidebar {
