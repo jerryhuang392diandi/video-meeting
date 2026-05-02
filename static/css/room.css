@@ -184,37 +184,45 @@ body.room-page .room-topbar .header-menu-panel {
 
 body.room-page .room-grid-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
     gap: 20px;
     align-items: start;
 }
 
 body.room-page .side-panel {
+    grid-column: 1;
+    grid-row: 1;
+    position: sticky;
+    top: 18px;
     display: grid;
-    grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(240px, 1fr));
-    gap: 18px;
-    padding: 0;
-    background: transparent;
-    border: 0;
-    box-shadow: none;
-    backdrop-filter: none;
-    overflow: visible;
-}
-
-body.room-page .side-panel-section,
-body.room-page .mini-panel {
-    min-width: 0;
+    gap: 14px;
+    max-height: calc(100vh - 120px);
     padding: 18px;
-    border-radius: 22px;
+    overflow: auto;
     border: 1px solid var(--room-line);
+    border-radius: 22px;
     background: rgba(16, 26, 48, 0.85);
     box-shadow: 0 18px 60px rgba(0, 0, 0, .28);
     backdrop-filter: blur(16px);
 }
 
+body.room-page .side-panel-section,
+body.room-page .mini-panel {
+    min-width: 0;
+}
+
+body.room-page .side-panel .mini-panel {
+    padding: 14px;
+    border-radius: 18px;
+    border: 1px solid var(--room-line);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: none;
+    backdrop-filter: none;
+}
+
 body.room-page .controls-section {
-    grid-column: 1;
-    grid-row: 1 / span 2;
+    grid-column: auto;
+    grid-row: auto;
 }
 
 body.room-page .side-panel-heading {
@@ -362,6 +370,8 @@ body.room-page .diagnostics-output {
 }
 
 body.room-page .video-panel {
+    grid-column: 2;
+    grid-row: 1;
     position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(280px, 332px);
@@ -423,7 +433,7 @@ body.room-page .video-stage {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 228px;
     gap: 16px;
-    min-height: clamp(420px, 62vh, 760px);
+    min-height: clamp(420px, 62vh, 720px);
     align-items: stretch;
 }
 
@@ -498,7 +508,7 @@ body.room-page .screen-share-wrapper {
 
 body.room-page .video-main .video-card,
 body.room-page .video-stage.focus-layout .video-main .video-card {
-    min-height: clamp(280px, 40vh, 520px);
+    min-height: clamp(260px, 38vh, 480px);
     aspect-ratio: 16 / 9;
 }
 
@@ -1250,10 +1260,6 @@ body.room-page.chat-dragging {
     body.room-page .danmaku-layer {
         right: calc(312px + 18px);
     }
-
-    body.room-page .side-panel {
-        grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(220px, 1fr));
-    }
 }
 
 @media (max-width: 1180px) {
@@ -1263,12 +1269,19 @@ body.room-page.chat-dragging {
         justify-content: flex-start;
     }
 
-    body.room-page .side-panel {
-        grid-template-columns: 1fr 1fr;
+    body.room-page .room-grid-layout {
+        grid-template-columns: 1fr;
     }
 
-    body.room-page .controls-section {
-        grid-column: 1 / -1;
+    body.room-page .side-panel {
+        grid-column: auto;
+        grid-row: auto;
+        position: static;
+        max-height: none;
+    }
+
+    body.room-page .video-panel {
+        grid-column: auto;
         grid-row: auto;
     }
 }
@@ -1277,14 +1290,6 @@ body.room-page.chat-dragging {
     body.room-page .video-panel {
         grid-template-columns: 1fr;
         overflow: hidden;
-    }
-
-    body.room-page .side-panel {
-        grid-template-columns: 1fr;
-    }
-
-    body.room-page .controls-section {
-        grid-column: auto;
     }
 
     body.room-page #chatWindow,
@@ -1386,21 +1391,6 @@ body.room-page.chat-dragging {
     body.room-page .side-panel,
     body.room-page .video-panel {
         padding: 14px;
-    }
-
-    body.room-page .side-panel {
-        gap: 14px;
-        background: transparent;
-        border: 0;
-        box-shadow: none;
-        backdrop-filter: none;
-        padding: 0;
-    }
-
-    body.room-page .side-panel-section,
-    body.room-page .mini-panel {
-        padding: 14px;
-        border-radius: 20px;
     }
 
     body.room-page .stack-controls.button-grid-2 {
