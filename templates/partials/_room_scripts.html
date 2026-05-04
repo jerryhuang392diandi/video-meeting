@@ -1878,9 +1878,119 @@ function setChatCollapsed(collapsed) {
   }
 }
 
+function initMobileRoomShell() {
+  const mobileQuery = window.matchMedia('(max-width: 768px)');
+  const scrim = document.getElementById('mobileRoomScrim');
+  const mobileMicBtn = document.getElementById('mobileMicBtn');
+  const mobileCameraBtn = document.getElementById('mobileCameraBtn');
+  const mobileSpeakerBtn = document.getElementById('mobileSpeakerBtn');
+  const mobileChatBtn = document.getElementById('mobileChatBtn');
+  const mobileMoreBtn = document.getElementById('mobileMoreBtn');
+  const mobileLeaveBtn = document.getElementById('mobileLeaveBtn');
+  const mobileMoreCloseBtn = document.getElementById('mobileMoreCloseBtn');
+  const sourceButtons = {
+    mic: document.getElementById('toggleMicBtn'),
+    camera: document.getElementById('toggleCameraBtn'),
+    speaker: document.getElementById('toggleSpeakerBtn'),
+    leave: document.getElementById('leaveMeetingBtn'),
+  };
+
+  const setViewportUnit = () => {
+    const height = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 800;
+    document.documentElement.style.setProperty('--room-vh', `${height * 0.01}px`);
+  };
+
+  const closeSheets = () => {
+    document.body.classList.remove('mobile-chat-open', 'mobile-more-open', 'mobile-sheet-open');
+    if (scrim) scrim.hidden = true;
+    mobileChatBtn?.classList.remove('is-active');
+    mobileMoreBtn?.classList.remove('is-active');
+  };
+
+  const openSheet = (type) => {
+    if (!mobileQuery.matches) {
+      closeSheets();
+      return;
+    }
+    document.body.classList.toggle('mobile-chat-open', type === 'chat');
+    document.body.classList.toggle('mobile-more-open', type === 'more');
+    document.body.classList.add('mobile-sheet-open');
+    if (scrim) scrim.hidden = false;
+    mobileChatBtn?.classList.toggle('is-active', type === 'chat');
+    mobileMoreBtn?.classList.toggle('is-active', type === 'more');
+    if (type === 'chat') {
+      setChatCollapsed(false);
+      window.setTimeout(() => {
+        if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+      }, 80);
+    }
+  };
+
+  const toggleSheet = (type) => {
+    const openClass = type === 'chat' ? 'mobile-chat-open' : 'mobile-more-open';
+    if (document.body.classList.contains(openClass)) closeSheets();
+    else openSheet(type);
+  };
+
+  const proxyClick = (button) => {
+    if (!button || button.disabled) return;
+    button.click();
+    window.setTimeout(syncMobileButtons, 80);
+  };
+
+  function syncMobileButtons() {
+    const mediaState = livekitController?.getLocalMediaState?.() || {};
+    if (mobileMicBtn) {
+      mobileMicBtn.disabled = !!sourceButtons.mic?.disabled;
+      mobileMicBtn.classList.toggle('is-active', !!mediaState.microphoneEnabled);
+    }
+    if (mobileCameraBtn) {
+      mobileCameraBtn.disabled = !!sourceButtons.camera?.disabled;
+      mobileCameraBtn.classList.toggle('is-active', !!mediaState.cameraEnabled);
+    }
+    if (mobileSpeakerBtn) {
+      mobileSpeakerBtn.textContent = toggleSpeakerBtn?.textContent || {{ t('speaker')|tojson }};
+      mobileSpeakerBtn.disabled = !!sourceButtons.speaker?.disabled;
+      mobileSpeakerBtn.classList.toggle('is-active', speakerEnabled);
+    }
+    if (mobileLeaveBtn) mobileLeaveBtn.disabled = !!sourceButtons.leave?.disabled;
+  }
+
+  mobileMicBtn?.addEventListener('click', () => proxyClick(sourceButtons.mic));
+  mobileCameraBtn?.addEventListener('click', () => proxyClick(sourceButtons.camera));
+  mobileSpeakerBtn?.addEventListener('click', () => proxyClick(sourceButtons.speaker));
+  mobileLeaveBtn?.addEventListener('click', () => proxyClick(sourceButtons.leave));
+  mobileChatBtn?.addEventListener('click', () => toggleSheet('chat'));
+  mobileMoreBtn?.addEventListener('click', () => toggleSheet('more'));
+  mobileMoreCloseBtn?.addEventListener('click', closeSheets);
+  scrim?.addEventListener('click', closeSheets);
+  document.getElementById('chatMobileHandle')?.addEventListener('click', () => {
+    if (mobileQuery.matches && document.body.classList.contains('mobile-chat-open')) closeSheets();
+  });
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeSheets();
+  });
+  window.addEventListener('resize', () => {
+    setViewportUnit();
+    if (!mobileQuery.matches) closeSheets();
+  });
+  window.visualViewport?.addEventListener('resize', setViewportUnit);
+  window.visualViewport?.addEventListener('scroll', setViewportUnit);
+
+  const observer = new MutationObserver(syncMobileButtons);
+  Object.values(sourceButtons).forEach((button) => {
+    if (button) observer.observe(button, { attributes: true, childList: true, subtree: true });
+  });
+  window.setInterval(syncMobileButtons, 1200);
+  setViewportUnit();
+  syncMobileButtons();
+}
+
 function initChatUi() {
   normalizeChatLayout();
   enableChatDrag();
+  initMobileRoomShell();
   if (chatMessages) chatMessages.dataset.stuckBottom = '1';
   setChatCollapsed(false);
   renderMentionPicker();

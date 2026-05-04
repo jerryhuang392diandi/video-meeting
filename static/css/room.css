@@ -1276,6 +1276,12 @@ body.room-page.chat-dragging {
     overscroll-behavior: none;
 }
 
+body.room-page .mobile-panel-head,
+body.room-page .mobile-room-dock,
+body.room-page .mobile-room-scrim {
+    display: none;
+}
+
 @media (max-width: 1400px) {
     body.room-page .video-panel {
         grid-template-columns: minmax(0, 1fr) minmax(272px, 312px);
@@ -1353,6 +1359,43 @@ body.room-page.chat-dragging {
 }
 
 @media (max-width: 768px) {
+    body.room-page {
+        overflow-x: hidden;
+        overscroll-behavior-y: contain;
+        --mobile-dock-height: 76px;
+        --room-viewport-height: 100dvh;
+    }
+
+    @supports not (height: 100dvh) {
+        body.room-page {
+            --room-viewport-height: calc(var(--room-vh, 1vh) * 100);
+        }
+    }
+
+    body.room-page.mobile-sheet-open {
+        overflow: hidden;
+    }
+
+    body.room-page .mobile-room-scrim {
+        position: fixed;
+        inset: 0;
+        display: block;
+        z-index: 70;
+        background: rgba(0, 0, 0, 0.46);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 160ms ease;
+    }
+
+    body.room-page.mobile-sheet-open .mobile-room-scrim {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    body.room-page .mobile-room-scrim[hidden] {
+        display: none;
+    }
+
     body.room-page .topbar-nav,
     body.room-page .room-topbar-tools,
     body.room-page .app-topbar-actions,
@@ -1538,13 +1581,14 @@ body.room-page.chat-dragging {
 
     body.room-page .shell.room-shell {
         max-width: none;
-        padding: 10px 10px calc(22px + env(safe-area-inset-bottom, 0px));
+        min-height: var(--room-viewport-height);
+        padding: 8px 8px calc(var(--mobile-dock-height) + 18px + env(safe-area-inset-bottom, 0px));
     }
 
     body.room-page .room-topbar {
-        position: sticky;
-        top: 8px;
-        z-index: 35;
+        position: relative;
+        top: auto;
+        z-index: 20;
         display: grid;
         grid-template-columns: minmax(0, 1fr);
         gap: 10px;
@@ -1667,7 +1711,7 @@ body.room-page.chat-dragging {
     body.room-page .room-grid-layout {
         display: flex;
         flex-direction: column;
-        gap: 14px;
+        gap: 10px;
     }
 
     body.room-page .video-panel {
@@ -1675,21 +1719,51 @@ body.room-page.chat-dragging {
         display: grid;
         grid-template-columns: 1fr;
         gap: 12px;
-        padding: 10px;
+        min-height: calc(var(--room-viewport-height) - var(--mobile-dock-height) - 132px - env(safe-area-inset-bottom, 0px));
+        padding: 8px;
         border-radius: 18px;
         background: rgba(8, 17, 31, 0.9);
         overflow: hidden;
     }
 
     body.room-page .side-panel {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 90;
         order: 2;
         display: grid;
         gap: 14px;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        box-shadow: none;
-        backdrop-filter: none;
+        max-height: min(86vh, calc(var(--room-viewport-height) - 28px));
+        padding: 12px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+        overflow: hidden auto;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 22px 22px 0 0;
+        background: rgba(8, 17, 31, 0.98);
+        box-shadow: 0 -18px 46px rgba(0, 0, 0, .38);
+        backdrop-filter: blur(18px);
+        transform: translateY(calc(100% + 16px));
+        transition: transform 180ms ease;
+        will-change: transform;
+    }
+
+    body.room-page.mobile-more-open .side-panel {
+        transform: translateY(0);
+    }
+
+    body.room-page .mobile-panel-head {
+        position: sticky;
+        top: -12px;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin: -12px -12px 2px;
+        padding: 12px;
+        background: rgba(8, 17, 31, 0.98);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     body.room-page .side-panel-section,
@@ -1793,20 +1867,18 @@ body.room-page.chat-dragging {
     }
 
     body.room-page .stack-controls.button-grid-2 {
-        display: flex;
-        gap: 10px;
-        margin-inline: -2px;
-        padding: 2px 2px 8px;
-        overflow-x: auto;
-        overflow-y: hidden;
-        scroll-snap-type: x proximity;
-        scrollbar-gutter: stable;
-        scrollbar-width: thin;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-inline: 0;
+        padding: 0;
+        overflow: visible;
+        scroll-snap-type: none;
     }
 
     body.room-page .stack-controls .ghost-btn,
     body.room-page .stack-controls .primary-btn {
-        flex: 0 0 86px;
+        flex: none;
         min-height: 48px;
         padding: 8px 6px;
         border-radius: 14px;
@@ -1855,15 +1927,33 @@ body.room-page.chat-dragging {
 
     body.room-page .chat-window,
     body.room-page #chatWindow.chat-window {
-        grid-column: 1;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 88;
+        grid-column: auto;
         grid-row: auto;
         width: 100%;
-        height: clamp(360px, var(--mobile-chat-height, 56vh), 72vh);
-        max-height: 72vh;
-        border-radius: 18px;
+        height: clamp(360px, var(--mobile-chat-height, 62vh), 82vh);
+        max-height: min(82vh, calc(var(--room-viewport-height) - 30px));
+        border-radius: 22px 22px 0 0;
         overflow: hidden auto;
         scrollbar-gutter: stable;
         background: rgba(10, 20, 36, 0.96);
+        box-shadow: 0 -18px 46px rgba(0, 0, 0, .42);
+        transform: translateY(calc(100% + 16px));
+        transition: transform 180ms ease;
+        will-change: transform;
+    }
+
+    body.room-page.mobile-chat-open .chat-window,
+    body.room-page.mobile-chat-open #chatWindow.chat-window {
+        transform: translateY(0);
+    }
+
+    body.room-page .chat-window.chat-collapsed {
+        display: flex;
     }
 
     body.room-page .chat-header {
@@ -1945,9 +2035,63 @@ body.room-page.chat-dragging {
         right: 10px;
         height: 90px;
     }
+
+    body.room-page .mobile-room-dock {
+        position: fixed;
+        left: 8px;
+        right: 8px;
+        bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+        z-index: 65;
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 6px;
+        min-height: 62px;
+        padding: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        background: rgba(6, 13, 24, 0.96);
+        box-shadow: 0 16px 44px rgba(0, 0, 0, .38);
+        backdrop-filter: blur(18px);
+    }
+
+    body.room-page .mobile-dock-btn {
+        min-width: 0;
+        min-height: 46px;
+        padding: 6px 4px;
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--room-text);
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.12;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    body.room-page .mobile-dock-btn.is-active {
+        border-color: rgba(125, 211, 252, 0.35);
+        background: rgba(125, 211, 252, 0.16);
+        color: #e8f8ff;
+    }
+
+    body.room-page .mobile-dock-btn.danger {
+        border-color: rgba(255, 138, 157, 0.24);
+        background: rgba(255, 138, 157, 0.14);
+        color: #ffe5eb;
+    }
+
+    body.room-page .mobile-dock-btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
 }
 
 @media (max-width: 560px) {
+    body.room-page {
+        --mobile-dock-height: 126px;
+    }
+
     body.room-page .topbar-nav {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1971,7 +2115,7 @@ body.room-page.chat-dragging {
 
     body.room-page .chat-window,
     body.room-page #chatWindow.chat-window {
-        height: clamp(380px, var(--mobile-chat-height, 56vh), 76vh);
+        height: clamp(380px, var(--mobile-chat-height, 64vh), 84vh);
     }
 
     body.room-page .chat-header {
@@ -1980,5 +2124,9 @@ body.room-page.chat-dragging {
 
     body.room-page .chat-header .row-compact > * {
         flex: 1 1 calc(50% - 4px);
+    }
+
+    body.room-page .mobile-room-dock {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }

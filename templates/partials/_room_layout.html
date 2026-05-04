@@ -42,8 +42,14 @@
   </div>
 </header>
 
+<div id="mobileRoomScrim" class="mobile-room-scrim" hidden></div>
+
 <section class="grid room-grid-layout">
   <aside class="panel side-panel panel-glow">
+    <div class="mobile-panel-head">
+      <strong>{{ t('permissions') }}</strong>
+      <button class="card-btn" id="mobileMoreCloseBtn" type="button">{{ t('close') }}</button>
+    </div>
     <div class="side-panel-section controls-section">
       <div class="side-panel-heading">
         <h2>{{ t('permissions') }}</h2>
@@ -174,3 +180,12 @@
     <div id="chatContextMenu" class="chat-context-menu hidden"></div>
   </main>
 </section>
+
+<nav class="mobile-room-dock" aria-label="{{ t('meeting_room') }}">
+  <button class="mobile-dock-btn" id="mobileMicBtn" type="button">{{ t('mic') }}</button>
+  <button class="mobile-dock-btn" id="mobileCameraBtn" type="button">{{ t('camera') }}</button>
+  <button class="mobile-dock-btn" id="mobileSpeakerBtn" type="button">{{ t('speaker') }}</button>
+  <button class="mobile-dock-btn" id="mobileChatBtn" type="button">{{ t('chat_short') }}</button>
+  <button class="mobile-dock-btn" id="mobileMoreBtn" type="button">{{ t('more_actions') }}</button>
+  <button class="mobile-dock-btn danger" id="mobileLeaveBtn" type="button">{{ t('leave') }}</button>
+</nav>
