@@ -3,7 +3,6 @@
 {% block body_class %}room-page{% endblock %}
 {% block shell_class %}room-shell{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/framework7@8/framework7-bundle.min.css" />
 <link rel="stylesheet" href="{{ url_for('static', filename='css/room.css', v=asset_version('css/room.css')) }}" />
 {% endblock %}
 
@@ -12,6 +11,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/framework7@8/framework7-bundle.min.js"></script>
 {% include 'partials/_room_scripts.html' %}
 {% endblock %}

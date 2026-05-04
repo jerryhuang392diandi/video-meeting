@@ -1896,19 +1896,6 @@ function initMobileRoomShell() {
     leave: document.getElementById('leaveMeetingBtn'),
   };
 
-  try {
-    if (window.Framework7 && !window.roomMobileFramework7App) {
-      window.roomMobileFramework7App = new Framework7({
-        el: document.body,
-        theme: IS_IOS ? 'ios' : 'md',
-        touch: { tapHold: true },
-      });
-      document.body.classList.add('framework7-mobile-room');
-    }
-  } catch (err) {
-    console.warn('Framework7 mobile shell init failed', err);
-  }
-
   const setViewportUnit = () => {
     const height = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 800;
     document.documentElement.style.setProperty('--room-vh', `${height * 0.01}px`);

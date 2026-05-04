@@ -2062,7 +2062,7 @@ body.room-page .mobile-room-scrim {
         display: none;
     }
 
-    body.room-page .mobile-room-toolbar .toolbar-inner {
+    body.room-page .mobile-room-toolbar .mobile-room-toolbar-inner {
         position: static;
         display: grid;
         grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -2158,7 +2158,7 @@ body.room-page .mobile-room-scrim {
         min-height: 118px;
     }
 
-    body.room-page .mobile-room-toolbar .toolbar-inner {
+    body.room-page .mobile-room-toolbar .mobile-room-toolbar-inner {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
