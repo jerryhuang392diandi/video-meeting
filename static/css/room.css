@@ -1277,7 +1277,7 @@ body.room-page.chat-dragging {
 }
 
 body.room-page .mobile-panel-head,
-body.room-page .mobile-room-dock,
+body.room-page .mobile-room-toolbar,
 body.room-page .mobile-room-scrim {
     display: none;
 }
@@ -1380,7 +1380,7 @@ body.room-page .mobile-room-scrim {
         position: fixed;
         inset: 0;
         display: block;
-        z-index: 70;
+        z-index: 10010;
         background: rgba(0, 0, 0, 0.46);
         opacity: 0;
         pointer-events: none;
@@ -1654,7 +1654,7 @@ body.room-page .mobile-room-scrim {
     }
 
     body.room-page .room-topbar-actions {
-        display: grid;
+        display: none;
         gap: 8px;
     }
 
@@ -1731,7 +1731,7 @@ body.room-page .mobile-room-scrim {
         left: 0;
         right: 0;
         bottom: 0;
-        z-index: 90;
+        z-index: 10030;
         order: 2;
         display: grid;
         gap: 14px;
@@ -1931,7 +1931,7 @@ body.room-page .mobile-room-scrim {
         left: 0;
         right: 0;
         bottom: 0;
-        z-index: 88;
+        z-index: 10030;
         grid-column: auto;
         grid-row: auto;
         width: 100%;
@@ -2036,26 +2036,49 @@ body.room-page .mobile-room-scrim {
         height: 90px;
     }
 
-    body.room-page .mobile-room-dock {
-        position: fixed;
+    body.room-page .mobile-room-toolbar {
+        position: fixed !important;
         left: 8px;
         right: 8px;
         bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-        z-index: 65;
-        display: grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
-        gap: 6px;
-        min-height: 62px;
+        top: auto !important;
+        z-index: 10020;
+        display: block;
+        width: auto;
+        height: 64px;
+        min-height: 64px;
         padding: 8px;
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 20px;
         background: rgba(6, 13, 24, 0.96);
         box-shadow: 0 16px 44px rgba(0, 0, 0, .38);
         backdrop-filter: blur(18px);
+        transform: none !important;
+        contain: layout paint;
+    }
+
+    body.room-page .mobile-room-toolbar::before,
+    body.room-page .mobile-room-toolbar::after {
+        display: none;
+    }
+
+    body.room-page .mobile-room-toolbar .toolbar-inner {
+        position: static;
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 6px;
+        width: 100%;
+        height: 100%;
+        padding: 0;
     }
 
     body.room-page .mobile-dock-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         min-width: 0;
+        width: 100%;
+        height: 46px;
         min-height: 46px;
         padding: 6px 4px;
         border: 1px solid rgba(255, 255, 255, 0.09);
@@ -2067,6 +2090,10 @@ body.room-page .mobile-room-scrim {
         line-height: 1.12;
         overflow: hidden;
         text-overflow: ellipsis;
+        white-space: nowrap;
+        appearance: none;
+        -webkit-appearance: none;
+        transform: none !important;
     }
 
     body.room-page .mobile-dock-btn.is-active {
@@ -2126,7 +2153,12 @@ body.room-page .mobile-room-scrim {
         flex: 1 1 calc(50% - 4px);
     }
 
-    body.room-page .mobile-room-dock {
+    body.room-page .mobile-room-toolbar {
+        height: 118px;
+        min-height: 118px;
+    }
+
+    body.room-page .mobile-room-toolbar .toolbar-inner {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }

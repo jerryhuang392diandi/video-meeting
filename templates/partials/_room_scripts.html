@@ -1881,6 +1881,7 @@ function setChatCollapsed(collapsed) {
 function initMobileRoomShell() {
   const mobileQuery = window.matchMedia('(max-width: 768px)');
   const scrim = document.getElementById('mobileRoomScrim');
+  const mobileToolbar = document.getElementById('mobileRoomToolbar');
   const mobileMicBtn = document.getElementById('mobileMicBtn');
   const mobileCameraBtn = document.getElementById('mobileCameraBtn');
   const mobileSpeakerBtn = document.getElementById('mobileSpeakerBtn');
@@ -1894,6 +1895,19 @@ function initMobileRoomShell() {
     speaker: document.getElementById('toggleSpeakerBtn'),
     leave: document.getElementById('leaveMeetingBtn'),
   };
+
+  try {
+    if (window.Framework7 && !window.roomMobileFramework7App) {
+      window.roomMobileFramework7App = new Framework7({
+        el: document.body,
+        theme: IS_IOS ? 'ios' : 'md',
+        touch: { tapHold: true },
+      });
+      document.body.classList.add('framework7-mobile-room');
+    }
+  } catch (err) {
+    console.warn('Framework7 mobile shell init failed', err);
+  }
 
   const setViewportUnit = () => {
     const height = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 800;
@@ -1954,6 +1968,7 @@ function initMobileRoomShell() {
       mobileSpeakerBtn.classList.toggle('is-active', speakerEnabled);
     }
     if (mobileLeaveBtn) mobileLeaveBtn.disabled = !!sourceButtons.leave?.disabled;
+    mobileToolbar?.classList.toggle('is-ready', mobileQuery.matches);
   }
 
   mobileMicBtn?.addEventListener('click', () => proxyClick(sourceButtons.mic));
