@@ -22,7 +22,7 @@
 | [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) / [English](DEPLOYMENT_GUIDE.md#deployment-and-update-guide) | 云服务器购买入口、备案、SSH/FinalShell 登录、DNS/Cloudflare、Nginx、WebSocket、HTTPS、LiveKit Cloud、自建 LiveKit、systemd、Git 三端协作、服务更新、`/api/healthz` 健康检查、日志排查和官方参考资料 | 部署和维护项目的人，尤其是第一次部署的人 |
 | [STABILITY_AUDIT.md](STABILITY_AUDIT.md) / [English](STABILITY_AUDIT.md#stability-audit) | 当前架构边界、风险、回归重点和演进方向 | 修改核心逻辑的人 |
 | [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md) / [English](REFACTOR_AUDIT.md#refactor-audit) | 当前重构巡检结论、优先级、推荐拆分顺序和改动前检查 | 准备重构或长期维护的人 |
-| [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md#project-guide-and-code-index) | 项目逻辑、核心流程、代码索引和常见问题回答 | 准备展示或维护代码的人 |
+| [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md#project-guide-and-code-index) | 项目逻辑、核心流程、代码索引、LiveKit/YUV 视频处理口径和常见问题回答 | 准备展示或维护代码的人 |
 
 ## 维护规则
 
@@ -63,7 +63,7 @@ This folder contains the project overview, deployment guide, stability audit, an
 | [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) / [English](DEPLOYMENT_GUIDE.md#deployment-and-update-guide) | Cloud provider entry points, ICP filing notes, SSH/FinalShell login, DNS/Cloudflare, Nginx, WebSocket, HTTPS, LiveKit Cloud, self-hosted LiveKit, systemd, Git three-side workflow, service updates, `/api/healthz` checks, log troubleshooting, and official references | Deployers and maintainers, especially first-time deployers |
 | [STABILITY_AUDIT.md](STABILITY_AUDIT.md) / [English](STABILITY_AUDIT.md#stability-audit) | Architecture boundaries, risks, regression focus, and future direction | People changing core logic |
 | [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md) / [English](REFACTOR_AUDIT.md#refactor-audit) | Current refactor audit, priorities, recommended split order, and pre-change checks | People planning refactors or long-term maintenance |
-| [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md#project-guide-and-code-index) | Project logic, core flows, code index, and common Q&A | Presenters and maintainers |
+| [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md#project-guide-and-code-index) | Project logic, core flows, code index, LiveKit/YUV video-processing explanation, and common Q&A | Presenters and maintainers |
 ## Maintenance Rules
 
 - Update the root README first when project behavior changes.

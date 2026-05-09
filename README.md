@@ -62,6 +62,16 @@
 | 数据存储 | SQLite 默认，可用 `DATABASE_URL` 覆盖 | 用户、会议、历史记录、密码重置等持久化数据 |
 | 前端 | Jinja2 + vanilla JavaScript | 页面渲染、房间交互、媒体控制、诊断展示 |
 
+## 本项目如何处理视频
+
+答辩或课堂提问时，可以把视频链路分成三层说明：
+
+1. **项目业务层**：Flask 不直接处理摄像头原始画面，也不转发视频帧。它负责登录、会议权限、房间状态和 LiveKit token 签发。前端通过 `room_livekit.js` 调用浏览器摄像头、麦克风和屏幕共享能力，并把媒体轨道发布到 LiveKit。
+2. **媒体传输层**：浏览器和 LiveKit 之间走 WebRTC。浏览器采集摄像头后，WebRTC 栈会把音视频编码成适合网络传输的 RTP/SRTP 包，LiveKit 作为 SFU 主要负责接收、选择和转发这些已编码的媒体流给其他参会者。
+3. **底层像素/编码层**：摄像头或浏览器内部可能会用 YUV、NV12、I420、RGBA 等像素格式表示一帧画面，但本项目代码没有读取或保存 `.yuv` 这类源文件，也没有自己实现 YUV 到 H.264/VP8 的编码器。YUV 属于浏览器、系统媒体栈、WebRTC 编码器或可选 FFmpeg 处理时可能接触的底层格式。
+
+所以更准确的回答是：本项目调用浏览器 WebRTC 能力和 LiveKit SFU 来完成实时音视频传输；我处理的是 `MediaStreamTrack`、LiveKit participant/track、房间状态和权限控制，不是直接处理 YUV 源文件。只有背景虚化会在浏览器端把摄像头画面送入 MediaPipe 和 canvas 做逐帧处理，但这仍然是浏览器内存中的视频帧处理，不是项目管理 `.yuv` 文件。
+
 ## 中英文和双端适配状态
 
 当前界面按中英文双语维护：
@@ -568,6 +578,16 @@ Time display rules:
 | Media transport | LiveKit SFU | Camera, microphone, screen share, remote track subscription |
 | Storage | SQLite by default, override with `DATABASE_URL` | Users, meetings, history, password reset requests |
 | Frontend | Jinja2 + vanilla JavaScript | Page rendering, room interactions, media controls, diagnostics |
+
+## How This Project Handles Video
+
+For presentation or Q&A, explain the video path in three layers:
+
+1. **Application layer**: Flask does not process raw camera frames or relay video frames. It handles login, meeting permissions, room state, and LiveKit token issuance. The room frontend uses `room_livekit.js` to call browser camera, microphone, and screen-sharing APIs, then publishes media tracks to LiveKit.
+2. **Media transport layer**: the browser and LiveKit communicate through WebRTC. After camera capture, the browser WebRTC stack encodes audio/video into RTP/SRTP packets for network transport. LiveKit works as an SFU that receives, selects, and forwards encoded media streams to other participants.
+3. **Pixel/codec layer**: browsers, drivers, WebRTC encoders, or optional FFmpeg processing may internally use pixel formats such as YUV, NV12, I420, or RGBA. This project does not read or save `.yuv` source files and does not implement its own YUV-to-H.264/VP8 encoder.
+
+The precise answer is: this project delegates real-time media transport to browser WebRTC and LiveKit SFU. The project code works with `MediaStreamTrack`, LiveKit participants/tracks, room state, and permission logic, not raw YUV source files. The virtual-background feature is the main exception where frames are processed in the browser through MediaPipe and canvas, but that is still in-memory frame processing, not project-managed `.yuv` files.
 
 ## i18n and Device Adaptation Status
 

@@ -1933,10 +1933,27 @@ function initMobileRoomShell() {
     else openSheet(type);
   };
 
-  const proxyClick = (button) => {
-    if (!button || button.disabled) return;
-    button.click();
-    window.setTimeout(syncMobileButtons, 80);
+  const runMobileAction = (label, action) => {
+    runMediaTask(`mobile-${label}`, async () => {
+      await action();
+      syncMobileButtons();
+      window.setTimeout(syncMobileButtons, 180);
+    }).catch(() => {
+      syncMobileButtons();
+    });
+  };
+
+  const confirmLeaveFromMobile = () => {
+    if (sourceButtons.leave?.disabled) return;
+    const otherParticipantCount = Object.keys(participantMeta || {}).length;
+    if (IS_HOST && otherParticipantCount > 0) {
+      setStatus(TEXT_HOST_MUST_END_MEETING, 'warning');
+      alert(TEXT_HOST_MUST_END_MEETING);
+      return;
+    }
+    if (confirm(TEXT_LEAVE_CONFIRM)) {
+      leaveMeetingAndExit(TEXT_YOU_LEFT_MEETING);
+    }
   };
 
   function syncMobileButtons() {
@@ -1958,10 +1975,25 @@ function initMobileRoomShell() {
     mobileToolbar?.classList.toggle('is-ready', mobileQuery.matches);
   }
 
-  mobileMicBtn?.addEventListener('click', () => proxyClick(sourceButtons.mic));
-  mobileCameraBtn?.addEventListener('click', () => proxyClick(sourceButtons.camera));
-  mobileSpeakerBtn?.addEventListener('click', () => proxyClick(sourceButtons.speaker));
-  mobileLeaveBtn?.addEventListener('click', () => proxyClick(sourceButtons.leave));
+  mobileMicBtn?.addEventListener('click', () => {
+    if (sourceButtons.mic?.disabled) return;
+    runMobileAction('mic', toggleMicrophoneAction);
+  });
+  mobileCameraBtn?.addEventListener('click', () => {
+    if (sourceButtons.camera?.disabled) return;
+    runMobileAction('camera', toggleCameraAction);
+  });
+  mobileSpeakerBtn?.addEventListener('click', () => {
+    if (sourceButtons.speaker?.disabled) return;
+    runMobileAction('speaker', async () => {
+      setSpeakerEnabled(!speakerEnabled, { userGesture: true, persist: true, showStatus: true });
+      if (currentSharerSid || isSharingScreen || livekitLocalShareActive) {
+        speakerForcedByShareRule = false;
+        speakerStateBeforeShare = speakerEnabled;
+      }
+    });
+  });
+  mobileLeaveBtn?.addEventListener('click', confirmLeaveFromMobile);
   mobileChatBtn?.addEventListener('click', () => toggleSheet('chat'));
   mobileMoreBtn?.addEventListener('click', () => toggleSheet('more'));
   mobileMoreCloseBtn?.addEventListener('click', closeSheets);

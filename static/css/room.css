@@ -2162,3 +2162,277 @@ body.room-page .mobile-room-scrim {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
+
+/* Mobile room reset: keep the phone UI predictable and action-first. */
+@media (max-width: 768px) {
+    body.room-page {
+        --mobile-dock-height: 120px;
+        background: #07101b;
+    }
+
+    body.room-page .shell.room-shell {
+        width: 100%;
+        min-height: var(--room-viewport-height);
+        padding: 8px 8px calc(var(--mobile-dock-height) + 12px + env(safe-area-inset-bottom, 0px));
+    }
+
+    body.room-page .room-topbar {
+        margin: 0 0 8px;
+        padding: 10px;
+        border-radius: 12px;
+    }
+
+    body.room-page .room-topbar-head {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    body.room-page .brand {
+        font-size: 18px;
+    }
+
+    body.room-page .room-count-pill,
+    body.room-page .room-meta-pill {
+        min-height: 30px;
+        padding: 5px 9px;
+        font-size: 12px;
+    }
+
+    body.room-page .room-meta-strip {
+        margin-top: 6px;
+        gap: 6px;
+    }
+
+    body.room-page .room-grid-layout {
+        display: block;
+        min-height: 0;
+    }
+
+    body.room-page .video-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-height: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        overflow: visible;
+    }
+
+    body.room-page .screen-share-banner {
+        order: 0;
+        margin: 0;
+        padding: 8px 10px;
+        border-radius: 10px;
+    }
+
+    body.room-page #videoStage,
+    body.room-page .video-stage,
+    body.room-page .video-stage.sidebar-hidden,
+    body.room-page .video-stage.grid-layout,
+    body.room-page .video-stage.paged-grid {
+        order: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 100%;
+        min-height: 0;
+    }
+
+    body.room-page .video-main,
+    body.room-page .video-stage.grid-2 .video-main,
+    body.room-page .video-stage.grid-3 .video-main,
+    body.room-page .video-stage.grid-layout .video-main,
+    body.room-page .video-stage.paged-grid .video-main {
+        display: grid;
+        grid-template-columns: 1fr !important;
+        gap: 8px;
+        width: 100%;
+        max-width: none;
+        margin: 0;
+    }
+
+    body.room-page .video-main .video-card,
+    body.room-page .video-stage.focus-layout .video-main .video-card,
+    body.room-page .video-stage.screen-share-mode .video-main .video-card,
+    body.room-page .video-stage.grid-layout .video-main .video-card,
+    body.room-page .video-stage.paged-grid .video-main .video-card {
+        min-height: 0 !important;
+        aspect-ratio: 16 / 9;
+        border-radius: 12px;
+    }
+
+    body.room-page .video-sidebar {
+        display: grid !important;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(128px, 44vw);
+        gap: 8px;
+        width: 100%;
+        max-height: none;
+        padding: 0 0 2px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+    }
+
+    body.room-page .video-sidebar:empty,
+    body.room-page .video-stage.sidebar-hidden .video-sidebar,
+    body.room-page .video-stage.grid-layout .video-sidebar,
+    body.room-page .video-stage.paged-grid .video-sidebar {
+        display: none !important;
+    }
+
+    body.room-page .video-sidebar::-webkit-scrollbar {
+        display: none;
+    }
+
+    body.room-page .video-sidebar .video-card {
+        min-height: 0;
+        aspect-ratio: 16 / 9;
+        border-radius: 10px;
+    }
+
+    body.room-page #videoPager {
+        order: 2;
+        margin: 0;
+    }
+
+    body.room-page .video-pager {
+        padding: 0;
+    }
+
+    body.room-page .pager-btn {
+        min-height: 34px;
+        border-radius: 10px;
+    }
+
+    body.room-page .video-toolbar {
+        top: 6px;
+        right: 6px;
+    }
+
+    body.room-page .card-btn {
+        min-height: 30px;
+        padding: 5px 8px;
+        border-radius: 10px;
+        font-size: 12px;
+    }
+
+    body.room-page .video-label-stack,
+    body.room-page .video-label {
+        left: 6px;
+        right: auto;
+        bottom: 6px;
+        max-width: calc(100% - 12px);
+    }
+
+    body.room-page .video-label {
+        padding: 5px 8px;
+        border-radius: 10px;
+        font-size: 12px;
+    }
+
+    body.room-page .danmaku-layer {
+        pointer-events: none;
+    }
+
+    body.room-page .side-panel {
+        z-index: 10040;
+        max-height: min(82vh, calc(var(--room-viewport-height) - 24px));
+        padding: 10px 10px calc(12px + env(safe-area-inset-bottom, 0px));
+        border-radius: 16px 16px 0 0;
+    }
+
+    body.room-page .mobile-panel-head {
+        top: -10px;
+        margin: -10px -10px 0;
+        padding: 10px;
+    }
+
+    body.room-page .side-panel-section,
+    body.room-page .side-panel .mini-panel {
+        padding: 10px;
+        border-radius: 12px;
+    }
+
+    body.room-page .stack-controls.button-grid-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    body.room-page .stack-controls .ghost-btn,
+    body.room-page .stack-controls .primary-btn {
+        min-height: 42px;
+        border-radius: 10px;
+        font-size: 12px;
+    }
+
+    body.room-page .chat-window,
+    body.room-page #chatWindow.chat-window {
+        z-index: 10040;
+        height: min(76vh, calc(var(--room-viewport-height) - 24px));
+        max-height: min(76vh, calc(var(--room-viewport-height) - 24px));
+        border-radius: 16px 16px 0 0;
+    }
+
+    body.room-page .chat-header,
+    body.room-page .chat-toolbar,
+    body.room-page .picker-panel,
+    body.room-page .chat-file-permission-row,
+    body.room-page .chat-messages,
+    body.room-page .chat-composer {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+
+    body.room-page .chat-messages {
+        min-height: 120px;
+    }
+
+    body.room-page .chat-actions-left {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    body.room-page .mobile-room-scrim {
+        z-index: 10030;
+    }
+
+    body.room-page .mobile-room-toolbar {
+        left: 8px;
+        right: 8px;
+        bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+        z-index: 10020;
+        height: 104px;
+        min-height: 104px;
+        padding: 8px;
+        border-radius: 14px;
+    }
+
+    body.room-page .mobile-room-toolbar .mobile-room-toolbar-inner {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    body.room-page .mobile-dock-btn {
+        height: 40px;
+        min-height: 40px;
+        padding: 5px 6px;
+        border-radius: 10px;
+        font-size: 12px;
+        line-height: 1;
+        white-space: nowrap;
+    }
+}
+
+@media (max-width: 380px) {
+    body.room-page .mobile-dock-btn {
+        font-size: 11px;
+        padding-inline: 4px;
+    }
+
+    body.room-page .room-meta-pill {
+        max-width: 82vw;
+    }
+}
