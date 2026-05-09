@@ -38,7 +38,7 @@
 | P0 | `threading` 模式下共享内存状态存在并发压力 | 清理线程、Socket 事件和管理员动作可能同时修改房间态 | 保持运行态锁覆盖关键路径，并继续减少跨入口重复写状态 |
 | P0 | Socket.IO 与 LiveKit 状态不同步 | 用户已进房但媒体未就绪，或媒体已断但 UI 未恢复 | 保持清晰的加入、快照、重连、离开顺序 |
 | P0 | 屏幕共享只靠瞬时事件时容易漂移 | 刷新、断线重连或漏事件后，UI 可能保留旧共享焦点 | 让 `participant_snapshot` 一并携带 `active_sharer_*`，用快照修正瞬时事件 |
-| P0 | 屏幕共享状态清理不完整 | 刷新或异常退出后出现错误焦点、旧共享者、远端看不到共享 | 每次改动都验证开始、停止、刷新、重连和移动端 |
+| P0 | 屏幕共享状态清理不完整 | 刷新或异常退出后出现错误焦点、旧共享者、远端看不到共享 | 每次改动都验证开始、停止、刷新、重连和窄屏 |
 | P1 | 背景虚化和录屏资源占用高 | 弱设备卡顿、掉帧、发热，影响基础会议体验 | 把它们视为增强功能，必要时降级 |
 | P1 | `app.py` 继续膨胀 | 认证、房间、聊天、后台、录屏逻辑互相影响 | 后续按业务域拆分 |
 | P2 | 部署可观测性有限 | 线上问题定位依赖人工日志排查 | 补充结构化日志、健康检查和监控 |
@@ -57,11 +57,10 @@
 - 同账号多设备在线
 - 主持人结束会议
 
-同时确认桌面端和移动端没有走出两套互相冲突的状态：
+同时确认桌面端和窄屏布局没有走出两套互相冲突的状态：
 
 - 桌面端会议网格、分页、右侧聊天栏和聊天折叠状态。
-- 移动端扫码入会、聊天底部面板、触摸滚动、输入框可见性和屏幕共享全屏。
-- 手机端默认媒体参数更保守，不应被桌面端高码率配置覆盖。
+- 窄屏下控制区下移、聊天栏折叠/展开和屏幕共享全屏。
 
 原则：
 
@@ -72,13 +71,13 @@
 
 ## 屏幕共享回归重点
 
-屏幕共享同时影响媒体、布局、主持/共享状态和移动端体验。改动相关逻辑后必须验证：
+屏幕共享同时影响媒体、布局、主持/共享状态和窄屏体验。改动相关逻辑后必须验证：
 
 - A 开始共享后，B 首次进房能看到共享内容。
 - A 停止共享后，A 和 B 的布局都恢复。
 - A 共享中刷新页面，不会留下旧的 `active_sharer_*` 状态。
 - B 重新加入后不会看到过期共享焦点。
-- 移动端至少能稳定观看远端共享内容。
+- 窄屏下至少能稳定观看远端共享内容。
 - 同账号双设备不会因为误判旧 socket 而互相挤掉。
 
 ## 录屏与背景虚化回归重点
@@ -171,7 +170,7 @@ Key facts:
 | P0 | Online state is still in single-process memory | Online state is lost on restart; multi-instance deployment is unsafe | Keep single-instance deployment short term; migrate to Redis later |
 | P0 | Shared in-memory state is under concurrency pressure in `threading` mode | Cleanup timers, Socket.IO events, and admin actions can mutate the same room state at once | Keep the runtime lock on critical paths and keep reducing duplicate write paths |
 | P0 | Socket.IO and LiveKit state can diverge | User is in room but media is not ready, or media disconnects while UI stays stale | Keep join, snapshot, reconnect, and leave ordering clear |
-| P0 | Screen share cleanup can be incomplete | Refresh or abnormal exit can leave wrong focus, stale sharer state, or invisible share | Verify start, stop, refresh, reconnect, and mobile every time |
+| P0 | Screen share cleanup can be incomplete | Refresh or abnormal exit can leave wrong focus, stale sharer state, or invisible share | Verify start, stop, refresh, reconnect, and narrow widths every time |
 | P1 | Virtual background and recording are expensive | Weak devices may stutter, drop frames, overheat, or hurt baseline meeting quality | Treat them as enhancements and degrade when needed |
 | P1 | `app.py` keeps growing | Auth, room, chat, admin, and recording logic can interfere with each other | Split by domain over time |
 | P2 | Limited deployment observability | Production debugging relies on manual log inspection | Add structured logs, health checks, and monitoring |
@@ -190,11 +189,10 @@ When changing `app.py`, `templates/partials/_room_scripts.html`, `static/js/room
 - Same account online on multiple devices
 - Host ending the meeting
 
-Also confirm desktop and mobile paths do not drift into conflicting state flows:
+Also confirm desktop and narrow-width paths do not drift into conflicting state flows:
 
 - Desktop meeting grid, pagination, right chat column, and chat collapsed state.
-- Mobile QR join, chat bottom panel, touch scrolling, input visibility, and screen-share fullscreen.
-- Phone media defaults should remain more conservative and should not be overwritten by desktop high-bitrate settings.
+- Narrow-width control placement, chat collapse/expand state, and screen-share fullscreen.
 
 Principles:
 
@@ -204,13 +202,13 @@ Principles:
 
 ## Screen Share Regression Focus
 
-Screen sharing affects media, layout, host/share state, and mobile behavior. After related changes, verify:
+Screen sharing affects media, layout, host/share state, and narrow-width behavior. After related changes, verify:
 
 - User B can see user A's share when B joins after A starts sharing.
 - Layout recovers for both A and B after A stops sharing.
 - Refreshing while sharing does not leave stale `active_sharer_*` state.
 - Rejoining does not show stale share focus.
-- Mobile can at least watch remote screen share reliably.
+- Narrow widths can at least watch remote screen share reliably.
 - Same-account dual-device sessions do not evict each other due to stale socket detection.
 
 ## Recording and Virtual Background Regression Focus

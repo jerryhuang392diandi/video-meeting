@@ -116,7 +116,6 @@ const TEXT_ATTACHMENT_LIMIT_IMAGE = {{ t('attachment_limit_image')|tojson }};
 const TEXT_ATTACHMENT_LIMIT_VIDEO = {{ t('attachment_limit_video')|tojson }};
 const TEXT_ATTACHMENT_LIMIT_FILE = {{ t('attachment_limit_file')|tojson }};
 const TEXT_ROOM_STORAGE_LIMIT = {{ t('room_storage_limit')|tojson }};
-const IS_MOBILE = window.matchMedia('(max-width: 768px)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 const socket = io();
 window.socket = socket;
@@ -171,17 +170,15 @@ let joinMediaBootstrapDone = false;
 let joinMediaBootstrapTimer = null;
 const MAX_VBG_WIDTH = 960;
 const MAX_VBG_HEIGHT = 540;
-const VBG_CAPTURE_FPS = IS_MOBILE ? 20 : 24;
+const VBG_CAPTURE_FPS = 24;
 const localVideo = document.createElement('video');
 localVideo.id = 'localVideo';
 localVideo.autoplay = true;
 localVideo.muted = true;
-localVideo.playsInline = true;
 
 const rawPreviewVideo = document.createElement('video');
 rawPreviewVideo.autoplay = true;
 rawPreviewVideo.muted = true;
-rawPreviewVideo.playsInline = true;
 rawPreviewVideo.style.display = 'none';
 document.body.appendChild(rawPreviewVideo);
 
@@ -234,8 +231,6 @@ const virtualBgBtn = document.getElementById('virtualBgBtn');
 const shareProfileTip = document.getElementById('shareProfileTip');
 const rtcDiagnosticsOutput = document.getElementById('rtcDiagnosticsOutput');
 const refreshRtcStatsBtn = document.getElementById('refreshRtcStatsBtn');
-const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-const TEXT_IOS_PLAY_SCREEN = {{ t('ios_play_screen')|tojson }};
 const TEXT_HOST_MUST_END_MEETING = {{ t('host_must_end_meeting_first')|tojson }};
 window.TEXT_COPY_SUCCESS = TEXT_COPY_SUCCESS;
 window.TEXT_COPY_FAILED_MANUAL = TEXT_COPY_FAILED_MANUAL;
@@ -289,7 +284,6 @@ const virtualBackgroundController = window.RoomPageVirtualBackground.createContr
   getSegmentationModel: () => segmentationModel,
   setSegmentationModel: (value) => { segmentationModel = value; },
   processingCtx,
-  IS_MOBILE,
   incrementProcessedFrameCount: () => { processedFrameCount += 1; },
   getProcessedFrameCount: () => processedFrameCount,
   TEXT_VIRTUAL_BG_NEEDS_CAMERA,
@@ -323,24 +317,12 @@ function getDisplayName(sid) {
   return sid === 'local' ? `${USER_NAME} · {{ t('local_you') }}` : (participantMeta[sid]?.name || sid);
 }
 
-function isMobileDevice() {
-  return IS_MOBILE;
-}
-
-let nativeFullscreenVideoEl = null;
-
-function updateVideoPlaybackPrompt(videoEl, blocked = false) {
-  if (!blocked) return;
-  setStatus(TEXT_IOS_PLAY_SCREEN, 'warning');
-}
-
 async function safePlayVideo(videoEl, { allowMutedFallback = true } = {}) {
   if (!videoEl) return false;
   try {
     const p = videoEl.play?.();
     if (p && typeof p.then === 'function') await p;
     videoEl.dataset.playBlocked = '0';
-    updateVideoPlaybackPrompt(videoEl, false);
     return true;
   } catch (_) {
     if (allowMutedFallback && !videoEl.muted) {
@@ -351,18 +333,14 @@ async function safePlayVideo(videoEl, { allowMutedFallback = true } = {}) {
         if (retryMuted && typeof retryMuted.then === 'function') await retryMuted;
         videoEl.dataset.playBlocked = '0';
         videoEl.dataset.autoMuted = '1';
-        updateVideoPlaybackPrompt(videoEl, false);
         return true;
       } catch (_) {}
     }
     videoEl.dataset.playBlocked = '1';
-    updateVideoPlaybackPrompt(videoEl, true);
     const retry = () => {
       safePlayVideo(videoEl, { allowMutedFallback: false }).catch(() => {});
-      window.removeEventListener('touchstart', retry, true);
       window.removeEventListener('click', retry, true);
     };
-    window.addEventListener('touchstart', retry, true);
     window.addEventListener('click', retry, true);
     return false;
   }
@@ -387,18 +365,6 @@ function bindVideoElementLifecycle(videoEl) {
   videoEl.dataset.lifecycleBound = '1';
   videoEl.addEventListener('loadedmetadata', () => { queueVideoPlayback(videoEl, [0, 120]); });
   videoEl.addEventListener('canplay', () => { queueVideoPlayback(videoEl, [0, 120]); });
-  videoEl.addEventListener('webkitbeginfullscreen', () => {
-    nativeFullscreenVideoEl = videoEl;
-    roomDebugLog('webkitbeginfullscreen', { id: videoEl.closest('.video-card')?.dataset?.sid || null });
-  });
-  videoEl.addEventListener('webkitendfullscreen', () => {
-    if (nativeFullscreenVideoEl === videoEl) nativeFullscreenVideoEl = null;
-    if (screen.orientation?.unlock) {
-      try { screen.orientation.unlock(); } catch (_) {}
-    }
-    flushPendingLayoutIfNeeded();
-    roomDebugLog('webkitendfullscreen', { id: videoEl.closest('.video-card')?.dataset?.sid || null });
-  });
 }
 
 function updateShareUiState() {
@@ -783,7 +749,6 @@ function syncScreenShareSpeakerRule({ userGesture = false } = {}) {
   speakerStateBeforeShare = null;
 }
 
-window.addEventListener('touchstart', activateMediaPlayback, true);
 window.addEventListener('click', activateMediaPlayback, true);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && speakerEnabled) {
@@ -799,7 +764,7 @@ function roomDebugLog(...args) {
 }
 
 function getFullscreenElement() {
-  return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
+  return document.fullscreenElement || null;
 }
 
 function getSimulatedFullscreenCard() {
@@ -814,7 +779,7 @@ function clearSimulatedFullscreen() {
 }
 
 function hasActiveFullscreenSession(videoEl = null) {
-  return !!getFullscreenElement() || !!getSimulatedFullscreenCard() || !!nativeFullscreenVideoEl || !!(videoEl?.webkitDisplayingFullscreen);
+  return !!getFullscreenElement() || !!getSimulatedFullscreenCard();
 }
 
 const layoutScheduler = createRenderScheduler((force) => renderLayout(force), {
@@ -851,19 +816,6 @@ async function exitAnyFullscreen(videoEl = null) {
   if (document.exitFullscreen && getFullscreenElement()) {
     return document.exitFullscreen();
   }
-  if (document.webkitExitFullscreen && getFullscreenElement()) {
-    return document.webkitExitFullscreen();
-  }
-  if (document.msExitFullscreen && getFullscreenElement()) {
-    return document.msExitFullscreen();
-  }
-  const nativeTarget = videoEl || nativeFullscreenVideoEl;
-  if (nativeTarget?.webkitDisplayingFullscreen && nativeTarget.webkitExitFullscreen) {
-    return nativeTarget.webkitExitFullscreen();
-  }
-  if (nativeFullscreenVideoEl?.webkitExitFullscreen) {
-    return nativeFullscreenVideoEl.webkitExitFullscreen();
-  }
 }
 
 async function requestBestFullscreen({ card, videoEl, preferVideo = false, sid = null } = {}) {
@@ -871,7 +823,7 @@ async function requestBestFullscreen({ card, videoEl, preferVideo = false, sid =
   for (const el of candidates) {
     if (!el) continue;
     try {
-      roomDebugLog('try fullscreen candidate', { sid, tag: el.tagName, hasRequest: !!el.requestFullscreen, hasWebkit: !!el.webkitRequestFullscreen, hasVideoWebkit: !!el.webkitEnterFullscreen });
+      roomDebugLog('try fullscreen candidate', { sid, tag: el.tagName, hasRequest: !!el.requestFullscreen });
       if (el.requestFullscreen) {
         try {
           await el.requestFullscreen({ navigationUI: 'hide' });
@@ -880,18 +832,6 @@ async function requestBestFullscreen({ card, videoEl, preferVideo = false, sid =
           await el.requestFullscreen();
         }
         return getFullscreenElement() === el || getFullscreenElement() === card || true;
-      }
-      if (el.webkitRequestFullscreen) {
-        el.webkitRequestFullscreen();
-        return true;
-      }
-      if (el.msRequestFullscreen) {
-        el.msRequestFullscreen();
-        return true;
-      }
-      if (el.webkitEnterFullscreen) {
-        el.webkitEnterFullscreen();
-        return true;
       }
     } catch (err) {
       roomDebugLog('fullscreen candidate failed', { sid, error: err?.message || String(err) });
@@ -902,27 +842,22 @@ async function requestBestFullscreen({ card, videoEl, preferVideo = false, sid =
 
 async function toggleCardFullscreen(card, sid) {
   const videoEl = card?.querySelector('.video-el') || card?.querySelector('video');
-  const isMobile = window.matchMedia('(max-width: 768px)').matches;
   const isScreenShareCard = currentSharerSid === sid;
   const activeFullscreenEl = getFullscreenElement();
   const simulatedCard = getSimulatedFullscreenCard();
   const isSameFullscreen = !!activeFullscreenEl && (activeFullscreenEl === card || activeFullscreenEl === videoEl);
   const isSimulatedSame = !!simulatedCard && simulatedCard === card;
-  const isVideoNativeFullscreen = !!(videoEl?.webkitDisplayingFullscreen);
 
-  roomDebugLog('toggle fullscreen', { sid, isMobile, isScreenShareCard, isSameFullscreen, isSimulatedSame, isVideoNativeFullscreen });
+  roomDebugLog('toggle fullscreen', { sid, isScreenShareCard, isSameFullscreen, isSimulatedSame });
 
-  if (isSameFullscreen || isSimulatedSame || isVideoNativeFullscreen) {
+  if (isSameFullscreen || isSimulatedSame) {
     await exitAnyFullscreen(videoEl);
     return;
   }
 
-  const preferVideo = isScreenShareCard || isMobile;
+  const preferVideo = isScreenShareCard;
   const entered = await requestBestFullscreen({ card, videoEl, preferVideo, sid });
   roomDebugLog('fullscreen result', { sid, entered, active: !!getFullscreenElement(), simulated: !!getSimulatedFullscreenCard() });
-  if (entered && (isScreenShareCard || isMobile) && screen.orientation?.lock) {
-    screen.orientation.lock('landscape').catch(() => {});
-  }
 }
 
 function ensureCard(sid, displayName = null, isLocal = false) {
@@ -954,14 +889,10 @@ function ensureCard(sid, displayName = null, isLocal = false) {
   const videoEl = sid === 'local' ? localVideo : document.createElement('video');
   if (sid !== 'local') {
     videoEl.autoplay = true;
-    videoEl.playsInline = true;
     videoEl.muted = !speakerEnabled;
     videoEl.defaultMuted = !speakerEnabled;
   }
   videoEl.setAttribute('autoplay', 'autoplay');
-  videoEl.setAttribute('playsinline', 'playsinline');
-  videoEl.setAttribute('webkit-playsinline', 'true');
-  videoEl.setAttribute('x-webkit-airplay', 'allow');
   videoEl.disablePictureInPicture = true;
   videoEl.className = 'video-el';
   bindVideoElementLifecycle(videoEl);
@@ -1702,7 +1633,7 @@ function updateAttachmentPreview() {
   if ((pendingAttachment.type || '').startsWith('image') && pendingAttachment.previewUrl) {
     chatAttachmentPreview.innerHTML = `<img class="chat-media" src="${pendingAttachment.previewUrl}" alt="preview" /><div class="chat-file-meta"><span>${escapeHtml(pendingAttachment.name || 'attachment')}</span><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ t('remove_attachment') }}</button>`;
   } else if ((pendingAttachment.type || '').startsWith('video') && pendingAttachment.previewUrl) {
-    chatAttachmentPreview.innerHTML = `<video class="chat-media" src="${pendingAttachment.previewUrl}" controls playsinline></video><div class="chat-file-meta"><span>${escapeHtml(pendingAttachment.name || 'attachment')}</span><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ t('remove_attachment') }}</button>`;
+    chatAttachmentPreview.innerHTML = `<video class="chat-media" src="${pendingAttachment.previewUrl}" controls></video><div class="chat-file-meta"><span>${escapeHtml(pendingAttachment.name || 'attachment')}</span><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ t('remove_attachment') }}</button>`;
   } else {
     chatAttachmentPreview.innerHTML = `<div class="chat-file-card"><div class="chat-file-meta"><strong>${escapeHtml(pendingAttachment.name || 'attachment')}</strong><span>${permissionText}</span></div><button class="ghost-btn" id="clearAttachmentBtn">{{ t('remove_attachment') }}</button></div>`;
   }
@@ -1793,238 +1724,25 @@ function normalizeChatLayout() {
   }
 }
 
-function enableChatDrag() {
-  const handle = document.getElementById('chatMobileHandle');
-  if (!chatWindow || !handle) return;
-  if (handle.dataset.bound === '1') return;
-  handle.dataset.bound = '1';
-
-  const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
-  const setHeight = (valuePx) => {
-    const viewport = window.innerHeight || document.documentElement.clientHeight || 800;
-    const minPx = Math.max(320, Math.round(viewport * 0.42));
-    const maxPx = Math.max(minPx + 80, Math.round(viewport * 0.84));
-    const next = Math.max(minPx, Math.min(maxPx, valuePx));
-    chatWindow.style.setProperty('--mobile-chat-height', `${next}px`);
-    return next;
-  };
-
-  const syncDefault = () => {
-    if (!isMobile()) {
-      chatWindow.style.removeProperty('--mobile-chat-height');
-      return;
-    }
-    if (!chatWindow.style.getPropertyValue('--mobile-chat-height')) {
-      setHeight(Math.round((window.innerHeight || 800) * 0.62));
-    }
-  };
-
-  let dragging = false;
-  let startY = 0;
-  let startHeight = 0;
-
-  const getY = (event) => event.touches?.[0]?.clientY ?? event.clientY;
-
-  const onMove = (event) => {
-    if (!dragging || !isMobile()) return;
-    const currentY = getY(event);
-    if (typeof currentY !== 'number') return;
-    const delta = startY - currentY;
-    setHeight(startHeight + delta);
-    event.preventDefault?.();
-  };
-
-  const stopDrag = () => {
-    dragging = false;
-    document.body.classList.remove('chat-dragging');
-  };
-
-  const startDrag = (event) => {
-    if (!isMobile()) return;
-    dragging = true;
-    startY = getY(event);
-    startHeight = chatWindow.getBoundingClientRect().height;
-    document.body.classList.add('chat-dragging');
-    event.preventDefault?.();
-  };
-
-  handle.addEventListener('touchstart', startDrag, { passive: false });
-  handle.addEventListener('mousedown', startDrag);
-  window.addEventListener('touchmove', onMove, { passive: false });
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('touchend', stopDrag);
-  window.addEventListener('mouseup', stopDrag);
-  window.addEventListener('resize', syncDefault);
-  window.addEventListener('resize', refreshChatCollapsedLayout);
-  syncDefault();
-}
-
-
 function refreshChatCollapsedLayout() {
   if (!chatWindow) return;
   const collapsed = chatWindow.classList.contains('chat-collapsed');
-  document.querySelector('.video-panel')?.classList.toggle('chat-collapsed-layout', !!collapsed && !window.matchMedia('(max-width: 768px)').matches);
+  document.querySelector('.video-panel')?.classList.toggle('chat-collapsed-layout', !!collapsed);
 }
 
 function setChatCollapsed(collapsed) {
   if (!chatWindow) return;
   const showBtn = document.getElementById('chatShowBtn');
-  const isMobile = window.matchMedia('(max-width: 768px)').matches;
   chatWindow.classList.toggle('chat-collapsed', !!collapsed);
-  document.querySelector('.video-panel')?.classList.toggle('chat-collapsed-layout', !!collapsed && !isMobile);
+  document.querySelector('.video-panel')?.classList.toggle('chat-collapsed-layout', !!collapsed);
   if (showBtn) {
     showBtn.classList.toggle('hidden', !collapsed);
     showBtn.style.display = collapsed ? 'inline-flex' : 'none';
   }
 }
 
-function initMobileRoomShell() {
-  const mobileQuery = window.matchMedia('(max-width: 768px)');
-  const scrim = document.getElementById('mobileRoomScrim');
-  const mobileToolbar = document.getElementById('mobileRoomToolbar');
-  const mobileMicBtn = document.getElementById('mobileMicBtn');
-  const mobileCameraBtn = document.getElementById('mobileCameraBtn');
-  const mobileSpeakerBtn = document.getElementById('mobileSpeakerBtn');
-  const mobileChatBtn = document.getElementById('mobileChatBtn');
-  const mobileMoreBtn = document.getElementById('mobileMoreBtn');
-  const mobileLeaveBtn = document.getElementById('mobileLeaveBtn');
-  const mobileMoreCloseBtn = document.getElementById('mobileMoreCloseBtn');
-  const sourceButtons = {
-    mic: document.getElementById('toggleMicBtn'),
-    camera: document.getElementById('toggleCameraBtn'),
-    speaker: document.getElementById('toggleSpeakerBtn'),
-    leave: document.getElementById('leaveMeetingBtn'),
-  };
-
-  const setViewportUnit = () => {
-    const height = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 800;
-    document.documentElement.style.setProperty('--room-vh', `${height * 0.01}px`);
-  };
-
-  const closeSheets = () => {
-    document.body.classList.remove('mobile-chat-open', 'mobile-more-open', 'mobile-sheet-open');
-    if (scrim) scrim.hidden = true;
-    mobileChatBtn?.classList.remove('is-active');
-    mobileMoreBtn?.classList.remove('is-active');
-  };
-
-  const openSheet = (type) => {
-    if (!mobileQuery.matches) {
-      closeSheets();
-      return;
-    }
-    document.body.classList.toggle('mobile-chat-open', type === 'chat');
-    document.body.classList.toggle('mobile-more-open', type === 'more');
-    document.body.classList.add('mobile-sheet-open');
-    if (scrim) scrim.hidden = false;
-    mobileChatBtn?.classList.toggle('is-active', type === 'chat');
-    mobileMoreBtn?.classList.toggle('is-active', type === 'more');
-    if (type === 'chat') {
-      setChatCollapsed(false);
-      window.setTimeout(() => {
-        if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
-      }, 80);
-    }
-  };
-
-  const toggleSheet = (type) => {
-    const openClass = type === 'chat' ? 'mobile-chat-open' : 'mobile-more-open';
-    if (document.body.classList.contains(openClass)) closeSheets();
-    else openSheet(type);
-  };
-
-  const runMobileAction = (label, action) => {
-    runMediaTask(`mobile-${label}`, async () => {
-      await action();
-      syncMobileButtons();
-      window.setTimeout(syncMobileButtons, 180);
-    }).catch(() => {
-      syncMobileButtons();
-    });
-  };
-
-  const confirmLeaveFromMobile = () => {
-    if (sourceButtons.leave?.disabled) return;
-    const otherParticipantCount = Object.keys(participantMeta || {}).length;
-    if (IS_HOST && otherParticipantCount > 0) {
-      setStatus(TEXT_HOST_MUST_END_MEETING, 'warning');
-      alert(TEXT_HOST_MUST_END_MEETING);
-      return;
-    }
-    if (confirm(TEXT_LEAVE_CONFIRM)) {
-      leaveMeetingAndExit(TEXT_YOU_LEFT_MEETING);
-    }
-  };
-
-  function syncMobileButtons() {
-    const mediaState = livekitController?.getLocalMediaState?.() || {};
-    if (mobileMicBtn) {
-      mobileMicBtn.disabled = !!sourceButtons.mic?.disabled;
-      mobileMicBtn.classList.toggle('is-active', !!mediaState.microphoneEnabled);
-    }
-    if (mobileCameraBtn) {
-      mobileCameraBtn.disabled = !!sourceButtons.camera?.disabled;
-      mobileCameraBtn.classList.toggle('is-active', !!mediaState.cameraEnabled);
-    }
-    if (mobileSpeakerBtn) {
-      mobileSpeakerBtn.textContent = toggleSpeakerBtn?.textContent || {{ t('speaker')|tojson }};
-      mobileSpeakerBtn.disabled = !!sourceButtons.speaker?.disabled;
-      mobileSpeakerBtn.classList.toggle('is-active', speakerEnabled);
-    }
-    if (mobileLeaveBtn) mobileLeaveBtn.disabled = !!sourceButtons.leave?.disabled;
-    mobileToolbar?.classList.toggle('is-ready', mobileQuery.matches);
-  }
-
-  mobileMicBtn?.addEventListener('click', () => {
-    if (sourceButtons.mic?.disabled) return;
-    runMobileAction('mic', toggleMicrophoneAction);
-  });
-  mobileCameraBtn?.addEventListener('click', () => {
-    if (sourceButtons.camera?.disabled) return;
-    runMobileAction('camera', toggleCameraAction);
-  });
-  mobileSpeakerBtn?.addEventListener('click', () => {
-    if (sourceButtons.speaker?.disabled) return;
-    runMobileAction('speaker', async () => {
-      setSpeakerEnabled(!speakerEnabled, { userGesture: true, persist: true, showStatus: true });
-      if (currentSharerSid || isSharingScreen || livekitLocalShareActive) {
-        speakerForcedByShareRule = false;
-        speakerStateBeforeShare = speakerEnabled;
-      }
-    });
-  });
-  mobileLeaveBtn?.addEventListener('click', confirmLeaveFromMobile);
-  mobileChatBtn?.addEventListener('click', () => toggleSheet('chat'));
-  mobileMoreBtn?.addEventListener('click', () => toggleSheet('more'));
-  mobileMoreCloseBtn?.addEventListener('click', closeSheets);
-  scrim?.addEventListener('click', closeSheets);
-  document.getElementById('chatMobileHandle')?.addEventListener('click', () => {
-    if (mobileQuery.matches && document.body.classList.contains('mobile-chat-open')) closeSheets();
-  });
-
-  window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeSheets();
-  });
-  window.addEventListener('resize', () => {
-    setViewportUnit();
-    if (!mobileQuery.matches) closeSheets();
-  });
-  window.visualViewport?.addEventListener('resize', setViewportUnit);
-  window.visualViewport?.addEventListener('scroll', setViewportUnit);
-
-  const observer = new MutationObserver(syncMobileButtons);
-  Object.values(sourceButtons).forEach((button) => {
-    if (button) observer.observe(button, { attributes: true, childList: true, subtree: true });
-  });
-  window.setInterval(syncMobileButtons, 1200);
-  setViewportUnit();
-  syncMobileButtons();
-}
-
 function initChatUi() {
   normalizeChatLayout();
-  enableChatDrag();
-  initMobileRoomShell();
   if (chatMessages) chatMessages.dataset.stuckBottom = '1';
   setChatCollapsed(false);
   renderMentionPicker();
@@ -2219,15 +1937,10 @@ window.RoomPageBootstrap?.initialize?.({
   TEXT_CHAT_CLEARED_SELF,
   TEXT_CHAT_CLEARED_ALL,
   getFullscreenElement,
-  screenRef: screen,
   clearSimulatedFullscreen,
   flushPendingLayoutIfNeeded,
   roomDebugLog,
   getSimulatedFullscreenCard,
-  nativeFullscreenState: {
-    get: () => nativeFullscreenVideoEl,
-    set: (value) => { nativeFullscreenVideoEl = value; },
-  },
   getRenderableCards,
   getGridPageSize,
   hasActiveFullscreenSession,
@@ -2303,10 +2016,8 @@ window.RoomPageBootstrap?.initialize?.({
   },
 });
 
-if (!IS_MOBILE) {
-  window.setTimeout(() => {
-    virtualBackgroundController.warmupSegmentationModel?.().catch?.(() => {});
-  }, 1200);
-}
+window.setTimeout(() => {
+  virtualBackgroundController.warmupSegmentationModel?.().catch?.(() => {});
+}, 1200);
 
 </script>

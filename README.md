@@ -81,15 +81,15 @@
 - `python check_i18n.py` 当前可通过，根目录包装器会转到 `scripts/check_i18n.py`。
 - `/set-language/<lang>`、页面右上角语言切换、`/account` 默认语言偏好和会话语言会共同决定页面语言。
 
-移动端和桌面端都已有独立适配，不是单纯缩放桌面页面：
+会议页面当前保留桌面优先布局：
 
-- 首页在移动端显示“扫码入会”，通过浏览器 `BarcodeDetector` 和后置摄像头扫描会议二维码；桌面端保留会议号、密码、复制邀请链接等主流程。
-- 房间页使用 `viewport-fit=cover`，现在按桌面大屏、平板窄屏、手机竖屏三段分别排版：桌面端保持会议网格 + 右侧聊天栏，平板会把控制区下移，手机端聊天会重排为可拖动/可滚动的底部区域，避免遮挡视频和发送按钮。
-- `static/js/room/room_livekit.js` 根据 `matchMedia('(max-width: 768px)')` 和移动设备 UA 选择更保守的摄像头、麦克风和屏幕共享发布参数，降低手机发热、耗电和弱网压力。
-- `templates/partials/_room_scripts.html` 对移动端全屏、iOS Safari 原生视频全屏、横屏锁定、触摸播放恢复和共享屏幕观看做了单独处理。
-- `static/css/room.css` 现在是会议页布局的主样式入口，负责顶部栏、控制侧栏、视频舞台、聊天栏和移动端底部聊天面板；`static/css/style.css` 只保留共享页面壳层和非房间页通用规则。
+- 首页保留会议号、密码、复制邀请链接等主流程，已移除二维码扫描入口。
+- 手机和平板访问业务页面时会直接显示“请到电脑端访问本系统”的提示页，不进入登录、首页或会议流程。
+- 房间页保留桌面大屏和窄屏通用布局：桌面端保持会议网格 + 右侧聊天栏，窄屏时控制区会下移到主内容下方。
+- `static/js/room/room_livekit.js` 使用统一的摄像头、麦克风和屏幕共享发布参数，不再按 UA 或视口宽度分叉。
+- `static/css/room.css` 是会议页布局的主样式入口，负责顶部栏、控制侧栏、视频舞台和聊天栏；`static/css/style.css` 只保留共享页面壳层和非房间页通用规则。
 
-提交前建议同时验证：中文和英文页面、桌面浏览器和手机浏览器、同一账号双设备、手机扫码入会、移动端观看远端屏幕共享。
+提交前建议验证：中文和英文页面、桌面浏览器、窄屏浏览器宽度、同一账号双设备和远端屏幕共享。
 
 ## 项目结构
 
@@ -474,7 +474,7 @@ python check_i18n.py
 建议再做一次手动烟测：
 
 - 登录、注册、创建房间、加入房间、退出房间
-- 桌面端和移动端双端进房，确认首次加入即可看到远端媒体
+- 两个浏览器会话进房，确认首次加入即可看到远端媒体
 - 摄像头、麦克风、屏幕共享开始和停止
 - 聊天、附件上传、附件查看/下载权限
 - 中英文界面切换
@@ -598,15 +598,15 @@ The UI is maintained in both Chinese and English:
 - `python check_i18n.py` currently passes; the root wrapper forwards to `scripts/check_i18n.py`.
 - `/set-language/<lang>`, the page language switch, `/account` language preference, and session language together control the rendered language.
 
-Mobile and desktop have separate adaptations instead of only scaling the desktop page:
+The meeting UI currently keeps a desktop-first layout:
 
-- The home page shows mobile QR join on phones through browser `BarcodeDetector` and the rear camera; desktop keeps room ID, password, and invite-link workflows.
-- The room page uses `viewport-fit=cover` and now has explicit desktop, tablet, and phone layouts. Desktop keeps the meeting grid plus a right chat column, tablets move the controls beneath the stage, and phones reflow chat into a draggable/scrollable bottom area so it does not cover video or the send button.
-- `static/js/room/room_livekit.js` uses `matchMedia('(max-width: 768px)')` and mobile user-agent detection to choose more conservative camera, microphone, and screen-share publish settings for heat, battery, and weak networks.
-- `templates/partials/_room_scripts.html` has separate handling for mobile fullscreen, iOS Safari native video fullscreen, landscape orientation lock, touch playback recovery, and screen-share viewing.
-- `static/css/room.css` is now the canonical meeting-page layout layer for the top bar, control rail, video stage, chat column, and mobile chat sheet, while `static/css/style.css` stays focused on shared non-room page shell rules.
+- The home page keeps the room ID, password, and invite-link workflows. The QR scanner entry has been removed.
+- Phones and tablets that access application pages see a “Please open this system on a computer” page instead of entering login, home, or meeting flows.
+- The room page keeps desktop and narrow-width general layouts: desktop shows the meeting grid plus right chat column, while narrow widths move the controls beneath the main stage.
+- `static/js/room/room_livekit.js` uses unified camera, microphone, and screen-share publishing settings instead of branching on phone user agents or viewport width.
+- `static/css/room.css` is the canonical meeting-page layout layer for the top bar, control rail, video stage, and chat column, while `static/css/style.css` stays focused on shared non-room page shell rules.
 
-Before submitting, verify Chinese and English pages, desktop and phone browsers, same-account two-device join, mobile QR join, and mobile viewing of remote screen share.
+Before submitting, verify Chinese and English pages, desktop browsers, narrow browser widths, same-account two-device join, and remote screen share viewing.
 
 ## Project Structure
 
@@ -1000,7 +1000,7 @@ python check_i18n.py
 Recommended manual smoke tests:
 
 - Login, registration, room creation, room join, and room leave
-- Desktop and mobile two-client join flow; the first join should show remote media without refresh
+- Two browser sessions joining the same room; the first join should show remote media without refresh
 - Camera, microphone, and screen sharing start/stop
 - Chat, attachment upload, attachment view/download permissions
 - Chinese/English UI switching

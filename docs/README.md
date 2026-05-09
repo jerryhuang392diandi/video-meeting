@@ -31,7 +31,7 @@
 - 部署命令、环境变量或服务管理方式变化时更新 `DEPLOYMENT_GUIDE.md`。
 - 新增或修改健康检查、运行态观测、systemd/Nginx 排障步骤时同步更新 `README.md` 和 `DEPLOYMENT_GUIDE.md`。
 - 房间状态、LiveKit、屏幕共享、录屏、背景虚化相关变化时更新 `STABILITY_AUDIT.md`。
-- 中英文文案、移动端扫码、移动端聊天布局、桌面端会议网格或设备默认策略变化时，同步更新根 README 和项目说明文档。
+- 中英文文案、桌面端会议网格、窄屏布局或设备默认策略变化时，同步更新根 README 和项目说明文档。
 - 重构优先级、拆分顺序或模块边界变化时更新 `REFACTOR_AUDIT.md`。
 - 课程展示口径、核心流程或代码索引变化时更新 `项目说明与代码索引.md`。
 - 不要保留编码异常或重复的文档副本，`docs/` 中同一文档只保留一个规范文件名。
@@ -59,7 +59,7 @@ This folder contains the project overview, deployment guide, stability audit, an
 
 | Document | Purpose | Audience |
 | --- | --- | --- |
-| [../README.md](../README.md) / [English](../README.md#video-meeting-system) | Project overview, complete page entry points, i18n and mobile/desktop adaptation status, Quick Start, local tool installation, local startup, plus key admin-login/email-auth/health-check settings and basic checks | First-time readers |
+| [../README.md](../README.md) / [English](../README.md#video-meeting-system) | Project overview, complete page entry points, i18n and responsive layout status, Quick Start, local tool installation, local startup, plus key admin-login/email-auth/health-check settings and basic checks | First-time readers |
 | [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) / [English](DEPLOYMENT_GUIDE.md#deployment-and-update-guide) | Cloud provider entry points, ICP filing notes, SSH/FinalShell login, DNS/Cloudflare, Nginx, WebSocket, HTTPS, LiveKit Cloud, self-hosted LiveKit, systemd, Git three-side workflow, service updates, `/api/healthz` checks, log troubleshooting, and official references | Deployers and maintainers, especially first-time deployers |
 | [STABILITY_AUDIT.md](STABILITY_AUDIT.md) / [English](STABILITY_AUDIT.md#stability-audit) | Architecture boundaries, risks, regression focus, and future direction | People changing core logic |
 | [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md) / [English](REFACTOR_AUDIT.md#refactor-audit) | Current refactor audit, priorities, recommended split order, and pre-change checks | People planning refactors or long-term maintenance |
@@ -71,7 +71,7 @@ This folder contains the project overview, deployment guide, stability audit, an
 - Update `DEPLOYMENT_GUIDE.md` when deployment commands, environment variables, or service management changes.
 - Update `README.md` and `DEPLOYMENT_GUIDE.md` together when health checks, runtime observability, or systemd/Nginx troubleshooting steps change.
 - Update `STABILITY_AUDIT.md` when room state, LiveKit, screen sharing, recording, or background-blur behavior changes.
-- Update the root README and project guide when UI text, mobile QR join, mobile chat layout, desktop meeting grid, or default device behavior changes.
+- Update the root README and project guide when UI text, desktop meeting grid, narrow-width layout, or default device behavior changes.
 - Update `REFACTOR_AUDIT.md` when refactor priorities, split order, or module boundaries change.
 - Update `项目说明与代码索引.md` when presentation wording, core flows, or code index changes.
 - Do not keep duplicate or encoding-corrupted document copies in `docs/`; one canonical filename per document only.

@@ -239,7 +239,7 @@
       ctx.processingCtx.globalCompositeOperation = 'source-in';
       ctx.processingCtx.drawImage(results.image, 0, 0, width, height);
       ctx.processingCtx.globalCompositeOperation = 'destination-over';
-      ctx.processingCtx.filter = ctx.IS_MOBILE ? 'blur(10px)' : 'blur(18px)';
+      ctx.processingCtx.filter = 'blur(18px)';
       ctx.processingCtx.drawImage(results.image, 0, 0, width, height);
       ctx.processingCtx.filter = 'none';
       ctx.processingCtx.restore();

@@ -47,7 +47,7 @@ Before submitting:
 - run `python check_i18n.py`;
 - start the app and smoke test login, room join/leave, media controls, and chat attachment upload;
 - verify both `zh` and `en` UI paths for any changed template;
-- test a two-client room join flow, ideally desktop + mobile, and confirm first join works without refresh;
+- test a two-client room join flow and confirm first join works without refresh;
 - verify that joining with local camera/mic still blocked or not yet granted can still receive remote media;
 - if you changed admin logic, verify the public login, dedicated admin login, admin home page, `/admin`, and `/admin/security/unlock` all still work.
 
@@ -56,7 +56,7 @@ The project’s primary media path is now LiveKit SFU. Do not reintroduce browse
 
 Minimum manual check after editing room media logic:
 
-- User A enters a room, then User B joins from desktop or mobile.
+- User A enters a room, then User B joins.
 - B should immediately see A without refresh.
 - Both sides should remain visible after `join_ok`, `participant_snapshot`, and LiveKit room connection complete.
 - Refresh while screen sharing must not leave stale server-side `active_sharer_*` state or stale client-side “self is sharer” layout.
@@ -88,14 +88,14 @@ That means every room change should be checked for consistency across:
 - front-end layout and focus state
 
 ## Screen Share Notes
-Screen sharing is still one of the most failure-prone features because it spans backend room state, LiveKit publication state, participant focus, and mobile browser constraints.
+Screen sharing is still one of the most failure-prone features because it spans backend room state, LiveKit publication state, and participant focus.
 
 When changing screen share behavior:
 
 - verify server cleanup of `active_sharer_*` fields;
 - verify client focus state reset after stop, refresh, and reconnect;
 - treat UI focus state separately from media publication state;
-- prioritize “remote users can still see the share” over polished secondary interactions on mobile or weak networks;
+- prioritize “remote users can still see the share” over polished secondary interactions on weak networks;
 - re-check recording and background blur interactions if they share the same local media path.
 
 ## Recording and Background Blur Notes

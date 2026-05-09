@@ -142,7 +142,7 @@
   function buildMediaAttachmentHtml({ kind = '', rawUrl = '', name = '', permissionLabel = '', links = '' }) {
     if (!rawUrl || !kind) return '';
     const mediaTag = kind === 'video'
-      ? `<video class="chat-media" src="${rawUrl}" controls playsinline preload="metadata"></video>`
+      ? `<video class="chat-media" src="${rawUrl}" controls preload="metadata"></video>`
       : `<img class="chat-media" src="${rawUrl}" alt="${name}" />`;
     return `<div class="chat-attachment-block">${mediaTag}<div class="chat-file-meta"><span>${name}</span><span>${permissionLabel}</span></div>${links}</div>`;
   }

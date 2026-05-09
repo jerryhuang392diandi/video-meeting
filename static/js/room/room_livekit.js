@@ -20,11 +20,6 @@
     };
   }
 
-  function isMobileViewport() {
-    return !!(global.matchMedia && global.matchMedia('(max-width: 768px)').matches)
-      || /Android|iPhone|iPad|iPod/i.test(global.navigator?.userAgent || '');
-  }
-
   function createVideoPreset(width, height, maxBitrate, maxFramerate, priority = 'medium') {
     if (lk?.VideoPreset) {
       return new lk.VideoPreset(width, height, maxBitrate, maxFramerate, priority);
@@ -35,159 +30,86 @@
     };
   }
 
-  function normalizeShareProfile(input, mobile = isMobileViewport()) {
+  function normalizeShareProfile(input) {
     const mode = input?.mode === 'detail' ? 'detail' : 'motion';
     const level = ['high', 'balanced', 'stable'].includes(input?.level) ? input.level : 'high';
-    return { mode, level, mobile };
+    return { mode, level };
   }
 
   function getScreenShareProfileConfig(input) {
     const profile = normalizeShareProfile(input);
-    const presets = profile.mobile
-      ? {
-          motion: {
-            high: {
-              resolution: { width: 960, height: 540 },
-              encoding: { maxBitrate: 1_700_000, maxFramerate: 24, priority: 'high' },
-              layers: [
-                createVideoPreset(640, 360, 900_000, 20, 'medium'),
-                createVideoPreset(426, 240, 420_000, 15, 'low'),
-              ],
-              contentHint: 'motion',
-              degradationPreference: 'maintain-framerate',
-              quality: VIDEO_QUALITY.HIGH,
-            },
-            balanced: {
-              resolution: { width: 960, height: 540 },
-              encoding: { maxBitrate: 1_200_000, maxFramerate: 20, priority: 'medium' },
-              layers: [
-                createVideoPreset(640, 360, 720_000, 18, 'medium'),
-                createVideoPreset(426, 240, 360_000, 12, 'low'),
-              ],
-              contentHint: 'motion',
-              degradationPreference: 'maintain-framerate',
-              quality: VIDEO_QUALITY.MEDIUM,
-            },
-            stable: {
-              resolution: { width: 854, height: 480 },
-              encoding: { maxBitrate: 850_000, maxFramerate: 18, priority: 'medium' },
-              layers: [
-                createVideoPreset(640, 360, 520_000, 15, 'medium'),
-                createVideoPreset(426, 240, 260_000, 10, 'low'),
-              ],
-              contentHint: 'motion',
-              degradationPreference: 'maintain-framerate',
-              quality: VIDEO_QUALITY.LOW,
-            },
-          },
-          detail: {
-            high: {
-              resolution: { width: 1280, height: 720 },
-              encoding: { maxBitrate: 2_000_000, maxFramerate: 15, priority: 'high' },
-              layers: [
-                createVideoPreset(1024, 576, 1_000_000, 12, 'medium'),
-                createVideoPreset(640, 360, 420_000, 10, 'low'),
-              ],
-              contentHint: 'text',
-              degradationPreference: 'maintain-resolution',
-              quality: VIDEO_QUALITY.HIGH,
-            },
-            balanced: {
-              resolution: { width: 1024, height: 576 },
-              encoding: { maxBitrate: 1_300_000, maxFramerate: 12, priority: 'medium' },
-              layers: [
-                createVideoPreset(854, 480, 760_000, 10, 'medium'),
-                createVideoPreset(640, 360, 340_000, 8, 'low'),
-              ],
-              contentHint: 'text',
-              degradationPreference: 'maintain-resolution',
-              quality: VIDEO_QUALITY.MEDIUM,
-            },
-            stable: {
-              resolution: { width: 960, height: 540 },
-              encoding: { maxBitrate: 900_000, maxFramerate: 10, priority: 'medium' },
-              layers: [
-                createVideoPreset(640, 360, 480_000, 8, 'medium'),
-                createVideoPreset(426, 240, 220_000, 6, 'low'),
-              ],
-              contentHint: 'text',
-              degradationPreference: 'maintain-resolution',
-              quality: VIDEO_QUALITY.LOW,
-            },
-          },
-        }
-      : {
-          motion: {
-            high: {
-              resolution: { width: 1280, height: 720 },
-              encoding: { maxBitrate: 3_000_000, maxFramerate: 30, priority: 'high' },
-              layers: [
-                createVideoPreset(960, 540, 1_600_000, 24, 'medium'),
-                createVideoPreset(640, 360, 750_000, 18, 'low'),
-              ],
-              contentHint: 'motion',
-              degradationPreference: 'maintain-framerate',
-              quality: VIDEO_QUALITY.HIGH,
-            },
-            balanced: {
-              resolution: { width: 1280, height: 720 },
-              encoding: { maxBitrate: 2_200_000, maxFramerate: 24, priority: 'high' },
-              layers: [
-                createVideoPreset(960, 540, 1_200_000, 20, 'medium'),
-                createVideoPreset(640, 360, 580_000, 15, 'low'),
-              ],
-              contentHint: 'motion',
-              degradationPreference: 'maintain-framerate',
-              quality: VIDEO_QUALITY.MEDIUM,
-            },
-            stable: {
-              resolution: { width: 960, height: 540 },
-              encoding: { maxBitrate: 1_450_000, maxFramerate: 20, priority: 'medium' },
-              layers: [
-                createVideoPreset(640, 360, 800_000, 18, 'medium'),
-                createVideoPreset(426, 240, 360_000, 12, 'low'),
-              ],
-              contentHint: 'motion',
-              degradationPreference: 'maintain-framerate',
-              quality: VIDEO_QUALITY.LOW,
-            },
-          },
-          detail: {
-            high: {
-              resolution: { width: 1920, height: 1080 },
-              encoding: { maxBitrate: 4_400_000, maxFramerate: 18, priority: 'high' },
-              layers: [
-                createVideoPreset(1280, 720, 2_100_000, 15, 'medium'),
-                createVideoPreset(960, 540, 900_000, 10, 'low'),
-              ],
-              contentHint: 'text',
-              degradationPreference: 'maintain-resolution',
-              quality: VIDEO_QUALITY.HIGH,
-            },
-            balanced: {
-              resolution: { width: 1600, height: 900 },
-              encoding: { maxBitrate: 2_700_000, maxFramerate: 15, priority: 'high' },
-              layers: [
-                createVideoPreset(1280, 720, 1_450_000, 12, 'medium'),
-                createVideoPreset(960, 540, 720_000, 10, 'low'),
-              ],
-              contentHint: 'text',
-              degradationPreference: 'maintain-resolution',
-              quality: VIDEO_QUALITY.MEDIUM,
-            },
-            stable: {
-              resolution: { width: 1280, height: 720 },
-              encoding: { maxBitrate: 1_500_000, maxFramerate: 12, priority: 'medium' },
-              layers: [
-                createVideoPreset(960, 540, 900_000, 10, 'medium'),
-                createVideoPreset(640, 360, 420_000, 8, 'low'),
-              ],
-              contentHint: 'text',
-              degradationPreference: 'maintain-resolution',
-              quality: VIDEO_QUALITY.LOW,
-            },
-          },
-        };
+    const presets = {
+      motion: {
+        high: {
+          resolution: { width: 1280, height: 720 },
+          encoding: { maxBitrate: 3_000_000, maxFramerate: 30, priority: 'high' },
+          layers: [
+            createVideoPreset(960, 540, 1_600_000, 24, 'medium'),
+            createVideoPreset(640, 360, 750_000, 18, 'low'),
+          ],
+          contentHint: 'motion',
+          degradationPreference: 'maintain-framerate',
+          quality: VIDEO_QUALITY.HIGH,
+        },
+        balanced: {
+          resolution: { width: 1280, height: 720 },
+          encoding: { maxBitrate: 2_200_000, maxFramerate: 24, priority: 'high' },
+          layers: [
+            createVideoPreset(960, 540, 1_200_000, 20, 'medium'),
+            createVideoPreset(640, 360, 580_000, 15, 'low'),
+          ],
+          contentHint: 'motion',
+          degradationPreference: 'maintain-framerate',
+          quality: VIDEO_QUALITY.MEDIUM,
+        },
+        stable: {
+          resolution: { width: 960, height: 540 },
+          encoding: { maxBitrate: 1_450_000, maxFramerate: 20, priority: 'medium' },
+          layers: [
+            createVideoPreset(640, 360, 800_000, 18, 'medium'),
+            createVideoPreset(426, 240, 360_000, 12, 'low'),
+          ],
+          contentHint: 'motion',
+          degradationPreference: 'maintain-framerate',
+          quality: VIDEO_QUALITY.LOW,
+        },
+      },
+      detail: {
+        high: {
+          resolution: { width: 1920, height: 1080 },
+          encoding: { maxBitrate: 4_400_000, maxFramerate: 18, priority: 'high' },
+          layers: [
+            createVideoPreset(1280, 720, 2_100_000, 15, 'medium'),
+            createVideoPreset(960, 540, 900_000, 10, 'low'),
+          ],
+          contentHint: 'text',
+          degradationPreference: 'maintain-resolution',
+          quality: VIDEO_QUALITY.HIGH,
+        },
+        balanced: {
+          resolution: { width: 1600, height: 900 },
+          encoding: { maxBitrate: 2_700_000, maxFramerate: 15, priority: 'high' },
+          layers: [
+            createVideoPreset(1280, 720, 1_450_000, 12, 'medium'),
+            createVideoPreset(960, 540, 720_000, 10, 'low'),
+          ],
+          contentHint: 'text',
+          degradationPreference: 'maintain-resolution',
+          quality: VIDEO_QUALITY.MEDIUM,
+        },
+        stable: {
+          resolution: { width: 1280, height: 720 },
+          encoding: { maxBitrate: 1_500_000, maxFramerate: 12, priority: 'medium' },
+          layers: [
+            createVideoPreset(960, 540, 900_000, 10, 'medium'),
+            createVideoPreset(640, 360, 420_000, 8, 'low'),
+          ],
+          contentHint: 'text',
+          degradationPreference: 'maintain-resolution',
+          quality: VIDEO_QUALITY.LOW,
+        },
+      },
+    };
     return {
       ...profile,
       ...presets[profile.mode][profile.level],
@@ -203,14 +125,9 @@
   }
 
   function buildRoomOptions({ facingMode = 'user' } = {}) {
-    const mobile = isMobileViewport();
-    const cameraPrimary = mobile
-      ? createVideoPreset(640, 360, 700_000, 24, 'medium')
-      : createVideoPreset(1280, 720, 1_800_000, 30, 'medium');
-    const cameraLayer = mobile
-      ? createVideoPreset(320, 180, 180_000, 18, 'low')
-      : createVideoPreset(640, 360, 700_000, 20, 'low');
-    const defaultShare = getScreenShareProfileConfig({ mode: 'motion', level: 'high', mobile });
+    const cameraPrimary = createVideoPreset(1280, 720, 1_800_000, 30, 'medium');
+    const cameraLayer = createVideoPreset(640, 360, 700_000, 20, 'low');
+    const defaultShare = getScreenShareProfileConfig({ mode: 'motion', level: 'high' });
     return {
       adaptiveStream: true,
       dynacast: true,
@@ -226,7 +143,7 @@
         autoGainControl: true,
         channelCount: 1,
         sampleRate: 48000,
-        latency: mobile ? 0.08 : 0.04,
+        latency: 0.04,
       },
       publishDefaults: {
         videoCodec: 'vp8',

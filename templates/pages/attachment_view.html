@@ -73,7 +73,7 @@
         {% if raw_url and (attachment.kind == 'image') %}
           <img src="{{ raw_url }}" alt="{{ filename }}">
         {% elif raw_url and (attachment.kind == 'video') %}
-          <video src="{{ raw_url }}" controls playsinline></video>
+          <video src="{{ raw_url }}" controls></video>
         {% elif raw_url and (attachment.kind == 'audio') %}
           <audio src="{{ raw_url }}" controls></audio>
         {% elif raw_url and ((attachment.type or '') == 'application/pdf' or filename.lower().endswith('.pdf')) %}

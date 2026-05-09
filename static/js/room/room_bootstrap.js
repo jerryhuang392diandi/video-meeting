@@ -213,12 +213,10 @@
     const {
       documentRef,
       getFullscreenElement,
-      screenRef,
       clearSimulatedFullscreen,
       flushPendingLayoutIfNeeded,
       roomDebugLog,
       getSimulatedFullscreenCard,
-      nativeFullscreenState,
       queueRenderLayout,
       getRenderableCards,
       getGridPageSize,
@@ -231,27 +229,12 @@
     } = ctx;
 
     documentRef.addEventListener('fullscreenchange', () => {
-      if (!getFullscreenElement() && screenRef.orientation?.unlock) {
-        try { screenRef.orientation.unlock(); } catch (_) {}
-      }
       if (getFullscreenElement()) {
         clearSimulatedFullscreen();
       } else {
         flushPendingLayoutIfNeeded();
       }
       roomDebugLog('fullscreenchange', { active: !!getFullscreenElement(), simulated: !!getSimulatedFullscreenCard() });
-    });
-
-    documentRef.addEventListener('webkitfullscreenchange', () => {
-      if (!getFullscreenElement() && screenRef.orientation?.unlock) {
-        try { screenRef.orientation.unlock(); } catch (_) {}
-      }
-      if (getFullscreenElement()) {
-        clearSimulatedFullscreen();
-      } else {
-        flushPendingLayoutIfNeeded();
-      }
-      roomDebugLog('webkitfullscreenchange', { active: !!getFullscreenElement(), simulated: !!getSimulatedFullscreenCard() });
     });
 
     documentRef.addEventListener('keydown', (event) => {
@@ -261,17 +244,7 @@
     });
 
     global.addEventListener('pageshow', () => {
-      if (nativeFullscreenState.get() && !nativeFullscreenState.get().webkitDisplayingFullscreen) {
-        nativeFullscreenState.set(null);
-      }
       flushPendingLayoutIfNeeded();
-    });
-
-    documentRef.addEventListener('visibilitychange', () => {
-      if (!documentRef.hidden && nativeFullscreenState.get() && !nativeFullscreenState.get().webkitDisplayingFullscreen) {
-        nativeFullscreenState.set(null);
-        flushPendingLayoutIfNeeded();
-      }
     });
 
     global.addEventListener('resize', () => {
