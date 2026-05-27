@@ -1,0 +1,284 @@
+{% extends 'pages/base.html' %}
+{% block title %}{{ t('room_layout_test_title') }}{% endblock %}
+{% block body_class %}room-page room-layout-test-page{% endblock %}
+{% block shell_class %}room-shell{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/room.css', v=asset_version('css/room.css')) }}" />
+{% endblock %}
+
+{% block content %}
+<header class="topbar compact app-topbar room-topbar">
+  <div class="app-topbar-copy room-topbar-copy">
+    <div class="room-topbar-head">
+      <div class="brand">{{ t('room_layout_test_title') }}</div>
+      <span class="user-pill room-count-pill">{{ t('online_count') }}: <span id="layoutTestCount">6</span></span>
+    </div>
+    <div class="room-meta-strip">
+      <div class="muted room-meta-pill">{{ t('room_id') }}: 000000</div>
+      <div class="muted room-meta-pill">{{ t('room_layout_test_badge') }}</div>
+    </div>
+  </div>
+  <div class="top-actions app-topbar-actions room-topbar-actions">
+    <nav class="topbar-nav" aria-label="{{ t('nav_menu') }}">
+      <a class="chip" href="{{ url_for('index') }}">{{ t('nav_home') }}</a>
+      <a class="chip" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
+    </nav>
+    <div class="room-topbar-tools">
+      {% include 'partials/_language_switch.html' %}
+      <details class="header-menu">
+        <summary class="user-pill header-menu-trigger">{{ current_user.username }}</summary>
+        <div class="header-menu-panel">
+          <div class="menu-user">
+            <span>{{ t('current_user') }}</span>
+            <strong>{{ current_user.username }}</strong>
+          </div>
+          <div class="menu-section">
+            <a class="menu-link" href="{{ url_for('account_page') }}">{{ t('account_preferences') }}</a>
+            <a class="menu-link" href="{{ url_for('history') }}">{{ t('nav_history') }}</a>
+            {% if current_user.is_admin %}<a class="menu-link" href="{{ url_for('admin_dashboard') }}">{{ t('nav_admin') }}</a>{% endif %}
+          </div>
+          <div class="menu-divider"></div>
+          <div class="menu-section">
+            <a class="menu-link danger" href="{{ url_for('logout') }}">{{ t('nav_logout') }}</a>
+          </div>
+        </div>
+      </details>
+    </div>
+  </div>
+</header>
+
+<section class="grid room-grid-layout room-layout-test-grid">
+  <aside class="panel side-panel panel-glow">
+    <div class="side-panel-section controls-section">
+      <div class="side-panel-heading">
+        <h2>{{ t('room_layout_test_controls') }}</h2>
+        <div class="small-note">{{ t('room_layout_test_desc') }}</div>
+      </div>
+      <label for="layoutTestParticipants">{{ t('participants_label') }}</label>
+      <input id="layoutTestParticipants" type="range" min="1" max="16" value="6" />
+      <div class="layout-test-count-row">
+        <button class="ghost-btn" type="button" data-count="1">1</button>
+        <button class="ghost-btn" type="button" data-count="2">2</button>
+        <button class="ghost-btn" type="button" data-count="4">4</button>
+        <button class="ghost-btn" type="button" data-count="6">6</button>
+        <button class="ghost-btn" type="button" data-count="9">9</button>
+        <button class="ghost-btn" type="button" data-count="16">16</button>
+      </div>
+      <div class="stack-controls button-grid-2">
+        <button class="ghost-btn active" id="layoutModeGrid" type="button">{{ t('room_layout_test_grid') }}</button>
+        <button class="ghost-btn" id="layoutModeFocus" type="button">{{ t('room_layout_test_focus') }}</button>
+        <button class="ghost-btn" id="layoutModeShare" type="button">{{ t('room_layout_test_share') }}</button>
+        <button class="ghost-btn" id="layoutToggleChat" type="button">{{ t('hide') }} {{ t('chat_short') }}</button>
+      </div>
+      <div id="layoutTestStatus" class="notice">{{ t('room_layout_test_ready') }}</div>
+    </div>
+
+    <div class="mini-panel">
+      <div class="muted">{{ t('room_layout_test_notes_title') }}</div>
+      <ul class="layout-test-notes">
+        <li>{{ t('room_layout_test_note_static') }}</li>
+        <li>{{ t('room_layout_test_note_coexist') }}</li>
+        <li>{{ t('room_layout_test_note_responsive') }}</li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="panel video-panel panel-glow" id="layoutTestPanel">
+    <div id="screenShareBanner" class="screen-share-banner hidden" role="status" aria-live="polite"></div>
+    <div id="videoStage" class="video-stage grid-layout grid-3">
+      <div id="videoMain" class="video-main"></div>
+      <div id="videoSidebar" class="video-sidebar"></div>
+      <div id="hiddenParticipantDock" class="hidden-participant-dock" aria-hidden="true"></div>
+    </div>
+    <div id="videoPager" class="video-pager hidden" aria-label="{{ t('paged_participant_view') }}">
+      <div class="video-pager-left">
+        <button class="ghost-btn pager-btn pager-home-btn" type="button" disabled>{{ t('first_page') }}</button>
+        <button class="ghost-btn pager-btn" type="button" disabled>{{ t('previous_page') }}</button>
+      </div>
+      <div class="video-pager-center">
+        <span id="videoPagerInfo" class="video-pager-info">1 / 1</span>
+      </div>
+      <div class="video-pager-right">
+        <button class="ghost-btn pager-btn" type="button" disabled>{{ t('next_page') }}</button>
+      </div>
+    </div>
+    <div id="chatWindow" class="chat-window">
+      <div class="chat-header">
+        <div>
+          <strong>{{ t('meeting_chat') }}</strong>
+          <div class="muted small-note">{{ t('room_layout_test_chat_desc') }}</div>
+        </div>
+      </div>
+      <div class="chat-toolbar">
+        <button class="chat-mode-btn active" type="button">{{ t('everyone_visible') }}</button>
+        <button class="chat-mode-btn" type="button">{{ t('host_only') }}</button>
+      </div>
+      <div class="chat-messages" id="layoutTestMessages"></div>
+      <div class="chat-composer">
+        <div class="chat-input-row">
+          <textarea rows="3" readonly>{{ t('room_layout_test_input_placeholder') }}</textarea>
+        </div>
+        <div class="chat-actions">
+          <div class="chat-actions-left">
+            <button class="ghost-btn" type="button">{{ t('emoji') }}</button>
+            <button class="ghost-btn" type="button">{{ t('media_short') }}</button>
+          </div>
+          <button class="primary-btn slim-btn" type="button">{{ t('send') }}</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const text = {
+    local: {{ t('room_layout_test_local')|tojson }},
+    host: {{ t('host_tag')|tojson }},
+    guest: {{ t('guest_tag')|tojson }},
+    cameraOff: {{ t('camera_off_short')|tojson }},
+    fullscreen: {{ t('room_layout_test_fullscreen')|tojson }},
+    focused: {{ t('room_layout_test_focused_status')|tojson }},
+    grid: {{ t('room_layout_test_grid_status')|tojson }},
+    share: {{ t('room_layout_test_share_status')|tojson }},
+    shareLabel: {{ t('room_layout_test_share')|tojson }},
+    sharing: {{ t('screen_share_banner_other')|tojson }},
+    showChat: {{ t('room_layout_test_show_chat')|tojson }},
+    hideChat: {{ t('room_layout_test_hide_chat')|tojson }},
+  };
+  const names = {{ participant_names|tojson }};
+  const messages = {{ sample_messages|tojson }};
+  const stage = document.getElementById('videoStage');
+  const main = document.getElementById('videoMain');
+  const sidebar = document.getElementById('videoSidebar');
+  const countInput = document.getElementById('layoutTestParticipants');
+  const countOutput = document.getElementById('layoutTestCount');
+  const panel = document.getElementById('layoutTestPanel');
+  const banner = document.getElementById('screenShareBanner');
+  const status = document.getElementById('layoutTestStatus');
+  const chat = document.getElementById('chatWindow');
+  const chatToggle = document.getElementById('layoutToggleChat');
+  const messagesNode = document.getElementById('layoutTestMessages');
+  const buttons = {
+    grid: document.getElementById('layoutModeGrid'),
+    focus: document.getElementById('layoutModeFocus'),
+    share: document.getElementById('layoutModeShare'),
+  };
+  let mode = 'grid';
+  let chatVisible = true;
+
+  function initials(name) {
+    return (name || '?').slice(0, 2).toUpperCase();
+  }
+
+  function buildCard(index) {
+    const name = index === 0 ? text.local : names[index % names.length];
+    const card = document.createElement('article');
+    card.className = 'video-card layout-test-card';
+    card.dataset.index = String(index);
+    card.innerHTML = `
+      <div class="layout-test-avatar" aria-hidden="true">${initials(name)}</div>
+      <div class="video-placeholder">${text.cameraOff}</div>
+      <div class="video-toolbar">
+        <button class="card-btn" type="button">${text.fullscreen}</button>
+      </div>
+      <div class="video-label-stack">
+        <div class="video-label">${name}</div>
+        <div class="layout-test-role">${index === 0 ? text.host : text.guest}</div>
+      </div>
+    `;
+    return card;
+  }
+
+  function gridClassForCount(count) {
+    if (count <= 1) return 'grid-1';
+    if (count <= 4) return 'grid-2';
+    return 'grid-3';
+  }
+
+  function setActiveMode(nextMode) {
+    mode = nextMode;
+    Object.entries(buttons).forEach(([key, button]) => button.classList.toggle('active', key === mode));
+    render();
+  }
+
+  function renderMessages() {
+    messagesNode.innerHTML = '';
+    messages.forEach((message, index) => {
+      const item = document.createElement('div');
+      item.className = 'chat-message';
+      item.innerHTML = `
+        <div class="chat-message-head"><strong>${names[index % names.length]}</strong><span>10:${24 + index}</span></div>
+        <div class="chat-message-body">${message}</div>
+      `;
+      messagesNode.appendChild(item);
+    });
+  }
+
+  function render() {
+    const count = Number(countInput.value);
+    countOutput.textContent = String(count);
+    main.innerHTML = '';
+    sidebar.innerHTML = '';
+    stage.className = 'video-stage';
+    banner.classList.add('hidden');
+
+    if (mode === 'grid') {
+      stage.classList.add('grid-layout', gridClassForCount(count));
+      for (let index = 0; index < count; index += 1) {
+        main.appendChild(buildCard(index));
+      }
+      status.textContent = text.grid;
+      return;
+    }
+
+    if (mode === 'share') {
+      stage.classList.add('screen-share-mode', 'focus-layout');
+      banner.textContent = text.sharing.replace('{name}', names[1]);
+      banner.classList.remove('hidden');
+      const shareCard = buildCard(1);
+      shareCard.classList.add('is-screen-share', 'is-focused', 'layout-test-share-card');
+      shareCard.querySelector('.video-placeholder').textContent = text.shareLabel;
+      main.appendChild(shareCard);
+      for (let index = 0; index < count; index += 1) {
+        if (index === 1) continue;
+        sidebar.appendChild(buildCard(index));
+      }
+      status.textContent = text.share;
+      return;
+    }
+
+    stage.classList.add('focus-layout');
+    const focused = buildCard(0);
+    focused.classList.add('is-focused');
+    main.appendChild(focused);
+    for (let index = 1; index < count; index += 1) {
+      sidebar.appendChild(buildCard(index));
+    }
+    status.textContent = text.focused;
+  }
+
+  countInput.addEventListener('input', render);
+  document.querySelectorAll('[data-count]').forEach((button) => {
+    button.addEventListener('click', () => {
+      countInput.value = button.dataset.count;
+      render();
+    });
+  });
+  buttons.grid.addEventListener('click', () => setActiveMode('grid'));
+  buttons.focus.addEventListener('click', () => setActiveMode('focus'));
+  buttons.share.addEventListener('click', () => setActiveMode('share'));
+  chatToggle.addEventListener('click', () => {
+    chatVisible = !chatVisible;
+    chat.classList.toggle('chat-collapsed', !chatVisible);
+    panel.classList.toggle('chat-collapsed-layout', !chatVisible);
+    chatToggle.textContent = chatVisible ? text.hideChat : text.showChat;
+  });
+
+  renderMessages();
+  render();
+})();
+</script>
+{% endblock %}

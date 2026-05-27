@@ -2667,6 +2667,39 @@ def room_page(room_id):
     )
 
 
+@app.get("/room-layout-test")
+@login_required
+def room_layout_test_page():
+    participant_names = [
+        "Alice",
+        "Ben",
+        "Chen",
+        "Dora",
+        "Evan",
+        "Fang",
+        "Grace",
+        "Hao",
+        "Iris",
+        "Jun",
+        "Kai",
+        "Lina",
+        "Mia",
+        "Noah",
+        "Owen",
+        "Qian",
+    ]
+    sample_messages = [
+        tf(session.get("lang", "zh"), "room_layout_test_msg_one"),
+        tf(session.get("lang", "zh"), "room_layout_test_msg_two"),
+        tf(session.get("lang", "zh"), "room_layout_test_msg_three"),
+    ]
+    return render_template(
+        "pages/room_layout_test.html",
+        participant_names=participant_names,
+        sample_messages=sample_messages,
+    )
+
+
 @app.post("/api/livekit/token")
 @login_required
 def api_livekit_token():
