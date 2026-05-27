@@ -1782,19 +1782,7 @@ function initChatUi() {
       socket.emit('meeting_chat_retract', { id: item.dataset.messageId });
     }
   });
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('#emojiBtn') && !e.target.closest('#emojiPopover') && !e.target.closest('#mentionBtn') && !e.target.closest('#mentionPicker')) hideFloatingPanels();
-    if (
-      isMobilePortraitChatSheet()
-      && chatWindow
-      && !chatWindow.classList.contains('chat-collapsed')
-      && !e.target.closest('#chatWindow')
-      && !e.target.closest('#chatShowBtn')
-      && !e.target.closest('#chatContextMenu')
-    ) {
-      setChatCollapsed(true);
-    }
-  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#emojiBtn') && !e.target.closest('#emojiPopover') && !e.target.closest('#mentionBtn') && !e.target.closest('#mentionPicker')) hideFloatingPanels(); });
   const prepareAttachment = async (file, uploadKind) => {
     if (!file) return;
     try {

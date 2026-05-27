@@ -1548,12 +1548,12 @@ body.room-layout-test-page .video-sidebar .layout-test-role {
     }
 
     body.room-page .room-topbar .header-menu-panel {
-        position: fixed;
-        top: 118px;
-        right: 12px;
-        left: 12px;
-        width: auto;
-        max-height: calc(100dvh - 136px);
+        position: absolute;
+        top: calc(100% + 10px);
+        right: 0;
+        left: auto;
+        width: min(300px, calc(100vw - 32px));
+        max-height: calc(100dvh - 96px);
         overflow: auto;
         z-index: 120;
     }
@@ -1570,15 +1570,6 @@ body.room-layout-test-page .video-sidebar .layout-test-role {
         padding: 10px;
         border-radius: 16px;
         background: rgba(9, 18, 34, 0.82);
-    }
-
-    body.room-page .video-panel:not(.chat-collapsed-layout)::after {
-        content: "";
-        position: fixed;
-        inset: 0;
-        z-index: 66;
-        background: rgba(1, 7, 16, 0.48);
-        backdrop-filter: blur(2px);
     }
 
     body.room-page .side-panel {
