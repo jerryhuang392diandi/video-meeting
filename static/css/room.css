@@ -1439,6 +1439,7 @@ body.room-layout-test-page .video-sidebar .layout-test-role {
     body.room-page .shell.room-shell {
         max-width: none;
         padding: 10px 10px calc(92px + env(safe-area-inset-bottom));
+        overflow-x: auto;
     }
 
     body.room-page .room-topbar {
@@ -1490,8 +1491,14 @@ body.room-layout-test-page .video-sidebar .layout-test-role {
 
     body.room-page .room-topbar-actions {
         align-items: center;
-        justify-content: space-between;
+        justify-content: flex-start;
         gap: 8px;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    body.room-page .room-topbar-actions::-webkit-scrollbar {
+        display: none;
     }
 
     body.room-page .topbar-nav {
@@ -1515,10 +1522,29 @@ body.room-layout-test-page .video-sidebar .layout-test-role {
         white-space: nowrap;
     }
 
+    body.room-page .lang-switch {
+        flex: 0 0 auto;
+        flex-wrap: nowrap;
+        gap: 6px;
+        width: auto;
+        max-width: none;
+    }
+
+    body.room-page .lang-switch-label {
+        display: none;
+    }
+
+    body.room-page .lang-switch .chip {
+        min-height: 30px;
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+
     body.room-page .room-topbar-tools {
         flex: 0 0 auto;
         flex-wrap: nowrap;
         gap: 8px;
+        min-width: max-content;
     }
 
     body.room-page .room-grid-layout {
@@ -1684,6 +1710,7 @@ body.room-layout-test-page .video-sidebar .layout-test-role {
         max-height: min(72dvh, 620px);
         border-radius: 18px;
         box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
+        overflow-x: auto;
     }
 
     body.room-page #chatWindow {
@@ -1731,13 +1758,17 @@ body.room-layout-test-page .video-sidebar .layout-test-role {
     }
 
     body.room-page .chat-actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
         align-items: stretch;
         gap: 8px;
+        min-width: 0;
     }
 
     body.room-page .chat-actions-left {
         flex: 1 1 auto;
         flex-wrap: nowrap;
+        min-width: 0;
         overflow-x: auto;
         scrollbar-width: none;
     }

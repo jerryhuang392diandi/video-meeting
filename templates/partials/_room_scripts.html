@@ -1744,7 +1744,7 @@ function setChatCollapsed(collapsed) {
 function initChatUi() {
   normalizeChatLayout();
   if (chatMessages) chatMessages.dataset.stuckBottom = '1';
-  setChatCollapsed(false);
+  setChatCollapsed(window.matchMedia?.('(max-width: 768px) and (orientation: portrait)')?.matches || false);
   renderMentionPicker();
   setChatMode('all');
   document.querySelectorAll('.chat-mode-btn').forEach(btn => btn.addEventListener('click', () => setChatMode(btn.dataset.mode)));
