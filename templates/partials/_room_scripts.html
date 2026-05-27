@@ -1741,10 +1741,14 @@ function setChatCollapsed(collapsed) {
   }
 }
 
+function isMobilePortraitChatSheet() {
+  return window.matchMedia?.('(max-width: 768px) and (orientation: portrait)')?.matches || false;
+}
+
 function initChatUi() {
   normalizeChatLayout();
   if (chatMessages) chatMessages.dataset.stuckBottom = '1';
-  setChatCollapsed(window.matchMedia?.('(max-width: 768px) and (orientation: portrait)')?.matches || false);
+  setChatCollapsed(isMobilePortraitChatSheet());
   renderMentionPicker();
   setChatMode('all');
   document.querySelectorAll('.chat-mode-btn').forEach(btn => btn.addEventListener('click', () => setChatMode(btn.dataset.mode)));
@@ -1778,7 +1782,19 @@ function initChatUi() {
       socket.emit('meeting_chat_retract', { id: item.dataset.messageId });
     }
   });
-  document.addEventListener('click', (e) => { if (!e.target.closest('#emojiBtn') && !e.target.closest('#emojiPopover') && !e.target.closest('#mentionBtn') && !e.target.closest('#mentionPicker')) hideFloatingPanels(); });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#emojiBtn') && !e.target.closest('#emojiPopover') && !e.target.closest('#mentionBtn') && !e.target.closest('#mentionPicker')) hideFloatingPanels();
+    if (
+      isMobilePortraitChatSheet()
+      && chatWindow
+      && !chatWindow.classList.contains('chat-collapsed')
+      && !e.target.closest('#chatWindow')
+      && !e.target.closest('#chatShowBtn')
+      && !e.target.closest('#chatContextMenu')
+    ) {
+      setChatCollapsed(true);
+    }
+  });
   const prepareAttachment = async (file, uploadKind) => {
     if (!file) return;
     try {
