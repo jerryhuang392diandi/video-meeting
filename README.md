@@ -81,15 +81,15 @@
 - `python check_i18n.py` 当前可通过，根目录包装器会转到 `scripts/check_i18n.py`。
 - `/set-language/<lang>`、页面右上角语言切换、`/account` 默认语言偏好和会话语言会共同决定页面语言。
 
-会议页面当前保留桌面优先布局：
+会议页面当前保留桌面优先、手机可访问的响应式布局：
 
 - 首页保留会议号、密码、复制邀请链接等主流程，已移除二维码扫描入口。
-- 手机和平板访问业务页面时会直接显示“请到电脑端访问本系统”的提示页，不进入登录、首页或会议流程。
-- 房间页保留桌面大屏和窄屏通用布局：桌面端保持会议网格 + 右侧聊天栏，窄屏时控制区会下移到主内容下方。
+- 手机和平板不再被后端拦截，可进入登录、首页、会议和账号流程；实际摄像头、麦克风、屏幕共享能力仍取决于移动浏览器支持。
+- 房间页保留桌面大屏、手机竖屏和手机横屏布局：桌面端保持会议网格 + 右侧聊天栏，竖屏优先视频和底部控制栏，横屏使用紧凑双栏缩小版。
 - `static/js/room/room_livekit.js` 使用统一的摄像头、麦克风和屏幕共享发布参数，不再按 UA 或视口宽度分叉。
 - `static/css/room.css` 是会议页布局的主样式入口，负责顶部栏、控制侧栏、视频舞台和聊天栏；`static/css/style.css` 只保留共享页面壳层和非房间页通用规则。
 
-提交前建议验证：中文和英文页面、桌面浏览器、窄屏浏览器宽度、同一账号双设备和远端屏幕共享。
+提交前建议验证：中文和英文页面、桌面浏览器、手机竖屏、手机横屏、同一账号双设备和远端屏幕共享。
 
 ## 项目结构
 
@@ -598,15 +598,15 @@ The UI is maintained in both Chinese and English:
 - `python check_i18n.py` currently passes; the root wrapper forwards to `scripts/check_i18n.py`.
 - `/set-language/<lang>`, the page language switch, `/account` language preference, and session language together control the rendered language.
 
-The meeting UI currently keeps a desktop-first layout:
+The meeting UI currently keeps a desktop-first responsive layout that phones can enter:
 
 - The home page keeps the room ID, password, and invite-link workflows. The QR scanner entry has been removed.
-- Phones and tablets that access application pages see a “Please open this system on a computer” page instead of entering login, home, or meeting flows.
-- The room page keeps desktop and narrow-width general layouts: desktop shows the meeting grid plus right chat column, while narrow widths move the controls beneath the main stage.
+- Phones and tablets are no longer blocked by the backend and can enter login, home, meeting, and account flows; camera, microphone, and screen-share availability still depends on the mobile browser.
+- The room page keeps desktop, phone portrait, and phone landscape layouts: desktop shows the meeting grid plus right chat column, portrait prioritizes video with a bottom control bar, and landscape uses a compact two-column layout.
 - `static/js/room/room_livekit.js` uses unified camera, microphone, and screen-share publishing settings instead of branching on phone user agents or viewport width.
 - `static/css/room.css` is the canonical meeting-page layout layer for the top bar, control rail, video stage, and chat column, while `static/css/style.css` stays focused on shared non-room page shell rules.
 
-Before submitting, verify Chinese and English pages, desktop browsers, narrow browser widths, same-account two-device join, and remote screen share viewing.
+Before submitting, verify Chinese and English pages, desktop browsers, phone portrait, phone landscape, same-account two-device join, and remote screen share viewing.
 
 ## Project Structure
 

@@ -79,11 +79,6 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
-MOBILE_CLIENT_RE = re.compile(
-    r"android|iphone|ipad|ipod|windows phone|blackberry|opera mini|mobile|tablet",
-    re.IGNORECASE,
-)
-
 DEBUG_ROOM = os.environ.get("DEBUG_ROOM") == "1"
 PUBLIC_REGISTRATION_ENABLED = (os.environ.get("PUBLIC_REGISTRATION_ENABLED", "1") or "").strip().lower() in {"1", "true", "yes", "on"}
 STRICT_SECURITY_CHECKS = (os.environ.get("STRICT_SECURITY_CHECKS", "0") or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -715,11 +710,6 @@ def preferred_display_name(user):
     if not user:
         return "Guest"
     return (getattr(user, "display_name", None) or getattr(user, "username", None) or "Guest").strip()[:32] or "Guest"
-
-
-def is_mobile_client() -> bool:
-    user_agent = request.headers.get("User-Agent", "")
-    return bool(MOBILE_CLIENT_RE.search(user_agent))
 
 
 def utc_iso(dt):
@@ -1997,19 +1987,6 @@ def unbind_user_socket(user_id, sid):
 @app.before_request
 def ensure_default_lang():
     session.setdefault("lang", "zh")
-
-
-@app.before_request
-def block_mobile_clients():
-    if request.path.startswith("/static/"):
-        return
-    if request.path == "/api/healthz":
-        return
-    if request.endpoint == "set_language":
-        return
-    if not is_mobile_client():
-        return
-    return render_template("pages/desktop_required.html"), 403
 
 
 @app.before_request
