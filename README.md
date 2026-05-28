@@ -85,8 +85,8 @@
 
 - 首页保留会议号、密码、复制邀请链接等主流程，已移除二维码扫描入口。
 - 手机和平板不再被后端拦截，可进入登录、首页、会议和账号流程；实际摄像头、麦克风、屏幕共享能力仍取决于移动浏览器支持。
-- 房间页保留桌面大屏、手机竖屏和手机横屏布局：桌面端保持会议网格 + 右侧聊天栏，竖屏优先视频和底部控制栏，横屏使用紧凑双栏缩小版。
-- `static/js/room/room_livekit.js` 使用统一的摄像头、麦克风和屏幕共享发布参数，不再按 UA 或视口宽度分叉。
+- 房间页保留桌面大屏、手机竖屏和手机横屏布局：桌面端保持会议网格 + 右侧聊天栏，手机端优先使用文档流和上下滚动，避免悬浮层阻塞会议控制。
+- `static/js/room/room_livekit.js` 使用统一的 LiveKit 主链路；手机端摄像头发布使用更稳的低分辨率/低码率档位，屏幕共享仍按能力增强处理。
 - `static/css/room.css` 是会议页布局的主样式入口，负责顶部栏、控制侧栏、视频舞台和聊天栏；`static/css/style.css` 只保留共享页面壳层和非房间页通用规则。
 
 提交前建议验证：中文和英文页面、桌面浏览器、手机竖屏、手机横屏、同一账号双设备和远端屏幕共享。
@@ -602,8 +602,8 @@ The meeting UI currently keeps a desktop-first responsive layout that phones can
 
 - The home page keeps the room ID, password, and invite-link workflows. The QR scanner entry has been removed.
 - Phones and tablets are no longer blocked by the backend and can enter login, home, meeting, and account flows; camera, microphone, and screen-share availability still depends on the mobile browser.
-- The room page keeps desktop, phone portrait, and phone landscape layouts: desktop shows the meeting grid plus right chat column, portrait prioritizes video with a bottom control bar, and landscape uses a compact two-column layout.
-- `static/js/room/room_livekit.js` uses unified camera, microphone, and screen-share publishing settings instead of branching on phone user agents or viewport width.
+- The room page keeps desktop, phone portrait, and phone landscape layouts: desktop shows the meeting grid plus right chat column, while phones prefer normal document flow and vertical scrolling to avoid overlays blocking meeting controls.
+- `static/js/room/room_livekit.js` keeps one LiveKit path; phone cameras use a lower resolution/bitrate publishing profile for stability, while screen sharing remains capability-based.
 - `static/css/room.css` is the canonical meeting-page layout layer for the top bar, control rail, video stage, and chat column, while `static/css/style.css` stays focused on shared non-room page shell rules.
 
 Before submitting, verify Chinese and English pages, desktop browsers, phone portrait, phone landscape, same-account two-device join, and remote screen share viewing.

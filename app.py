@@ -1307,12 +1307,9 @@ def validate_login_target_user(
     return None
 
 
-def finalize_authenticated_session(user: User, *, force_logout_message: str | None = None) -> None:
-    user.session_version = (user.session_version or 0) + 1
-    db.session.commit()
+def finalize_authenticated_session(user: User) -> None:
     login_user(user)
-    session["session_version"] = user.session_version
-    disconnect_user_sockets(user.id, message=force_logout_message or t("kicked"))
+    session["session_version"] = user.session_version or 0
 
 
 def format_mb(mb_value):

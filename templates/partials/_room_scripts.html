@@ -175,10 +175,16 @@ const localVideo = document.createElement('video');
 localVideo.id = 'localVideo';
 localVideo.autoplay = true;
 localVideo.muted = true;
+localVideo.playsInline = true;
+localVideo.setAttribute('playsinline', 'playsinline');
+localVideo.setAttribute('webkit-playsinline', 'webkit-playsinline');
 
 const rawPreviewVideo = document.createElement('video');
 rawPreviewVideo.autoplay = true;
 rawPreviewVideo.muted = true;
+rawPreviewVideo.playsInline = true;
+rawPreviewVideo.setAttribute('playsinline', 'playsinline');
+rawPreviewVideo.setAttribute('webkit-playsinline', 'webkit-playsinline');
 rawPreviewVideo.style.display = 'none';
 document.body.appendChild(rawPreviewVideo);
 
@@ -365,6 +371,16 @@ function bindVideoElementLifecycle(videoEl) {
   videoEl.dataset.lifecycleBound = '1';
   videoEl.addEventListener('loadedmetadata', () => { queueVideoPlayback(videoEl, [0, 120]); });
   videoEl.addEventListener('canplay', () => { queueVideoPlayback(videoEl, [0, 120]); });
+}
+
+function configureInlineVideoElement(videoEl) {
+  if (!videoEl) return;
+  videoEl.autoplay = true;
+  videoEl.playsInline = true;
+  videoEl.setAttribute('autoplay', 'autoplay');
+  videoEl.setAttribute('playsinline', 'playsinline');
+  videoEl.setAttribute('webkit-playsinline', 'webkit-playsinline');
+  videoEl.disablePictureInPicture = true;
 }
 
 function updateShareUiState() {
@@ -887,13 +903,12 @@ function ensureCard(sid, displayName = null, isLocal = false) {
   }
 
   const videoEl = sid === 'local' ? localVideo : document.createElement('video');
+  configureInlineVideoElement(videoEl);
   if (sid !== 'local') {
-    videoEl.autoplay = true;
-    videoEl.muted = !speakerEnabled;
-    videoEl.defaultMuted = !speakerEnabled;
+    const shouldStartMuted = !speakerEnabled || !mediaPlaybackActivated;
+    videoEl.muted = shouldStartMuted;
+    videoEl.defaultMuted = shouldStartMuted;
   }
-  videoEl.setAttribute('autoplay', 'autoplay');
-  videoEl.disablePictureInPicture = true;
   videoEl.className = 'video-el';
   bindVideoElementLifecycle(videoEl);
   card.prepend(videoEl);
@@ -1189,9 +1204,9 @@ function addRemoteVideo(sid, stream) {
   const videoEl = card.querySelector('video');
   if (videoEl.srcObject !== stream) videoEl.srcObject = stream;
   const hasRenderableVideo = !!stream?.getVideoTracks?.().some((track) => track.readyState === 'live' && track.enabled !== false);
-  queueVideoPlayback(videoEl, [0, 120, 260]);
   updatePlaceholder(card, hasRenderableVideo);
   applySpeakerState({ userGesture: mediaPlaybackActivated });
+  queueVideoPlayback(videoEl, [0, 120, 260]);
   queueRenderLayout();
 }
 
@@ -1741,14 +1756,10 @@ function setChatCollapsed(collapsed) {
   }
 }
 
-function isMobilePortraitChatSheet() {
-  return window.matchMedia?.('(max-width: 768px) and (orientation: portrait)')?.matches || false;
-}
-
 function initChatUi() {
   normalizeChatLayout();
   if (chatMessages) chatMessages.dataset.stuckBottom = '1';
-  setChatCollapsed(isMobilePortraitChatSheet());
+  setChatCollapsed(false);
   renderMentionPicker();
   setChatMode('all');
   document.querySelectorAll('.chat-mode-btn').forEach(btn => btn.addEventListener('click', () => setChatMode(btn.dataset.mode)));

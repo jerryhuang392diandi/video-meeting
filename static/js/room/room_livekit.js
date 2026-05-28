@@ -30,6 +30,13 @@
     };
   }
 
+  function isMobileClient() {
+    const ua = String(global.navigator?.userAgent || '').toLowerCase();
+    const touchCapable = Number(global.navigator?.maxTouchPoints || 0) > 1;
+    return /android|iphone|ipad|ipod|windows phone|mobile|tablet/.test(ua)
+      || (touchCapable && /macintosh/.test(ua));
+  }
+
   function normalizeShareProfile(input) {
     const mode = input?.mode === 'detail' ? 'detail' : 'motion';
     const level = ['high', 'balanced', 'stable'].includes(input?.level) ? input.level : 'high';
@@ -125,8 +132,13 @@
   }
 
   function buildRoomOptions({ facingMode = 'user' } = {}) {
-    const cameraPrimary = createVideoPreset(1280, 720, 1_800_000, 30, 'medium');
-    const cameraLayer = createVideoPreset(640, 360, 700_000, 20, 'low');
+    const mobile = isMobileClient();
+    const cameraPrimary = mobile
+      ? createVideoPreset(640, 360, 650_000, 20, 'medium')
+      : createVideoPreset(1280, 720, 1_800_000, 30, 'medium');
+    const cameraLayer = mobile
+      ? createVideoPreset(426, 240, 280_000, 12, 'low')
+      : createVideoPreset(640, 360, 700_000, 20, 'low');
     const defaultShare = getScreenShareProfileConfig({ mode: 'motion', level: 'high' });
     return {
       adaptiveStream: true,
@@ -142,7 +154,7 @@
         noiseSuppression: true,
         autoGainControl: true,
         channelCount: 1,
-        sampleRate: 48000,
+        sampleRate: mobile ? undefined : 48000,
         latency: 0.04,
       },
       publishDefaults: {

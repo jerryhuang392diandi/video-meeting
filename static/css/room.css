@@ -1593,28 +1593,27 @@ body.room-layout-test-page .video-sidebar .layout-test-role {
     body.room-page .side-panel-heading,
     body.room-page .controls-section > .small-note,
     body.room-page #statusBox.notice {
-        display: none;
+        display: grid;
     }
 
     body.room-page .stack-controls.button-grid-2 {
-        position: fixed;
-        right: 10px;
-        bottom: calc(10px + env(safe-area-inset-bottom));
-        left: 10px;
-        z-index: 60;
+        position: static;
+        right: auto;
+        bottom: auto;
+        left: auto;
+        z-index: auto;
         display: grid;
-        grid-auto-flow: column;
-        grid-auto-columns: minmax(72px, 1fr);
-        grid-template-columns: none;
+        grid-auto-flow: row;
+        grid-auto-columns: initial;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 8px;
-        margin: 0;
-        padding: 8px;
-        overflow-x: auto;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 18px;
-        background: rgba(5, 12, 24, 0.94);
-        box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
-        backdrop-filter: blur(18px);
+        margin-top: 10px;
+        padding: 0;
+        overflow: visible;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+        backdrop-filter: none;
         scrollbar-width: none;
     }
 
@@ -1712,16 +1711,17 @@ body.room-layout-test-page .video-sidebar .layout-test-role {
     }
 
     body.room-page .chat-window {
-        position: fixed;
-        right: 10px;
-        bottom: calc(74px + env(safe-area-inset-bottom));
-        left: 10px;
-        z-index: 70;
-        height: min(72dvh, 620px);
-        max-height: min(72dvh, 620px);
-        border-radius: 18px;
-        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
-        overflow-x: auto;
+        position: relative;
+        right: auto;
+        bottom: auto;
+        left: auto;
+        z-index: 1;
+        height: auto;
+        min-height: 420px;
+        max-height: none;
+        border-radius: 16px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        overflow: hidden;
     }
 
     body.room-page #chatWindow {
@@ -1821,14 +1821,16 @@ body.room-layout-test-page .video-sidebar .layout-test-role {
     }
 
     body.room-page .chat-side-toggle {
-        position: fixed;
-        right: 12px;
-        bottom: calc(84px + env(safe-area-inset-bottom));
+        position: static;
+        right: auto;
+        bottom: auto;
         top: auto;
-        z-index: 65;
+        z-index: 1;
         min-height: 42px;
         padding: 0 14px;
         transform: none;
+        justify-self: start;
+        margin: 4px 0 0;
         border-radius: 999px;
     }
 
@@ -2008,5 +2010,22 @@ body.room-layout-test-page .video-sidebar .layout-test-role {
         top: 50%;
         bottom: auto;
         transform: translateY(-50%);
+    }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+    body.room-page .room-grid-layout {
+        grid-template-columns: 1fr;
+    }
+
+    body.room-page .video-panel,
+    body.room-page .side-panel {
+        grid-column: auto;
+        grid-row: auto;
+    }
+
+    body.room-page .chat-window {
+        height: auto;
+        max-height: none;
     }
 }
