@@ -343,11 +343,6 @@ async function safePlayVideo(videoEl, { allowMutedFallback = true } = {}) {
       } catch (_) {}
     }
     videoEl.dataset.playBlocked = '1';
-    const retry = () => {
-      safePlayVideo(videoEl, { allowMutedFallback: false }).catch(() => {});
-      window.removeEventListener('click', retry, true);
-    };
-    window.addEventListener('click', retry, true);
     return false;
   }
 }
@@ -359,7 +354,7 @@ function queueVideoPlayback(videoEl, delays = [0]) {
   const nextTimers = [];
   delays.forEach((delay) => {
     const timer = setTimeout(() => {
-      safePlayVideo(videoEl).catch(() => {});
+      safePlayVideo(videoEl, { allowMutedFallback: !mediaPlaybackActivated }).catch(() => {});
     }, delay);
     nextTimers.push(timer);
   });
@@ -727,10 +722,15 @@ function updateSpeakerButtonState() {
   toggleSpeakerBtn.dataset.enabled = speakerEnabled ? '1' : '0';
 }
 
+function requestLiveKitAudioPlayback() {
+  if (!speakerEnabled || !mediaPlaybackActivated) return;
+  livekitController?.startAudioPlayback?.().catch(() => {});
+}
+
 function activateMediaPlayback() {
   if (!speakerEnabled) return;
   mediaPlaybackActivated = true;
-  livekitController?.startAudioPlayback?.().catch(() => {});
+  requestLiveKitAudioPlayback();
   applySpeakerState({ userGesture: true });
 }
 
@@ -741,7 +741,7 @@ function setSpeakerEnabled(nextEnabled, { userGesture = false, persist = true, s
   }
   if (speakerEnabled && userGesture) {
     mediaPlaybackActivated = true;
-    livekitController?.startAudioPlayback?.().catch(() => {});
+    requestLiveKitAudioPlayback();
   }
   applySpeakerState({ userGesture: speakerEnabled && (userGesture || mediaPlaybackActivated) });
   updateSpeakerButtonState();
@@ -770,6 +770,7 @@ function syncScreenShareSpeakerRule({ userGesture = false } = {}) {
 window.addEventListener('click', activateMediaPlayback, true);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && speakerEnabled) {
+    requestLiveKitAudioPlayback();
     queueVideoPlayback(localVideo, [0]);
     applySpeakerState({ userGesture: mediaPlaybackActivated });
   }
@@ -957,6 +958,25 @@ function applySpeakerState({ userGesture = false } = {}) {
     }
   });
   updateSpeakerButtonState();
+}
+
+async function restoreLiveKitLocalMediaState(controller, mediaState) {
+  if (!controller || !mediaState) return false;
+  const restores = [
+    [mediaState.microphoneEnabled, () => controller.setMicrophoneEnabled(true)],
+    [mediaState.cameraEnabled, () => controller.setCameraEnabled(true)],
+  ];
+  let restored = false;
+  for (const [enabled, restore] of restores) {
+    if (!enabled) continue;
+    restored = true;
+    try {
+      await restore();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  return restored;
 }
 
 function syncScreenShareCardState() {
@@ -1309,10 +1329,10 @@ async function restoreLiveKitMediaAfterReload(hint) {
   }
   const controller = await ensureLiveKitConnected();
   if (!controller) return false;
-  await Promise.allSettled([
-    controller.setCameraEnabled(shouldRestoreCamera),
-    controller.setMicrophoneEnabled(shouldRestoreMicrophone),
-  ]);
+  await restoreLiveKitLocalMediaState(controller, {
+    cameraEnabled: shouldRestoreCamera,
+    microphoneEnabled: shouldRestoreMicrophone,
+  });
   setStatus({{ t('media_recovered_refresh_screen_share_manual')|tojson }});
   return true;
 }
@@ -1355,24 +1375,32 @@ function ensureLiveKitController() {
   return livekitController;
 }
 
+function resetLiveKitControllerIfSocketIdentityChanged() {
+  const connectedIdentity = livekitController?.getConnectedIdentity?.();
+  if (!connectedIdentity || !socket.id || connectedIdentity === socket.id) return null;
+  const mediaState = livekitController.getLocalMediaState?.() || null;
+  try { livekitController.disconnect(); } catch (_) {}
+  livekitController = null;
+  return mediaState;
+}
+
 async function ensureLiveKitConnected() {
   if (!IS_LIVEKIT_MODE) return null;
   if (!LIVEKIT_ENABLED || !LIVEKIT_URL || !LIVEKIT_TOKEN_ENDPOINT) {
     setStatus(TEXT_LIVEKIT_CONFIG_MISSING, 'error');
     return null;
   }
-  const connectedIdentity = livekitController?.getConnectedIdentity?.();
-  if (connectedIdentity && socket.id && connectedIdentity !== socket.id) {
-    try { livekitController.disconnect(); } catch (_) {}
-    livekitController = null;
-  }
+  const mediaStateToRestore = resetLiveKitControllerIfSocketIdentityChanged();
   const controller = ensureLiveKitController();
-  if (!controller || controller.isConnected()) return controller;
+  if (!controller) return null;
+  if (controller.isConnected()) {
+    requestLiveKitAudioPlayback();
+    return controller;
+  }
   try {
     await controller.connect();
-    if (mediaPlaybackActivated && speakerEnabled) {
-      controller.startAudioPlayback?.().catch(() => {});
-    }
+    await restoreLiveKitLocalMediaState(controller, mediaStateToRestore);
+    requestLiveKitAudioPlayback();
     return controller;
   } catch (err) {
     console.error(err);
