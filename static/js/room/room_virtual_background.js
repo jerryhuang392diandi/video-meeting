@@ -3,6 +3,7 @@
 
   function createController(ctx) {
     function loadSegmentationSdk({ timeoutMs = 18000 } = {}) {
+      // 虚拟背景依赖 MediaPipe，按需加载，避免普通入会也承担模型下载成本。
       if (typeof global.SelfieSegmentation !== 'undefined') return Promise.resolve(global.SelfieSegmentation);
       if (segmentationScriptPromise) return segmentationScriptPromise;
       segmentationScriptPromise = new Promise((resolve, reject) => {
@@ -93,6 +94,7 @@
     }
 
     function getVirtualBackgroundSourceStream() {
+      // 优先使用专门克隆出的原始摄像头流；没有时再从当前本地预览流取视频轨。
       if (hasLiveVideoTrack(ctx.getVirtualBgRawStream())) return ctx.getVirtualBgRawStream();
       if (hasLiveVideoTrack(ctx.getRawCameraStream())) return ctx.getRawCameraStream();
       if (ctx.IS_LIVEKIT_MODE && !ctx.getIsSharingScreen() && hasLiveVideoTrack(ctx.getLocalStream())) {
@@ -115,6 +117,7 @@
     }
 
     async function replaceLiveKitCameraTrackFromStream(stream) {
+      // 虚拟背景不是重新入会，而是把 LiveKit 已发布的摄像头轨道替换为处理后的轨道。
       if (!ctx.IS_LIVEKIT_MODE) return false;
       const controller = await ctx.ensureLiveKitConnected();
       if (!controller?.replaceCameraTrack) return false;
@@ -125,6 +128,7 @@
     }
 
     async function fallbackToRawCamera(message = null, { stopCanvas = false } = {}) {
+      // 模型加载失败或处理超时，要回退到原始摄像头，保证会议基础视频不中断。
       const rawSourceStream = getVirtualBackgroundSourceStream();
       disableVirtualBackgroundState({ stopCanvas, cleanupProcessed: false });
       if (rawSourceStream) {

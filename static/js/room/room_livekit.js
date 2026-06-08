@@ -132,6 +132,7 @@
   }
 
   function buildRoomOptions({ facingMode = 'user' } = {}) {
+    // LiveKit 房间默认参数：移动端降低分辨率，桌面端保留更高画质，避免弱设备入会就卡。
     const mobile = isMobileClient();
     const cameraPrimary = mobile
       ? createVideoPreset(640, 360, 650_000, 20, 'medium')
@@ -172,6 +173,7 @@
   }
 
   function createController(options) {
+    // 控制器封装 LiveKit SDK，外层页面只调用 connect、开关麦克风、开关摄像头等业务动作。
     if (!lk) {
       throw new Error('LiveKit client SDK is not loaded');
     }
@@ -267,6 +269,7 @@
     }
 
     function buildStream(target) {
+      // 每个参与者只绑定一个 MediaStream：优先显示屏幕共享画面，音频轨道同时保留。
       const stream = new MediaStream();
       const preferredVideo = target.screenVideo || target.cameraVideo || null;
       const audioTracks = [target.screenAudio, target.microphone]
@@ -279,6 +282,7 @@
     }
 
     function syncLocalPreview() {
+      // 本地预览来自 LiveKit publication，不再单独维护一套浏览器 mesh 流。
       const stream = buildStream(localState);
       const hasVideo = stream.getVideoTracks().length > 0;
       const hasAudio = stream.getAudioTracks().length > 0;
@@ -293,6 +297,7 @@
     }
 
     function syncRemoteParticipant(identity) {
+      // LiveKit identity 使用 Socket sid；这里把远端轨道同步到同 sid 的 UI 卡片。
       const state = remoteStates.get(identity);
       if (!state) return;
       const stream = buildStream(state);
@@ -308,6 +313,7 @@
     }
 
     function syncRemoteParticipantFromPublications(participant) {
+      // 新参与者或重连后可能已经有 publication，先从现有 publication 补一次完整状态。
       const identity = participant?.identity;
       if (!identity) return;
       const nextState = createRemoteState();
@@ -319,6 +325,7 @@
     }
 
     function syncRemotePublication(participant, publication) {
+      // 单条轨道发布、静音或订阅状态变化时，只更新对应字段，避免重建整个房间状态。
       const identity = participant?.identity;
       if (!identity) return;
       const state = getRemoteState(identity);
@@ -327,6 +334,7 @@
     }
 
     function syncAllParticipants() {
+      // 连接成功/重连成功后做全量同步，修正事件乱序造成的本地缓存偏差。
       syncLocalStateFromPublications();
       syncLocalPreview();
       room?.remoteParticipants?.forEach?.((participant) => {
@@ -453,6 +461,7 @@
     }
 
     function bindRoomEvents() {
+      // LiveKit 事件是音视频状态的唯一来源；Socket.IO 只负责名单和 UI 层状态。
       room
         .on(lk.RoomEvent.Connected, () => {
           connected = true;
@@ -479,6 +488,7 @@
           syncRemotePublication(participant, publication);
         })
         .on(lk.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+          // 真正拿到远端媒体轨道是在 TrackSubscribed，而不是 ParticipantConnected。
           const mediaTrack = trackToMediaStreamTrack(track);
           if (!mediaTrack || !participant?.identity) return;
           const state = getRemoteState(participant.identity);
@@ -588,6 +598,7 @@
     }
 
     async function fetchToken() {
+      // token 由后端签发，里面的 identity 必须和当前 Socket sid 一致。
       const response = await fetch(tokenEndpoint, {
         method: 'POST',
         credentials: 'same-origin',
@@ -607,6 +618,7 @@
     }
 
     async function connect() {
+      // connectPromise 防止入会初始化、自动开麦、按钮点击同时触发多次连接。
       if (connected && room) return room;
       if (connectPromise) return connectPromise;
       manualDisconnect = false;
@@ -632,6 +644,7 @@
     }
 
     async function setMicrophoneEnabled(nextEnabled) {
+      // 麦克风发布由 LiveKit localParticipant 管理，前端不直接操作 RTCPeerConnection。
       const activeRoom = requireRoom();
       const publication = activeRoom.localParticipant.getTrackPublication(lk.Track.Source.Microphone);
       const enabled = typeof nextEnabled === 'boolean'
@@ -644,6 +657,7 @@
     }
 
     async function setCameraEnabled(nextEnabled) {
+      // 摄像头关闭时清理替换过的虚拟背景 track，避免摄像头设备被后台占用。
       const activeRoom = requireRoom();
       const publication = activeRoom.localParticipant.getTrackPublication(lk.Track.Source.Camera);
       const enabled = typeof nextEnabled === 'boolean'
@@ -677,6 +691,7 @@
     }
 
     async function setScreenShareEnabled(nextEnabled, { includeAudio, profile } = {}) {
+      // 屏幕共享是独立 source；视频质量参数在这里统一下发给 LiveKit。
       const activeRoom = requireRoom();
       const publication = activeRoom.localParticipant.getTrackPublication(lk.Track.Source.ScreenShare);
       const enabled = typeof nextEnabled === 'boolean'
@@ -716,6 +731,7 @@
     }
 
     function disconnect() {
+      // 页面离开或强制退出时主动断开 LiveKit，并清空本地缓存的远端轨道。
       manualDisconnect = true;
       if (room) {
         try {
@@ -752,6 +768,7 @@
     }
 
     async function startAudioPlayback() {
+      // 浏览器可能阻止自动播放音频；用户点击后调用 startAudio 解锁远端声音。
       if (!room || typeof room.startAudio !== 'function') return false;
       await room.startAudio();
       return room.canPlaybackAudio !== false;

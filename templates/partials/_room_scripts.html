@@ -324,6 +324,7 @@ function getDisplayName(sid) {
 }
 
 async function safePlayVideo(videoEl, { allowMutedFallback = true } = {}) {
+  // Central video.play wrapper; before a user gesture, muted fallback keeps video visible.
   if (!videoEl) return false;
   try {
     const p = videoEl.play?.();
@@ -348,6 +349,7 @@ async function safePlayVideo(videoEl, { allowMutedFallback = true } = {}) {
 }
 
 function queueVideoPlayback(videoEl, delays = [0]) {
+  // Retry briefly after stream swaps or layout moves, when browsers may pause playback.
   if (!videoEl) return;
   const timers = videoPlaybackRetryTimers.get(videoEl) || [];
   timers.forEach((timer) => clearTimeout(timer));
@@ -482,6 +484,7 @@ function migrateLegacySpeakerPreference() {
 }
 
 function writeReloadRecoveryHint() {
+  // Save local media state before reload so the next page can restore mic/camera.
   const livekitState = IS_LIVEKIT_MODE && livekitController?.isConnected?.()
     ? (livekitController.getLocalMediaState?.() || {})
     : null;
@@ -497,6 +500,7 @@ function writeReloadRecoveryHint() {
 }
 
 function readReloadRecoveryHint() {
+  // Recovery hints are short-lived per tab to avoid reopening stale mic/camera state.
   try {
     const raw = sessionStorage.getItem(RELOAD_RECOVERY_KEY);
     if (!raw) return null;
@@ -723,11 +727,13 @@ function updateSpeakerButtonState() {
 }
 
 function requestLiveKitAudioPlayback() {
+  // Single LiveKit audio-unlock entry point; keeps speaker recovery state predictable.
   if (!speakerEnabled || !mediaPlaybackActivated) return;
   livekitController?.startAudioPlayback?.().catch(() => {});
 }
 
 function activateMediaPlayback() {
+  // Any page click counts as a user gesture and unlocks remote audio playback.
   if (!speakerEnabled) return;
   mediaPlaybackActivated = true;
   requestLiveKitAudioPlayback();
@@ -735,6 +741,7 @@ function activateMediaPlayback() {
 }
 
 function setSpeakerEnabled(nextEnabled, { userGesture = false, persist = true, showStatus = false } = {}) {
+  // speakerEnabled is user intent; mediaPlaybackActivated means the browser permits audio.
   speakerEnabled = !!nextEnabled;
   if (persist) {
     writeSpeakerPreference(speakerEnabled);
@@ -751,6 +758,7 @@ function setSpeakerEnabled(nextEnabled, { userGesture = false, persist = true, s
 }
 
 function syncScreenShareSpeakerRule({ userGesture = false } = {}) {
+  // Screen sharing forces speaker on, then restores the user's previous preference.
   const hasActiveShare = !!currentSharerSid || !!isSharingScreen || !!livekitLocalShareActive;
   if (hasActiveShare) {
     if (speakerStateBeforeShare === null) speakerStateBeforeShare = speakerEnabled;
@@ -937,6 +945,7 @@ function updatePlaceholder(card, hasVideo) {
 }
 
 function applySpeakerState({ userGesture = false } = {}) {
+  // All remote video muted flags are written here so cards cannot diverge.
   document.querySelectorAll('.video-card video').forEach((videoEl) => {
     if (videoEl === localVideo) {
       videoEl.muted = true;
@@ -961,6 +970,7 @@ function applySpeakerState({ userGesture = false } = {}) {
 }
 
 async function restoreLiveKitLocalMediaState(controller, mediaState) {
+  // Restore previously enabled mic/camera after reload or Socket identity rebuild.
   if (!controller || !mediaState) return false;
   const restores = [
     [mediaState.microphoneEnabled, () => controller.setMicrophoneEnabled(true)],
@@ -1222,6 +1232,7 @@ function syncParticipantRoster(participants = [], { pruneMissing = false } = {})
 }
 
 function addRemoteVideo(sid, stream) {
+  // The sid selects the participant card; the stream may include both video and audio.
   const card = ensureCard(sid, getDisplayName(sid), false);
   const videoEl = card.querySelector('video');
   if (videoEl.srcObject !== stream) videoEl.srcObject = stream;
@@ -1284,6 +1295,7 @@ function updateLiveKitShareFocus(sid, isActive) {
 }
 
 function setLocalPreviewForLiveKit(stream, { hasVideo = false, hasAudio = false, isScreenShare = false } = {}) {
+  // Local preview mirrors published state; local audio stays muted to prevent echo.
   localStream = stream || null;
   if (localVideo.srcObject !== (stream || null)) localVideo.srcObject = stream || null;
   applyMediaStreamContentHints(stream, {
@@ -1318,6 +1330,7 @@ function handleLocalLiveKitScreenShareState(isActive) {
 }
 
 async function restoreLiveKitMediaAfterReload(hint) {
+  // Restore local publishing after reload; screen share needs fresh browser permission.
   if (!IS_LIVEKIT_MODE || !hint) return false;
   const shouldRestoreCamera = !!hint.cameraEnabled;
   const shouldRestoreMicrophone = !!hint.micEnabled;
@@ -1338,6 +1351,7 @@ async function restoreLiveKitMediaAfterReload(hint) {
 }
 
 function ensureLiveKitController() {
+  // Create the controller lazily so Socket sid is stable before LiveKit connects.
   if (!IS_LIVEKIT_MODE) return null;
   if (livekitController) return livekitController;
   if (!window.RoomPageLiveKit) {
@@ -1376,6 +1390,7 @@ function ensureLiveKitController() {
 }
 
 function resetLiveKitControllerIfSocketIdentityChanged() {
+  // Socket reconnect can change sid; LiveKit identity must match it for card mapping.
   const connectedIdentity = livekitController?.getConnectedIdentity?.();
   if (!connectedIdentity || !socket.id || connectedIdentity === socket.id) return null;
   const mediaState = livekitController.getLocalMediaState?.() || null;
@@ -1385,6 +1400,7 @@ function resetLiveKitControllerIfSocketIdentityChanged() {
 }
 
 async function ensureLiveKitConnected() {
+  // Shared LiveKit entry point for config checks, reconnect, and local media restore.
   if (!IS_LIVEKIT_MODE) return null;
   if (!LIVEKIT_ENABLED || !LIVEKIT_URL || !LIVEKIT_TOKEN_ENDPOINT) {
     setStatus(TEXT_LIVEKIT_CONFIG_MISSING, 'error');
@@ -1419,6 +1435,7 @@ function shouldAutoBootstrapJoinMedia() {
 }
 
 async function bootstrapPreferredJoinMedia() {
+  // Apply join preferences; mic first reduces first-permission contention.
   const controller = await ensureLiveKitConnected();
   if (!controller) return false;
   const failures = [];
@@ -1461,6 +1478,7 @@ function scheduleJoinMediaBootstrap() {
 }
 
 async function toggleMicrophoneAction() {
+  // Mic toggles local publishing only; remote-audio issues belong to speaker state.
   const controller = await ensureLiveKitConnected();
   if (!controller) return;
   const enabled = await controller.setMicrophoneEnabled();
@@ -1468,6 +1486,7 @@ async function toggleMicrophoneAction() {
 }
 
 async function toggleCameraAction() {
+  // Camera toggles local video; virtual background is stopped before camera shutdown.
   const controller = await ensureLiveKitConnected();
   if (!controller) return;
   if (virtualBgEnabled) {
@@ -1482,6 +1501,7 @@ async function toggleCameraAction() {
 }
 
 async function toggleScreenShareAction() {
+  // Screen sharing owns speaker, mic policy, and share quality decisions.
   const controller = await ensureLiveKitConnected();
   if (!controller) return;
   await controller.setScreenShareProfile?.(shareProfilePreference, { applyToActiveShare: false });
@@ -1534,6 +1554,7 @@ async function toggleVirtualBackgroundAction() {
 }
 
 async function finalizeJoinBootstrap(data) {
+  // Start LiveKit only after join_ok so the backend has registered this socket sid.
   applySnapshotSharerState(data?.active_sharer_sid || null);
   if (pendingReloadRecoveryHint) {
     const reloadHint = pendingReloadRecoveryHint;
@@ -1925,6 +1946,7 @@ function startRtcDiagnosticsLoop() {
 }
 
 function cleanupMeetingSession() {
+  // Leave cleanup: stop local streams, LiveKit, diagnostics, and participant UI state.
   if (hasLeftMeeting) return;
   hasLeftMeeting = true;
   livekitLocalShareActive = false;

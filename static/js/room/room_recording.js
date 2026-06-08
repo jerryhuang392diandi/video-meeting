@@ -1,6 +1,7 @@
 (function (global) {
   function createController(ctx) {
     async function transcodeRecordingBlob(blob, filename = 'meeting-recording.webm') {
+      // 浏览器录制常产出 webm；这里交给后端 ffmpeg 尝试转成答辩更容易播放的 mp4。
       const formData = new FormData();
       formData.append('recording', blob, filename);
       const response = await fetch('/api/remux-recording', {
@@ -33,6 +34,7 @@
     }
 
     async function toggleScreenRecording() {
+      // 录制是浏览器本地能力，不参与 LiveKit 传输；失败不应影响会议音视频。
       if (ctx.getActiveRecorder()) {
         stopRecorderIfActive();
         stopRecordingStream();
@@ -47,6 +49,7 @@
       try {
         let recorderStream = null;
         try {
+          // 优先请求带系统音频的屏幕录制；浏览器不支持时退化为仅录屏。
           recorderStream = await navigator.mediaDevices.getDisplayMedia({
             video: true,
             audio: {

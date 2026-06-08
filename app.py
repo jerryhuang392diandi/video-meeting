@@ -476,6 +476,7 @@ def livekit_api_secret() -> str:
 
 
 def livekit_enabled() -> bool:
+    # LiveKit 是音视频真正的传输层；缺任一配置都不能发 token，否则前端会进入半连接状态。
     return bool(livekit_api and livekit_server_url() and livekit_api_key() and livekit_api_secret())
 
 
@@ -727,6 +728,7 @@ def asset_version(filename: str) -> int:
 
 
 def build_livekit_room_name(room_id: str) -> str:
+    # 业务会议号是 6 位数字；LiveKit 房间名加前缀，避免和其它用途的 LiveKit 房间撞名。
     return f"meeting-{room_id}"
 
 
@@ -1423,6 +1425,7 @@ def runtime_state_snapshot():
 
 
 def prune_stale_room_participants(room_id, room, user_id, current_sid):
+    # 同一账号可以多设备/多标签加入；这里只删除服务端已经不认识的旧 sid，不能踢掉真实在线设备。
     if not user_id:
         return []
     active_sids_for_user = set(user_active_sids.get(user_id, set()))
@@ -1450,6 +1453,7 @@ def prune_stale_room_participants(room_id, room, user_id, current_sid):
 
 
 def reconcile_rejoining_active_sharer(room_id, room, user_id):
+    # 刷新或断线重连时，旧的共享者 sid 可能已经失效；这里只清理真正失效的共享状态。
     if not user_id or room.get("active_sharer_user_id") != user_id:
         return
     previous_sharer_sid = room.get("active_sharer_sid")
@@ -1481,6 +1485,7 @@ def clear_active_sharer(room):
 
 
 def normalize_active_sharer_state(room):
+    # 每次向前端下发共享者前先纠正状态，防止页面刷新后还显示“某人正在共享”。
     active_sharer_sid = room.get("active_sharer_sid")
     active_sharer_user_id = room.get("active_sharer_user_id")
     if not active_sharer_sid and not active_sharer_user_id:
@@ -1505,6 +1510,7 @@ def normalize_active_sharer_state(room):
 
 
 def build_active_sharer_payload(room):
+    # Socket.IO 只同步 UI 层面的共享焦点；真正屏幕视频轨道仍由 LiveKit 负责传输。
     normalize_active_sharer_state(room)
     return {
         "active_sharer_sid": room.get("active_sharer_sid"),
@@ -1513,6 +1519,7 @@ def build_active_sharer_payload(room):
 
 
 def reconcile_departing_active_sharer(room_id, room, sid, user_id):
+    # 共享者离开时，如果同一账号还有其它活跃设备，优先把共享 UI 状态迁移到那个设备。
     if room.get("active_sharer_sid") != sid:
         return
     remaining_user_sids = list(user_active_sids.get(user_id, set())) if user_id else []
@@ -1709,6 +1716,7 @@ def ensure_meeting_not_expired(meeting):
 
 
 def build_runtime_room_state(*, password, host_name, created_at_ts, meeting_id, host_user_id, lang):
+    # rooms 是单进程内存状态：保存在线名单、聊天、共享者等实时 UI 状态，不替代数据库。
     return {
         "password": password,
         "host_name": host_name,
@@ -1737,6 +1745,7 @@ def init_runtime_room(room_id, room_state, created_at_ts):
 
 
 def ensure_runtime_room(meeting):
+    # 数据库保存会议是否存在；运行时 room 可能因进程重启丢失，所以访问时按需重建。
     with runtime_state_lock:
         room = rooms.get(meeting.room_id)
         if room:
@@ -2677,6 +2686,8 @@ def room_layout_test_page():
 @app.post("/api/livekit/token")
 @login_required
 def api_livekit_token():
+    # 前端必须先通过 Socket.IO 加入房间，再用当前 socket sid 换 LiveKit token。
+    # 这样 LiveKit identity 和房间在线名单使用同一个 sid，后续 track 和 UI 卡片才能对应。
     if get_rtc_mode() != "livekit" or not livekit_enabled():
         return jsonify({"success": False, "message": "LiveKit is not configured"}), 503
 
@@ -2699,10 +2710,12 @@ def api_livekit_token():
 
     with runtime_state_lock:
         socket_info = sid_to_user.get(participant_sid)
+    # 防止只知道会议号/密码的人绕过 Socket 房间状态直接申请音视频 token。
     if not socket_info or socket_info.get("room_id") != room_id or socket_info.get("user_id") != current_user.id:
         return jsonify({"success": False, "message": "Invalid participant session"}), 403
 
     is_host = current_user.id == meeting.host_user_id
+    # metadata 方便 LiveKit 侧排查身份；实际权限判断仍以服务端数据库和 Socket 状态为准。
     metadata = json.dumps(
         {
             "user_id": current_user.id,
@@ -3116,6 +3129,7 @@ def on_socket_connect():
 
 @socketio.on("join_room")
 def on_join_room(data):
+    # Socket.IO 负责 roster、聊天、主持人状态等 UI 实时状态；LiveKit 只负责音视频轨道传输。
     debug_log('SOCKET_JOIN_ROOM_BEGIN', sid=request.sid, current_user_id=getattr(current_user, "id", None), authenticated=getattr(current_user, "is_authenticated", False), session_version=session.get('session_version'), data=data)
     room_id = (data.get("room_id") or "").strip()
     password = normalize_password(data.get("password") or "")
@@ -3147,6 +3161,7 @@ def on_join_room(data):
         room = ensure_runtime_room(meeting)
         room["lang"] = session.get("lang", "zh")
 
+        # 房间密码在 Socket 加入和 LiveKit token 两处都校验，避免只拿到页面也能进媒体房间。
         if normalize_password(room["password"]) != password:
             debug_log('SOCKET_JOIN_ROOM_BAD_PASSWORD', sid=request.sid, room_id=room_id)
             emit("join_error", {"message": t("wrong_password")})
@@ -3166,6 +3181,7 @@ def on_join_room(data):
             build_room_participant_payload(osid, info, room.get("host_user_id"))
             for osid, info in room["participants"].items()
         ]
+        # sid 是前端、Socket.IO、LiveKit 三方共同识别参与者的关键 ID。
         room["participants"][sid] = {"name": user_name, "joined_at": time.time(), "user_id": current_user.id}
         sid_to_user[sid] = {"room_id": room_id, "name": user_name, "user_id": current_user.id}
         bind_user_socket(current_user.id, sid)
@@ -3207,6 +3223,7 @@ def on_join_room(data):
 
     debug_log('SOCKET_JOIN_ROOM_OK', sid=sid, room_id=room_id, participant_count=len(room["participants"]), host_present=bool(room.get("host_present")))
     emit("join_ok", join_payload)
+    # join_ok 给自己完整快照；participant_joined 通知别人有新成员；snapshot 再兜底同步一次。
     emit(
         "participant_joined",
         {"sid": sid, "name": user_name, "is_host": is_room_host, "participant_count": join_payload["participant_count"]},
@@ -3911,6 +3928,7 @@ def on_host_end_meeting(data=None):
 
 @socketio.on("leave_room")
 def on_leave_room(*_args):
+    # leave_room 同时处理主动离开和 socket 断开；主动离开才受“主持人不能直接走”的限制。
     explicit_leave = False
     if _args:
         maybe_payload = _args[0]
@@ -3939,6 +3957,7 @@ def on_leave_room(*_args):
             name = room["participants"][sid]["name"]
             del room["participants"][sid]
             host_left = False
+            # 如果离开者正在共享屏幕，必须同步清理共享焦点，避免其它人还停在旧画面。
             reconcile_departing_active_sharer(room_id, room, sid, info.get("user_id"))
             if current_user.is_authenticated and current_user.id == room.get("host_user_id"):
                 if room.get("host_present"):

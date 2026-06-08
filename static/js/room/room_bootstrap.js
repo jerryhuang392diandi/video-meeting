@@ -1,5 +1,6 @@
 (function (global) {
   function bindSocketEvents(ctx) {
+    // 这里集中绑定 Socket.IO 事件：名单、聊天、主持人状态都从这些事件进入前端。
     const {
       socket,
       ensureCard,
@@ -47,6 +48,7 @@
     let hadTransientSocketDisconnect = false;
 
     socket.on('connect', () => {
+      // Socket 连接后先加入业务房间；LiveKit token 依赖当前 socket.id，不能提前连接。
       ensureCard('local', getDisplayName('local'), true);
       queueRenderLayout();
       socket.emit('join_room', { room_id: ROOM_ID, password: ROOM_PASSWORD, user_name: USER_NAME() });
@@ -73,6 +75,7 @@
     });
 
     socket.on('join_ok', async (data) => {
+      // join_ok 是自己入会成功后的完整快照，收到后才启动 LiveKit 媒体初始化。
       participantCountEl.textContent = data.participant_count;
       chatMessages.innerHTML = '';
       const existingParticipants = Array.isArray(data?.participants) ? data.participants : [];
@@ -98,6 +101,7 @@
     });
 
     socket.on('participant_left', (data) => {
+      // 有成员离开时先删除卡片，再刷新分页和诊断，避免 UI 显示“幽灵成员”。
       participantCountEl.textContent = data.participant_count;
       if (roomState.getCurrentGridPage() > 0) {
         roomState.setCurrentGridPage(Math.max(0, roomState.getCurrentGridPage() - 1));
@@ -108,6 +112,7 @@
     });
 
     socket.on('participant_snapshot', async (data) => {
+      // snapshot 是服务端兜底同步，修正 join/leave 事件丢失或乱序造成的名单偏差。
       const list = Array.isArray(data?.participants) ? data.participants : [];
       const count = Number(data?.participant_count || list.length || 0);
       syncParticipantRoster(list, { pruneMissing: true });
@@ -182,6 +187,7 @@
     });
 
     socket.on('room_ui_event', (data) => {
+      // 房间 UI 事件只描述焦点、共享、弹幕等界面状态，不携带真实媒体数据。
       if (!data || !data.type) return;
       if (data.type === 'screen_share_started') {
         const sharerSid = normalizeParticipantSid(data.from);
@@ -210,6 +216,7 @@
   }
 
   function bindWindowEvents(ctx) {
+    // 这里集中处理浏览器级事件，例如刷新前保存媒体状态、窗口变化后重排布局。
     const {
       documentRef,
       getFullscreenElement,
@@ -260,6 +267,7 @@
     });
 
     global.addEventListener('beforeunload', () => {
+      // 刷新前写入本地媒体恢复提示，并通知服务端这个 socket 即将离开。
       writeReloadRecoveryHint();
       if (!hasLeftMeetingRef()) {
         try { socket.emit('leave_room'); } catch (_) {}
@@ -268,6 +276,7 @@
   }
 
   function bindUiEvents(ctx) {
+    // 页面按钮只触发业务动作，真正的媒体开关逻辑在 _room_scripts.html 的对应函数里。
     const {
       videoPrevPageBtn,
       videoNextPageBtn,
@@ -421,6 +430,7 @@
     }
     if (switchRoomBtn) {
       switchRoomBtn.onclick = async () => {
+        // 切换房间前先调用后端校验会议号和密码，成功后再离开当前房间。
         const nextRoomId = (switchRoomIdInput?.value || '').trim();
         const nextPwd = (switchRoomPasswordInput?.value || '').trim();
         if (!nextRoomId || !nextPwd) return;
@@ -440,6 +450,7 @@
   }
 
   function initialize(ctx) {
+    // 房间页启动入口：先绑事件，再创建本地卡片和诊断循环。
     bindSocketEvents(ctx);
     bindWindowEvents(ctx);
     bindUiEvents(ctx);
