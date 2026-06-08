@@ -728,8 +728,9 @@ function updateSpeakerButtonState() {
 }
 
 function activateMediaPlayback() {
-  if (mediaPlaybackActivated || !speakerEnabled) return;
+  if (!speakerEnabled) return;
   mediaPlaybackActivated = true;
+  livekitController?.startAudioPlayback?.().catch(() => {});
   applySpeakerState({ userGesture: true });
 }
 
@@ -740,6 +741,7 @@ function setSpeakerEnabled(nextEnabled, { userGesture = false, persist = true, s
   }
   if (speakerEnabled && userGesture) {
     mediaPlaybackActivated = true;
+    livekitController?.startAudioPlayback?.().catch(() => {});
   }
   applySpeakerState({ userGesture: speakerEnabled && (userGesture || mediaPlaybackActivated) });
   updateSpeakerButtonState();
@@ -1359,10 +1361,18 @@ async function ensureLiveKitConnected() {
     setStatus(TEXT_LIVEKIT_CONFIG_MISSING, 'error');
     return null;
   }
+  const connectedIdentity = livekitController?.getConnectedIdentity?.();
+  if (connectedIdentity && socket.id && connectedIdentity !== socket.id) {
+    try { livekitController.disconnect(); } catch (_) {}
+    livekitController = null;
+  }
   const controller = ensureLiveKitController();
   if (!controller || controller.isConnected()) return controller;
   try {
     await controller.connect();
+    if (mediaPlaybackActivated && speakerEnabled) {
+      controller.startAudioPlayback?.().catch(() => {});
+    }
     return controller;
   } catch (err) {
     console.error(err);
@@ -1383,12 +1393,25 @@ function shouldAutoBootstrapJoinMedia() {
 async function bootstrapPreferredJoinMedia() {
   const controller = await ensureLiveKitConnected();
   if (!controller) return false;
-  await Promise.allSettled([
-    PREF_AUTO_ENABLE_CAMERA ? controller.setCameraEnabled(true) : Promise.resolve(),
-    PREF_AUTO_ENABLE_MICROPHONE ? controller.setMicrophoneEnabled(true) : Promise.resolve(),
-  ]);
+  const failures = [];
+  if (PREF_AUTO_ENABLE_MICROPHONE) {
+    try {
+      await controller.setMicrophoneEnabled(true);
+    } catch (err) {
+      failures.push(err);
+      console.error(err);
+    }
+  }
+  if (PREF_AUTO_ENABLE_CAMERA) {
+    try {
+      await controller.setCameraEnabled(true);
+    } catch (err) {
+      failures.push(err);
+      console.error(err);
+    }
+  }
   joinMediaBootstrapDone = true;
-  return true;
+  return failures.length === 0;
 }
 
 function scheduleJoinMediaBootstrap() {

@@ -204,6 +204,7 @@
     let shareProfile = normalizeShareProfile(initialShareProfile);
     let senderStatsCache = { bytesSent: null, timestamp: null };
     let replacementCameraTrack = null;
+    let connectedIdentity = null;
     const remoteStates = new Map();
 
     function resolveRoomOptions() {
@@ -314,6 +315,14 @@
         setTrackField(nextState, publication?.source, getPublicationMediaTrack(publication));
       });
       remoteStates.set(identity, nextState);
+      syncRemoteParticipant(identity);
+    }
+
+    function syncRemotePublication(participant, publication) {
+      const identity = participant?.identity;
+      if (!identity) return;
+      const state = getRemoteState(identity);
+      setTrackField(state, publication?.source, getPublicationMediaTrack(publication));
       syncRemoteParticipant(identity);
     }
 
@@ -466,6 +475,9 @@
         .on(lk.RoomEvent.ParticipantConnected, (participant) => {
           syncRemoteParticipantFromPublications(participant);
         })
+        .on(lk.RoomEvent.TrackPublished, (publication, participant) => {
+          syncRemotePublication(participant, publication);
+        })
         .on(lk.RoomEvent.TrackSubscribed, (track, publication, participant) => {
           const mediaTrack = trackToMediaStreamTrack(track);
           if (!mediaTrack || !participant?.identity) return;
@@ -474,6 +486,12 @@
           syncRemoteParticipant(participant.identity);
         })
         .on(lk.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+          if (!participant?.identity) return;
+          const state = getRemoteState(participant.identity);
+          setTrackField(state, publication?.source, null);
+          syncRemoteParticipant(participant.identity);
+        })
+        .on(lk.RoomEvent.TrackUnpublished, (publication, participant) => {
           if (!participant?.identity) return;
           const state = getRemoteState(participant.identity);
           setTrackField(state, publication?.source, null);
@@ -509,6 +527,7 @@
         })
         .on(lk.RoomEvent.Disconnected, () => {
           connected = false;
+          connectedIdentity = null;
           resetScreenShareStatsCache();
           onLocalScreenShareState?.(false);
           syncLocalStateFromPublications();
@@ -544,6 +563,26 @@
           const state = getRemoteState(identity);
           setTrackField(state, publication?.source, trackToMediaStreamTrack(publication?.track));
           syncRemoteParticipant(identity);
+        });
+      }
+      if (lk.RoomEvent.TrackSubscriptionStatusChanged) {
+        room.on(lk.RoomEvent.TrackSubscriptionStatusChanged, (publication, _status, participant) => {
+          syncRemotePublication(participant, publication);
+        });
+      }
+      if (lk.RoomEvent.TrackSubscriptionPermissionChanged) {
+        room.on(lk.RoomEvent.TrackSubscriptionPermissionChanged, (publication, _status, participant) => {
+          syncRemotePublication(participant, publication);
+        });
+      }
+      if (lk.RoomEvent.TrackSubscriptionFailed) {
+        room.on(lk.RoomEvent.TrackSubscriptionFailed, (_trackSid, participant) => {
+          if (participant?.identity) syncRemoteParticipantFromPublications(participant);
+        });
+      }
+      if (lk.RoomEvent.AudioPlaybackStatusChanged) {
+        room.on(lk.RoomEvent.AudioPlaybackStatusChanged, () => {
+          syncAllParticipants();
         });
       }
     }
@@ -583,6 +622,7 @@
           autoSubscribe: true,
         });
         connected = true;
+        connectedIdentity = tokenPayload.identity || getParticipantSid();
         syncAllParticipants();
         return activeRoom;
       })().finally(() => {
@@ -684,6 +724,7 @@
       }
       room = null;
       connected = false;
+      connectedIdentity = null;
       resetScreenShareStatsCache();
       if (replacementCameraTrack) {
         try { replacementCameraTrack.stop(); } catch (_) {}
@@ -708,6 +749,12 @@
         screenShareEnabled: !!localState.screenVideo,
         screenAudioEnabled: !!localState.screenAudio,
       };
+    }
+
+    async function startAudioPlayback() {
+      if (!room || typeof room.startAudio !== 'function') return false;
+      await room.startAudio();
+      return room.canPlaybackAudio !== false;
     }
 
     function sourceLabel(source) {
@@ -743,6 +790,7 @@
           `connected: ${connected}`,
           `camera: ${localState.cameraVideo ? 'on' : 'off'}`,
           `microphone: ${localState.microphone ? 'on' : 'off'}`,
+          `audio_playback: ${room.canPlaybackAudio !== false ? 'ready' : 'blocked'}`,
           `screen_video: ${localState.screenVideo ? 'on' : 'off'}`,
           `screen_audio: ${localState.screenAudio ? 'on' : 'off'}`,
           `share_profile: ${shareProfile.mode}/${shareProfile.level}`,
@@ -765,6 +813,7 @@
       connect,
       disconnect,
       isConnected: () => connected,
+      getConnectedIdentity: () => connectedIdentity,
       prepareConnection,
       getLocalMediaState,
       getDiagnosticsEntries,
@@ -782,6 +831,7 @@
       setCameraEnabled,
       replaceCameraTrack,
       setScreenShareEnabled,
+      startAudioPlayback,
       updateDisplayName,
     };
   }
