@@ -13,6 +13,7 @@
 3. [STABILITY_AUDIT.md](STABILITY_AUDIT.md) / [English](STABILITY_AUDIT.md#stability-audit): 改房间、媒体、屏幕共享、录屏或部署架构前阅读。
 4. [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md) / [English](REFACTOR_AUDIT.md#refactor-audit): 准备拆分 `app.py`、房间脚本或共享状态逻辑前阅读。
 5. [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md#project-guide-and-code-index): 准备课程展示、口头讲解或代码跟读时阅读。
+6. [DEFENSE_CODE_MAP.md](DEFENSE_CODE_MAP.md): 答辩前快速背代码位置、变量存放位置、每个文件职责和常见追问时阅读。
 
 ## 文档职责
 
@@ -23,6 +24,7 @@
 | [STABILITY_AUDIT.md](STABILITY_AUDIT.md) / [English](STABILITY_AUDIT.md#stability-audit) | 当前架构边界、风险、回归重点和演进方向 | 修改核心逻辑的人 |
 | [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md) / [English](REFACTOR_AUDIT.md#refactor-audit) | 当前重构巡检结论、优先级、推荐拆分顺序和改动前检查 | 准备重构或长期维护的人 |
 | [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md#project-guide-and-code-index) | 项目逻辑、核心流程、代码索引、LiveKit/YUV 视频处理口径和常见问题回答 | 准备展示或维护代码的人 |
+| [DEFENSE_CODE_MAP.md](DEFENSE_CODE_MAP.md) | 答辩代码速查：关键行号、变量位置、核心流程、每个文件职责和常见追问回答 | 需要现场快速定位代码的人 |
 
 ## 维护规则
 
@@ -54,6 +56,7 @@ This folder contains the project overview, deployment guide, stability audit, an
 3. [STABILITY_AUDIT.md#stability-audit](STABILITY_AUDIT.md#stability-audit): read before changing room logic, media logic, screen sharing, recording, or deployment architecture.
 4. [REFACTOR_AUDIT.md#refactor-audit](REFACTOR_AUDIT.md#refactor-audit): read before splitting `app.py`, the room script, or shared state logic.
 5. [Project Guide and Code Index](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md#project-guide-and-code-index): read before course presentation, oral explanation, or code walkthrough.
+6. [DEFENSE_CODE_MAP.md](DEFENSE_CODE_MAP.md): read before a defense when you need quick code locations, state-variable locations, file responsibilities, and common Q&A.
 
 ## Document Responsibilities
 
@@ -64,6 +67,8 @@ This folder contains the project overview, deployment guide, stability audit, an
 | [STABILITY_AUDIT.md](STABILITY_AUDIT.md) / [English](STABILITY_AUDIT.md#stability-audit) | Architecture boundaries, risks, regression focus, and future direction | People changing core logic |
 | [REFACTOR_AUDIT.md](REFACTOR_AUDIT.md) / [English](REFACTOR_AUDIT.md#refactor-audit) | Current refactor audit, priorities, recommended split order, and pre-change checks | People planning refactors or long-term maintenance |
 | [项目说明与代码索引.md](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md) / [English](%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E%E4%B8%8E%E4%BB%A3%E7%A0%81%E7%B4%A2%E5%BC%95.md#project-guide-and-code-index) | Project logic, core flows, code index, LiveKit/YUV video-processing explanation, and common Q&A | Presenters and maintainers |
+| [DEFENSE_CODE_MAP.md](DEFENSE_CODE_MAP.md) | Defense quick map: key line numbers, variable locations, core flows, file responsibilities, and common Q&A | People who need to locate code quickly during a defense |
+
 ## Maintenance Rules
 
 - Update the root README first when project behavior changes.
