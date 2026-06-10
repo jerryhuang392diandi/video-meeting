@@ -121,7 +121,68 @@
 
 ## 5. 核心流程怎么讲
 
+### 5.0 先看懂房间页代码是怎么装起来的
+
+房间页不是只对应一个前端文件。实际加载顺序是：
+
+```text
+浏览器访问 GET /room/<room_id>?pwd=...
+  -> app.py: room_page()
+  -> 渲染 templates/pages/room.html
+  -> include templates/partials/_room_layout.html
+     负责按钮、视频舞台、聊天区等 DOM
+  -> include templates/partials/_room_scripts.html
+     加载 static/js/room/*.js、注入 ROOM_ID 等变量、定义房间业务函数
+  -> _room_scripts.html 最后调用 window.RoomPageBootstrap?.initialize?.({...})
+  -> static/js/room/room_bootstrap.js: initialize()
+     绑定 Socket.IO 事件、按钮事件和窗口事件
+```
+
+先记住各文件的边界：
+
+| 文件 | 在调用链中的职责 |
+| --- | --- |
+| `templates/partials/_room_layout.html` | 按钮和容器的 DOM 所在地 |
+| `templates/partials/_room_scripts.html` | 房间业务组装层，定义 `ensureLiveKitConnected()`、`toggleScreenShareAction()`、`sendChatMessage()` 等函数 |
+| `static/js/room/room_bootstrap.js` | 启动和绑定层，负责哪个按钮调用哪个函数、哪个 Socket 事件调用哪个函数 |
+| `static/js/room/room_livekit.js` | 媒体层，真正调用 LiveKit SDK 发布和订阅轨道 |
+| `static/js/room/room_chat.js` | 聊天消息和附件卡片的 DOM 渲染 |
+| `app.py` | Flask HTTP、Socket.IO 业务状态、数据库和 LiveKit token |
+
+总调用表：
+
+| 功能 | 前端入口 | 请求/事件 | 后端入口 | 返回 |
+| --- | --- | --- | --- | --- |
+| 创建会议 | `index.html` 的 `createBtn` 点击处理器 | `POST /api/create_room` | `api_create_room()` | 会议号、密码、邀请链接 |
+| 首页校验入会 | `index.html` 的 `joinBtn` 点击处理器 | `POST /api/join_room` | `api_join_room()` | 成功后跳房间页 |
+| 加入实时房间 | `room_bootstrap.js` 的 `socket.on('connect')` | Socket.IO `join_room` | `on_join_room()` | `join_ok`、成员事件和快照 |
+| 获取媒体凭证 | `_room_scripts.html: finalizeJoinBootstrap()` | `POST /api/livekit/token` | `api_livekit_token()` | LiveKit URL、identity、JWT |
+| 媒体开关 | `room_bootstrap.js: bindUiEvents()` | LiveKit SDK | LiveKit 服务 | LiveKit track 事件 |
+| 屏幕共享 UI 状态 | `_room_scripts.html: broadcastUiEvent()` | Socket.IO `room_ui_event` | `on_room_ui_event()` | 广播 `room_ui_event` |
+| 聊天 | `_room_scripts.html: sendChatMessage()` | Socket.IO `meeting_chat_send` | `on_meeting_chat_send()` | 广播 `meeting_chat_message` |
+| 附件 | `_room_scripts.html: uploadPendingAttachment()` | HTTP multipart | `_api_chat_upload_impl()` | attachment JSON |
+
 ### 5.1 创建会议
+
+详细调用链：
+
+```text
+templates/pages/index.html
+  #createBtn click
+  -> 读取 #hostName
+  -> fetch('/api/create_room', POST JSON { host_name })
+  -> app.py: @app.post('/api/create_room')
+  -> app.py: api_create_room()
+     -> generate_room_id() / generate_password()
+     -> 创建 Meeting 并 db.session.commit()
+     -> build_runtime_room_state()
+     -> init_runtime_room()
+     -> jsonify({ room_id, password, join_url })
+  -> index.html 把结果写进 #createResult
+  -> 用户点击动态生成的 /room/<room_id>?pwd=<password> 链接
+```
+
+按钮 DOM、`fetch()` 和结果展示都在 `templates/pages/index.html` 的内联脚本中；这个流程没有单独的首页 JS 文件。`Meeting` 是数据库记录，`rooms[room_id]` 是当前进程中的实时状态。
 
 1. 用户在首页 `templates/pages/index.html` 点击创建按钮。
 2. 前端 `fetch('/api/create_room')`，传 `host_name`。
@@ -138,6 +199,44 @@
 
 ### 5.2 加入会议
 
+加入会议要分成三段，不能只说“前端调用后端进入房间”。
+
+```text
+第一段：首页 HTTP 预校验
+index.html: #joinBtn click
+  -> fetch('/api/join_room', POST { room_id, password })
+  -> app.py: api_join_room()
+  -> 校验 Meeting、过期状态和密码
+  -> 前端跳转 /room/<room_id>?pwd=...
+
+第二段：加载房间页
+app.py: room_page(room_id)
+  -> render_template('pages/room.html', ...)
+  -> room.html include _room_layout.html 和 _room_scripts.html
+  -> _room_scripts.html 创建 const socket = io()
+  -> 调用 RoomPageBootstrap?.initialize?.({...})
+
+第三段：Socket.IO 真正入会
+room_bootstrap.js: initialize()
+  -> bindSocketEvents()
+  -> socket.on('connect')
+  -> socket.emit('join_room', { room_id, password, user_name })
+  -> app.py: on_join_room(data)
+  -> 写 rooms[room_id]['participants'][request.sid]
+  -> 写 sid_to_user[request.sid]
+  -> 写 MeetingParticipant
+  -> Flask-SocketIO join_room(room_id)
+  -> 返回 join_ok / participant_joined / participant_snapshot
+```
+
+返回事件在前端的位置：
+
+| 事件 | 接收位置 | 用途 |
+| --- | --- | --- |
+| `join_ok` | `room_bootstrap.js: socket.on('join_ok')` | 新用户初始化名单、聊天、共享状态，并启动 LiveKit |
+| `participant_joined` | `room_bootstrap.js: socket.on('participant_joined')` | 其他用户立即增加成员卡片 |
+| `participant_snapshot` | `room_bootstrap.js: socket.on('participant_snapshot')` | 用完整快照修正事件丢失或乱序 |
+
 1. 首页加入按钮先调用 `/api/join_room` 校验会议号和密码。
 2. 校验通过后跳转 `/room/<room_id>?pwd=...`。
 3. `room_page()` 渲染 `templates/pages/room.html`。
@@ -152,6 +251,38 @@
 
 ### 5.3 LiveKit 音视频连接
 
+详细调用链：
+
+```text
+room_bootstrap.js: socket.on('join_ok')
+  -> 调用传入的 finalizeJoinBootstrap(data)
+  -> _room_scripts.html: finalizeJoinBootstrap(data)
+  -> ensureLiveKitConnected()
+  -> ensureLiveKitController()
+  -> room_livekit.js: RoomPageLiveKit.createController({...})
+  -> controller.connect()
+  -> room_livekit.js: fetchToken()
+  -> fetch('/api/livekit/token', {
+       room_id, password, participant_sid: socket.id, name
+     })
+  -> app.py: api_livekit_token()
+  -> 从 sid_to_user 验证 sid 属于当前用户和房间
+  -> AccessToken.with_identity(participant_sid)
+  -> 返回 url、identity、token
+  -> room_livekit.js: activeRoom.connect(url, token)
+  -> LiveKit SFU
+```
+
+按钮调用关系：
+
+| 操作 | DOM | 绑定位置 | 页面业务函数 | LiveKit 函数 |
+| --- | --- | --- | --- | --- |
+| 麦克风 | `_room_layout.html: #toggleMicBtn` | `room_bootstrap.js: bindUiEvents()` | `_room_scripts.html: toggleMicrophoneAction()` | `room_livekit.js: setMicrophoneEnabled()` |
+| 摄像头 | `_room_layout.html: #toggleCameraBtn` | `room_bootstrap.js: bindUiEvents()` | `_room_scripts.html: toggleCameraAction()` | `room_livekit.js: setCameraEnabled()` |
+| 屏幕共享 | `_room_layout.html: #shareScreenBtn` | `room_bootstrap.js: bindUiEvents()` | `_room_scripts.html: toggleScreenShareAction()` | `room_livekit.js: setScreenShareEnabled()` |
+
+摄像头、麦克风和屏幕媒体从浏览器直接发布到 LiveKit，`app.py` 不接收或转发媒体帧。Flask 只签发 token 并维护业务状态。
+
 1. 前端必须先收到 `join_ok`，因为 LiveKit identity 要使用当前 Socket sid。
 2. `_room_scripts.html` 的 `finalizeJoinBootstrap()` 调用 `ensureLiveKitConnected()`。
 3. `ensureLiveKitConnected()` 创建 `RoomPageLiveKit` 控制器。
@@ -164,6 +295,35 @@
 答辩重点：`participant_sid` 是 Socket.IO 和 LiveKit 对齐的关键 ID，后端故意要求先 Socket 入会再拿 token，避免只拿会议号密码就绕过房间状态。
 
 ### 5.4 远端视频如何显示
+
+成员名单和媒体轨道是两条并行链路：
+
+```text
+Socket.IO 名单链路
+participant_joined / participant_snapshot
+  -> room_bootstrap.js
+  -> addRemoteParticipant() / syncParticipantRoster()
+  -> _room_scripts.html: ensureCard()
+  -> 先创建没有画面的成员卡片
+```
+
+```text
+LiveKit 媒体链路
+LiveKit RoomEvent.TrackSubscribed
+  -> room_livekit.js: bindRoomEvents()
+  -> syncRemoteParticipant(participant.identity)
+  -> buildStream(remoteState)
+  -> 调用控制器参数 addRemoteVideo(identity, stream)
+  -> 该回调由 _room_scripts.html: ensureLiveKitController() 传入
+  -> _room_scripts.html: addRemoteVideo(sid, stream)
+  -> ensureCard(sid)
+  -> video.srcObject = stream
+  -> queueRenderLayout()
+  -> room_ui.js 调度
+  -> _room_scripts.html: renderLayout()
+```
+
+两条链能合并，是因为 `api_livekit_token()` 把 Socket.IO sid 写成 LiveKit identity，而前端视频卡片也按同一个 sid 管理。
 
 1. LiveKit 远端 participant 发布 track。
 2. `room_livekit.js` 监听 LiveKit track 事件。
@@ -185,6 +345,36 @@
 - 媒体层：`room_livekit.js` 调 `setScreenShareEnabled()`，把屏幕视频/音频发布到 LiveKit。
 - UI 层：前端通过 Socket.IO 发送 `room_ui_event`，后端记录 `active_sharer_sid`，再广播给其他人切换焦点布局。
 
+媒体发布调用链：
+
+```text
+_room_layout.html: #shareScreenBtn
+  -> room_bootstrap.js: shareScreenBtn.onclick
+  -> _room_scripts.html: toggleScreenShareAction()
+  -> ensureLiveKitConnected()
+  -> room_livekit.js: controller.setScreenShareEnabled()
+  -> activeRoom.localParticipant.setScreenShareEnabled(...)
+  -> 浏览器弹出屏幕选择权限
+  -> LiveKit 发布 ScreenShare / ScreenShareAudio track
+```
+
+共享者 UI 状态调用链：
+
+```text
+room_livekit.js 收到 LocalTrackPublished(ScreenShare)
+  -> onLocalScreenShareState(true)
+  -> _room_scripts.html: handleLocalLiveKitScreenShareState(true)
+  -> broadcastUiEvent({ type: 'screen_share_started' })
+  -> socket.emit('room_ui_event', payload)
+  -> app.py: on_room_ui_event(data)
+  -> set_active_sharer(room, sid, user_id)
+  -> 向其他成员 emit('room_ui_event')
+  -> room_bootstrap.js: socket.on('room_ui_event')
+  -> focusParticipant(sharerSid, { hideSidebar: true, screenShare: true })
+```
+
+停止共享时由 LiveKit `LocalTrackUnpublished(ScreenShare)` 触发同一条反向清理链，最终调用后端 `clear_active_sharer()`，其他客户端再恢复普通布局。`room_ui_event` 只传共享者和界面状态，不传屏幕视频。
+
 后端关键函数：
 
 - `set_active_sharer()` / `clear_active_sharer()`: 设置或清空共享者。
@@ -196,11 +386,28 @@
 
 - `_room_scripts.html` 的 `toggleScreenShareAction()`。
 - `room_livekit.js` 的 `setScreenShareEnabled()`。
+- `_room_scripts.html` 的 `handleLocalLiveKitScreenShareState()` 和 `broadcastUiEvent()`。
 - `room_bootstrap.js` 监听 `room_ui_event` 后调用 `focusParticipant()`。
 
 ### 5.6 聊天和附件
 
 普通文字聊天：
+
+```text
+_room_layout.html: #sendChatBtn 或输入框 Enter
+  -> _room_scripts.html: initChatUi() 绑定事件
+  -> _room_scripts.html: sendChatMessage()
+  -> socket.emit('meeting_chat_send', {
+       room_id, mode, message, mentions, attachment
+     })
+  -> app.py: on_meeting_chat_send(data)
+  -> request.sid -> sid_to_user -> rooms[room_id]
+  -> 生成消息字段并追加到 room['chat_history']
+  -> 广播 meeting_chat_message
+  -> room_bootstrap.js: socket.on('meeting_chat_message')
+  -> room_chat.js: appendChatMessage()
+  -> 插入聊天 DOM
+```
 
 1. `_room_scripts.html` 的 `sendChatMessage()` 收集文本、@ 提及、附件。
 2. 没有附件时直接 `socket.emit('meeting_chat_send')`。
@@ -209,6 +416,23 @@
 5. 前端 `room_chat.js` 的 `appendChatMessage()` 渲染消息。
 
 附件聊天：
+
+```text
+_room_layout.html: 媒体/文档 file input
+  -> _room_scripts.html: initChatUi()
+  -> 内部函数 prepareAttachment(file, uploadKind)
+  -> 文件先保存在前端 pendingAttachment，并显示本地预览
+  -> 用户点击发送
+  -> sendChatMessage()
+  -> uploadPendingAttachment()
+  -> FormData: room_id + permission + file
+  -> fetch('/api/chat_upload_media') 或 fetch('/api/chat_upload_doc')
+  -> app.py: api_chat_upload_media() / api_chat_upload_doc()
+  -> app.py: _api_chat_upload_impl(upload_mode)
+  -> 保存文件并返回 attachment JSON
+  -> sendChatMessage() 再把 attachment 放入 meeting_chat_send
+  -> 后端广播附件描述，room_chat.js 渲染附件卡片
+```
 
 1. 前端选择媒体或文档，保存到 `pendingAttachment`。
 2. 发送前先 `fetch('/api/chat_upload_media')` 或 `fetch('/api/chat_upload_doc')`。
@@ -228,6 +452,21 @@
 
 录屏是浏览器本地增强，不是 LiveKit 传输的一部分。
 
+```text
+_room_layout.html: #recordingBtn
+  -> room_bootstrap.js: recordingBtn.onclick
+  -> _room_scripts.html 传入的 toggleScreenRecording
+  -> room_recording.js: toggleScreenRecording()
+  -> navigator.mediaDevices.getDisplayMedia()
+  -> MediaRecorder 收集 chunks
+  -> 浏览器输出 MP4：前端直接 downloadBlob()
+  -> 浏览器输出 WebM：room_recording.js: transcodeRecordingBlob()
+  -> POST /api/remux-recording，表单字段 recording
+  -> app.py: api_remux_recording()
+  -> ffmpeg 转封装为 MP4并返回
+  -> 转换失败则前端下载原 WebM
+```
+
 1. `room_recording.js` 的 `toggleScreenRecording()` 调用 `navigator.mediaDevices.getDisplayMedia()`。
 2. 用 `MediaRecorder` 录制屏幕。
 3. 浏览器如果能直接生成 MP4 就下载 MP4。
@@ -237,6 +476,23 @@
 ### 5.8 背景虚化
 
 背景虚化也是浏览器端增强，不是后端处理视频。
+
+```text
+_room_layout.html: #virtualBgBtn
+  -> room_bootstrap.js: virtualBgBtn.onclick
+  -> _room_scripts.html: toggleVirtualBackgroundAction()
+  -> room_virtual_background.js: activateVirtualBackground()
+  -> loadSegmentationModel() 加载 MediaPipe
+  -> 克隆当前摄像头 track
+  -> startSegmentationLoop() 逐帧送入模型
+  -> onSegmentationResults() 绘制人像和模糊背景到 canvas
+  -> canvas.captureStream()
+  -> replaceLiveKitCameraTrackFromStream()
+  -> room_livekit.js: replaceCameraTrack()
+  -> LiveKit camera publication.replaceTrack()
+```
+
+失败时 `room_virtual_background.js: fallbackToRawCamera()` 会重新替换回原始摄像头并清理处理流。这条流程没有 Flask 图像处理接口。
 
 1. `room_virtual_background.js` 按需加载 MediaPipe `SelfieSegmentation`。
 2. 从当前摄像头 track 克隆一份原始流。
@@ -469,4 +725,3 @@
 | 管理后台 | `admin_dashboard` |
 | 安全锁定 | `security_lockdown` |
 | 翻译表 | `TRANSLATIONS` |
-
